@@ -21,7 +21,7 @@
 import { Panel } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
-import { siblings } from './corpora.ts'
+import { CORPORA, siblings } from './corpora.ts'
 
 /**
  * Links into the HOST's own routes are supplied by the host as ready-made
@@ -124,7 +124,28 @@ const STEPS: { label: string; body: string }[] = [
 	},
 ]
 
-export function InsightBridgeSteps() {
+/**
+ * The corpus the worked example was actually run against, named from the
+ * registry so its brand and URL cannot drift out of sync with the family cards.
+ */
+const CASE_CORPUS = CORPORA.find((c) => c.slug === 'audit-corpus')
+
+export function InsightBridgeSteps(props: { slug?: string }) {
+	// On the audit corpus's own site the mention is not a link: every sibling
+	// link on this page opens in a new tab, and sending a reader to the page they
+	// are already on would be worse than plain text.
+	const caseCorpusRef = () => {
+		if (!CASE_CORPUS) return null
+		if (props.slug === CASE_CORPUS.slug) {
+			return <strong class="ib-corpus-ref">{CASE_CORPUS.name}</strong>
+		}
+		return (
+			<a class="ib-corpus-ref" href={CASE_CORPUS.url} target="_blank" rel="noopener noreferrer">
+				{CASE_CORPUS.name}
+			</a>
+		)
+	}
+
 	return (
 		<section class="ib-sec">
 			<h2 class="ib-h2">AI Agents + Insight Bridge = Democratisation</h2>
@@ -147,14 +168,41 @@ export function InsightBridgeSteps() {
 			{/* ui-solid's Panel, so the box picks up the host's surface, hairline and
 			    radius tokens instead of inventing its own card. It supplies its own
 			    padding and header spacing; `.ib-case` only positions it in the flow. */}
+			{/* Drawn from one real session against the audit corpus. Two things this
+			    copy must not do: assume anything about the advocate beyond what they
+			    said (they are a mental-health specialist; the rest are stated
+			    concerns), and describe the output as a set of results. It was an
+			    argued document, and the bullets exist so that lands. */}
 			<Panel class="ib-case" title="Real world example" glow>
 				<p>
-					An advocate who had spent a career on mental health, child safety and gendered violence
-					described those concerns, in their own words, to an agent connected to a corpus of
-					public-sector audit reports. What came back was organised around what they cared about
-					rather than around how the corpus is filed: two dozen reports, drawn from across fifty
-					oversight bodies, none of them secret and none of them reachable by searching.
+					An advocate specialising in Australia’s mental health sector, who also cares deeply about
+					child safety, gendered violence and education, described all of that in their own words,
+					with no idea how any of it was filed in the {caseCorpusRef()} corpus. What came back was:
 				</p>
+				<ul class="ib-case-list">
+					<li>
+						<strong>Six parts</strong>, following the shape of what they had described: mental health,
+						then child safety and shame, then gendered violence, then education, then the machinery
+						that let all of it persist, then what to do about it.
+					</li>
+					<li>
+						<strong>Thirteen findings</strong>, each argued from reports it named, quoted and dated,
+						with the oversight body that made them and its severity score attached.
+					</li>
+					<li>
+						<strong>Eight recommendations</strong>, every one of which an oversight body had already
+						put on the record.
+					</li>
+					<li>
+						<strong>Connections between things filed apart</strong>: that a family violence response is
+						suicide prevention, and that exclusion from education and untreated mental illness feed
+						each other.
+					</li>
+					<li>
+						<strong>An evidence ledger</strong> of the twenty-three reports it drew on, and a note on
+						how it was assembled.
+					</li>
+				</ul>
 				<p>
 					Whatever field you work in, the evidence that would change how you work has probably
 					already been gathered by a body you have never heard of, for a purpose that was not yours.
@@ -401,7 +449,7 @@ export function InsightBridgeAbout(props: AboutProps) {
 		<div class="ib-about">
 			<InsightBridgeLede />
 			<InsightBridgeRespect />
-			<InsightBridgeSteps />
+			<InsightBridgeSteps slug={props.slug} />
 			<InsightBridgePipeline />
 			<InsightBridgeFamily slug={props.slug} />
 			<InsightBridgeMcp connectLink={props.connectLink} />
