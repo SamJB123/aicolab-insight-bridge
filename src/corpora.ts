@@ -37,7 +37,10 @@ export const CORPORA: Corpus[] = [
 		name: 'One Basin',
 		blurb:
 			'Published public submissions to the Murray–Darling Basin Authority’s 2026 Basin Plan Review.',
-		url: 'https://insightbridge-basin.aicolab.workers.dev',
+		// Custom domain, declared in this app's own wrangler.jsonc. Its workers.dev
+		// fallback (insightbridge-basin.aicolab.workers.dev) stays live for MCP
+		// connectors published before the domain existed.
+		url: 'https://insightbridge-onebasin.aicolab.org',
 		scale: '999 submissions · 86 topics',
 	},
 	{
