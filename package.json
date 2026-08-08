@@ -1,0 +1,36 @@
+{
+	"name": "@aicolab/insight-bridge",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./server": "./src/server/index.ts",
+		"./styles.css": "./src/styles.css",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"check-types": "tsc --noEmit"
+	},
+	"peerDependencies": {
+		"@aicolab/ui-solid": "workspace:^",
+		"@modelcontextprotocol/sdk": "catalog:",
+		"@solidjs/web": "catalog:",
+		"@tanstack/solid-router": "^2.0.0-beta.21",
+		"@tanstack/solid-start": "^2.0.0-beta.22",
+		"solid-js": "catalog:"
+	},
+	"dependencies": {
+		"@aicolab/better-auth": "workspace:^"
+	},
+	"devDependencies": {
+		"@aicolab/tsconfig": "workspace:^",
+		"@aicolab/ui-solid": "workspace:^",
+		"@modelcontextprotocol/sdk": "catalog:",
+		"@solidjs/web": "catalog:",
+		"@tanstack/solid-router": "^2.0.0-beta.21",
+		"@tanstack/solid-start": "^2.0.0-beta.22",
+		"solid-js": "catalog:",
+		"typescript": "catalog:"
+	}
+}
