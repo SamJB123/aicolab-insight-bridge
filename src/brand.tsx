@@ -30,7 +30,7 @@
  *     widens to `string` with no error to tell you.
  *   • This package must never declare its own `Register` augmentation.
  *
- * Colour comes from the host's tokens (--c-faint / --c-accent), so the mark
+ * Colour comes from the host's tokens (--color-base-content-faint / --color-primary), so the mark
  * themes itself per app rather than importing a fixed brand palette.
  */
 

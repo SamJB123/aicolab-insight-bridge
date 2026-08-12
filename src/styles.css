@@ -3,8 +3,8 @@
  *
  * Every colour here reads a HOST token with a neutral fallback, so the mark and
  * the page take on each consumer app's theme instead of importing a fixed brand
- * palette. Consumers expected to define: --c-text, --c-muted, --c-faint,
- * --c-accent, --c-line, --c-panel-2, --font-display, --font-data.
+ * palette. Consumers expected to define: --color-base-content, --color-base-content-muted, --color-base-content-faint,
+ * --color-primary, --color-border, --color-base-150, --font-display, --font-data.
  *
  * Import once, after the host's own stylesheet:
  *   import '@aicolab/insight-bridge/styles.css'
@@ -20,7 +20,7 @@
 	font-size: 9.5px;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
-	color: var(--c-faint, #8b8b8b);
+	color: var(--color-base-content-faint, #8b8b8b);
 	line-height: 1;
 	white-space: nowrap;
 }
@@ -28,7 +28,7 @@
 .ib-mark .ib-glyph {
 	flex: none;
 	opacity: 0.85;
-	color: var(--c-accent, currentColor);
+	color: var(--color-primary, currentColor);
 }
 
 /* The mark stays visible on phones. It is `white-space: nowrap`, so on a narrow
@@ -49,7 +49,7 @@ a.ib-mark-link {
 
 a.ib-mark-link:hover,
 a.ib-mark-link:focus-visible {
-	color: var(--c-accent, #666);
+	color: var(--color-primary, #666);
 }
 
 a.ib-mark-link:hover .ib-glyph {
@@ -65,7 +65,7 @@ a.ib-mark-link:hover .ib-glyph {
 
 .ib-sec {
 	padding: 2.2rem 0;
-	border-top: 1px solid var(--c-line, #e5e5e5);
+	border-top: 1px solid var(--color-border, #e5e5e5);
 }
 
 .ib-sec:first-child {
@@ -78,7 +78,7 @@ a.ib-mark-link:hover .ib-glyph {
 	font-size: clamp(1.4rem, 2.6vw, 1.9rem);
 	line-height: 1.2;
 	margin: 0 0 0.7rem;
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 }
 
 /* Section subtitle: the accent line directly under an .ib-h2, carrying the
@@ -90,12 +90,12 @@ a.ib-mark-link:hover .ib-glyph {
 	line-height: 1.35;
 	margin: -0.35rem 0 0.95rem;
 	max-width: 54ch;
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 }
 
 .ib-stand {
 	max-width: 68ch;
-	color: var(--c-muted, #555);
+	color: var(--color-base-content-muted, #555);
 	font-size: 1rem;
 	line-height: 1.6;
 	margin: 0 0 1rem;
@@ -103,7 +103,7 @@ a.ib-mark-link:hover .ib-glyph {
 
 .ib-note {
 	max-width: 68ch;
-	color: var(--c-faint, #888);
+	color: var(--color-base-content-faint, #888);
 	font-size: 0.88rem;
 	line-height: 1.55;
 	margin: 0.8rem 0 0;
@@ -111,7 +111,7 @@ a.ib-mark-link:hover .ib-glyph {
 
 .ib-note a,
 .ib-stand a {
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 }
 
 /* the lede — tagline + standfirst, sitting directly under the host's own h1 */
@@ -128,7 +128,7 @@ a.ib-mark-link:hover .ib-glyph {
 	line-height: 1.35;
 	margin: 0 0 1rem;
 	max-width: 54ch;
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 }
 
 /* Speak · Surface · Synthesise */
@@ -150,13 +150,13 @@ a.ib-mark-link:hover .ib-glyph {
 	font-size: 11px;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 	margin-bottom: 0.3rem;
 }
 
 .ib-steps p {
 	margin: 0;
-	color: var(--c-muted, #555);
+	color: var(--color-base-content-muted, #555);
 	font-size: 0.94rem;
 	line-height: 1.58;
 }
@@ -171,7 +171,7 @@ a.ib-mark-link:hover .ib-glyph {
 
 .ib-case p {
 	margin: 0 0 0.8rem;
-	color: var(--c-muted, #555);
+	color: var(--color-base-content-muted, #555);
 	font-size: 0.94rem;
 	line-height: 1.6;
 }
@@ -189,7 +189,7 @@ a.ib-mark-link:hover .ib-glyph {
 .ib-case-list li {
 	position: relative;
 	padding-left: 1rem;
-	color: var(--c-muted, #555);
+	color: var(--color-base-content-muted, #555);
 	font-size: 0.94rem;
 	line-height: 1.55;
 }
@@ -202,11 +202,11 @@ a.ib-mark-link:hover .ib-glyph {
 	width: 5px;
 	height: 5px;
 	border-radius: 50%;
-	background: var(--c-accent, #06c);
+	background: var(--color-primary, #06c);
 }
 
 .ib-case-list strong {
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 	font-weight: 600;
 }
 
@@ -215,12 +215,12 @@ a.ib-mark-link:hover .ib-glyph {
    other two apps) or plain text (on the audit corpus's own site). */
 .ib-corpus-ref {
 	font-weight: 600;
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 }
 
 a.ib-corpus-ref {
 	text-decoration: underline;
-	text-decoration-color: color-mix(in oklab, var(--c-accent, #06c) 40%, transparent);
+	text-decoration-color: color-mix(in oklab, var(--color-primary, #06c) 40%, transparent);
 	text-underline-offset: 2px;
 }
 
@@ -233,7 +233,7 @@ a.ib-corpus-ref:focus-visible {
    body colour rather than the muted one. */
 .ib-case p:last-child {
 	margin-bottom: 0;
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 }
 
 /* pipeline stages */
@@ -257,7 +257,7 @@ a.ib-corpus-ref:focus-visible {
 	font-family: var(--font-data, ui-monospace, monospace);
 	font-size: 11px;
 	letter-spacing: 0.1em;
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 	padding-top: 0.2rem;
 }
 
@@ -265,12 +265,12 @@ a.ib-corpus-ref:focus-visible {
 	font-family: var(--font-display, Georgia, serif);
 	font-size: 1.05rem;
 	margin: 0 0 0.25rem;
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 }
 
 .ib-stages p {
 	margin: 0;
-	color: var(--c-muted, #555);
+	color: var(--color-base-content-muted, #555);
 	font-size: 0.94rem;
 	line-height: 1.58;
 }
@@ -287,14 +287,14 @@ a.ib-corpus-ref:focus-visible {
 .ib-rules li {
 	max-width: 74ch;
 	padding-left: 0.9rem;
-	border-left: 2px solid var(--c-line, #e5e5e5);
-	color: var(--c-muted, #555);
+	border-left: 2px solid var(--color-border, #e5e5e5);
+	color: var(--color-base-content-muted, #555);
 	font-size: 0.94rem;
 	line-height: 1.58;
 }
 
 .ib-rules strong {
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 	font-weight: 600;
 }
 
@@ -307,7 +307,7 @@ a.ib-corpus-ref:focus-visible {
 	font-family: var(--font-display, Georgia, serif);
 	font-size: 1.1rem;
 	margin: 0 0 0.6rem;
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 }
 
 /* the family index */
@@ -323,23 +323,23 @@ a.ib-corpus-ref:focus-visible {
 	flex-direction: column;
 	gap: 0.32rem;
 	padding: 0.95rem 1rem;
-	border: 1px solid var(--c-line, #e5e5e5);
+	border: 1px solid var(--color-border, #e5e5e5);
 	border-radius: 6px;
-	background: var(--c-panel-2, transparent);
+	background: var(--color-base-150, transparent);
 	text-decoration: none;
 	transition: border-color 140ms ease, transform 140ms ease;
 }
 
 .ib-card:hover,
 .ib-card:focus-visible {
-	border-color: var(--c-accent, #06c);
+	border-color: var(--color-primary, #06c);
 	transform: translateY(-1px);
 }
 
 .ib-card-name {
 	font-family: var(--font-display, Georgia, serif);
 	font-size: 1.08rem;
-	color: var(--c-text, #111);
+	color: var(--color-base-content, #111);
 }
 
 .ib-card-scale {
@@ -347,11 +347,11 @@ a.ib-corpus-ref:focus-visible {
 	font-size: 10.5px;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
-	color: var(--c-accent, #06c);
+	color: var(--color-primary, #06c);
 }
 
 .ib-card-blurb {
-	color: var(--c-muted, #555);
+	color: var(--color-base-content-muted, #555);
 	font-size: 0.88rem;
 	line-height: 1.5;
 }
