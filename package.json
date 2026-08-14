@@ -16,8 +16,8 @@
 		"@aicolab/ui-solid": "workspace:^",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@solidjs/web": "catalog:",
-		"@tanstack/solid-router": "^2.0.0-beta.21",
-		"@tanstack/solid-start": "^2.0.0-beta.22",
+		"@tanstack/solid-router": "catalog:",
+		"@tanstack/solid-start": "catalog:",
 		"solid-js": "catalog:"
 	},
 	"dependencies": {
@@ -28,8 +28,8 @@
 		"@aicolab/ui-solid": "workspace:^",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@solidjs/web": "catalog:",
-		"@tanstack/solid-router": "^2.0.0-beta.21",
-		"@tanstack/solid-start": "^2.0.0-beta.22",
+		"@tanstack/solid-router": "catalog:",
+		"@tanstack/solid-start": "catalog:",
 		"solid-js": "catalog:",
 		"typescript": "catalog:"
 	}
