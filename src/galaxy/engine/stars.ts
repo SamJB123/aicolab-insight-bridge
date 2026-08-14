@@ -22,6 +22,7 @@
 
 import { floatFrom, vec3From } from '@aicolab/kolo/webgpu/tsl-helpers'
 import {
+	cameraPosition,
 	float,
 	instancedBufferAttribute,
 	instanceIndex,
@@ -109,10 +110,17 @@ export function createStarField(data: StarFieldData, palette: GalaxyPalette): St
 
 	const self = float(instanceIndex)
 	// Gentle authored twinkle + ignition on the hovered/selected instance.
+	// Ignition is ATTENUATED by camera proximity: up close the glow already
+	// fills far more pixels and the bloom compounds it, so the same boost
+	// that reads perfectly at galaxy distance blows out in a constellation.
+	// Gain ≈ 1 beyond ~260 units (the overview look, untouched) easing to
+	// 0.22 inside ~45.
 	const twinkle = time.mul(1.7).add(aSeed.mul(Math.PI * 2)).sin().mul(0.05).add(1)
+	const cameraDistance = aPosition.sub(cameraPosition).length()
+	const igniteGain = smoothstep(45, 260, cameraDistance).mul(0.78).add(0.22)
 	const hoverHit = smoothstep(1, 0, self.sub(uniforms.hovered).abs())
 	const selectHit = smoothstep(1, 0, self.sub(uniforms.selected).abs())
-	const ignite = hoverHit.max(selectHit)
+	const ignite = hoverHit.max(selectHit).mul(igniteGain)
 	// Constellation crossfade: my-topics-of-the-focused-group dim (planets take
 	// over); the focused group's own star swells into the local sun.
 	const isFocusedTopic = step(aGroupKey.sub(uniforms.focusedGroup).abs(), float(0.5))
