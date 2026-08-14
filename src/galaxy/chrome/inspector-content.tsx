@@ -11,16 +11,29 @@
  * related links), loaded under a Loading boundary.
  */
 
-import { Eyebrow, InspectorHeader, Meter, RichList, RichListItem, Rule } from '@aicolab/ui-solid'
+import {
+	Accordion,
+	AccordionItem,
+	Eyebrow,
+	InspectorHeader,
+	Meter,
+	RichList,
+	RichListItem,
+	Rule,
+} from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { createMemo, Errored, For, Loading, Show } from 'solid-js'
+import { createMemo, createSignal, Errored, For, Loading, Show } from 'solid-js'
+import { facetPalette, facetValues } from '../facets.ts'
 import type {
 	IBContentSection,
 	IBGalaxy,
 	IBNode,
 	IBNodeContent,
 	IBNodeId,
+	IBPoint,
+	IBQuote,
 } from '../types.ts'
+import { DEFAULT_GALAXY_SORT, GalaxySortControl, sortRows } from './sort-control.tsx'
 
 function MixBar(props: { galaxy: IBGalaxy; node: IBNode }) {
 	const segments = () => {
@@ -53,56 +66,145 @@ function MixBar(props: { galaxy: IBGalaxy; node: IBNode }) {
 	)
 }
 
-function SectionBody(props: { section: IBContentSection }) {
-	const section = props.section
-	if (section.kind === 'points') {
-		return (
-			<div class="ib-galaxy-points">
-				<For each={section.points}>
-					{(point) => (
-						<div class="ib-galaxy-point">
-							<Show when={point.text.length > 0}>
-								<p>{point.text}</p>
-							</Show>
-							<For each={point.quotes ?? []}>
-								{(quote) => (
-									<blockquote>
-										{quote.text}
-										<Show when={quote.source}>
-											{(source) => <cite>{source()}</cite>}
-										</Show>
-									</blockquote>
-								)}
-							</For>
-						</div>
+function Quotes(props: { quotes: IBQuote[] | undefined }) {
+	return (
+		<For each={props.quotes ?? []}>
+			{(quote) => (
+				<blockquote>
+					{quote.text}
+					<Show when={quote.source}>{(source) => <cite>{source()}</cite>}</Show>
+				</blockquote>
+			)}
+		</For>
+	)
+}
+
+/** Key points as an exclusive-open accordion — headline as the summary, the
+ * elaboration and that point's verbatim quotes inside; the first point
+ * starts open so something is always readable without a click (settled
+ * 2026-08-15). */
+function PointsSection(props: { points: IBPoint[]; label: string }) {
+	return (
+		<Accordion density="compact" spacing="joined" label={props.label}>
+			<For each={props.points}>
+				{(point, at) => (
+					<Show
+						when={point.text.length > 0}
+						fallback={
+							<div class="ib-galaxy-point">
+								<Quotes quotes={point.quotes} />
+							</div>
+						}
+					>
+						<AccordionItem summary={point.text} open={at() === 0}>
+							<div class="ib-galaxy-point">
+								<Show when={point.detail}>{(detail) => <p>{detail()}</p>}</Show>
+								<Quotes quotes={point.quotes} />
+							</div>
+						</AccordionItem>
+					</Show>
+				)}
+			</For>
+		</Accordion>
+	)
+}
+
+function FacetBadge(props: { badge: string; badgeColor?: string }) {
+	return (
+		<span
+			class="ib-galaxy-badge"
+			style={props.badgeColor ? { background: props.badgeColor, color: '#fff' } : undefined}
+		>
+			{props.badge}
+		</span>
+	)
+}
+
+/** Actionable child-node rows with the reader's A–Z/reach ordering — never
+ * pre-ranked (the Respect principles). Choosing a row flies there; hovering
+ * highlights its body in the scene. */
+function NodesSection(props: {
+	section: Extract<IBContentSection, { kind: 'nodes' }>
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+}) {
+	const [sort, setSort] = createSignal(DEFAULT_GALAXY_SORT)
+	const rows = createMemo(() =>
+		sortRows(props.section.rows, sort(), (row) => row.label, (row) => row.weight ?? 0),
+	)
+	return (
+		<>
+			<div class="ib-galaxy-nodes-head">
+				<GalaxySortControl sort={sort()} onChange={setSort} />
+			</div>
+			<RichList label={props.section.title}>
+				<For each={rows()}>
+					{(row) => (
+						<RichListItem
+							title={row.label}
+							description={row.detail}
+							onSelect={() => props.onVisit(row.id)}
+							onHoverChange={(hovering) => props.onHoverNode?.(hovering ? row.id : null)}
+						/>
 					)}
 				</For>
-			</div>
+			</RichList>
+		</>
+	)
+}
+
+function SectionBody(props: {
+	section: IBContentSection
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+}) {
+	const section = props.section
+	if (section.kind === 'points') {
+		return <PointsSection points={section.points} label={section.title} />
+	}
+	if (section.kind === 'nodes') {
+		return (
+			<NodesSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
 		)
 	}
 	if (section.kind === 'facets') {
+		// Rows carrying analysis read as an accordion (badge in the summary,
+		// analysis inside, first open); badge-only rows stay a plain list.
+		if (section.rows.some((row) => row.analysis)) {
+			return (
+				<Accordion density="compact" spacing="joined" label={section.title}>
+					<For each={section.rows}>
+						{(row, at) => (
+							<AccordionItem
+								summary={() => (
+									<span class="ib-galaxy-acc-summary">
+										<span class="ib-galaxy-acc-label">{row.label}</span>
+										<Show when={row.badge}>
+											{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
+										</Show>
+									</span>
+								)}
+								open={at() === 0}
+							>
+								<div class="ib-galaxy-point">
+									<Show when={row.analysis}>{(analysis) => <p>{analysis()}</p>}</Show>
+								</div>
+							</AccordionItem>
+						)}
+					</For>
+				</Accordion>
+			)
+		}
 		return (
 			<RichList label={section.title}>
 				<For each={section.rows}>
 					{(row) => (
 						<RichListItem
 							title={row.label}
-							description={row.analysis}
 							trailing={
 								<span class="ib-galaxy-facet-trailing">
 									<Show when={row.badge}>
-										{(badge) => (
-											<span
-												class="ib-galaxy-badge"
-												style={
-													row.badgeColor
-														? { background: row.badgeColor, color: '#fff' }
-														: undefined
-												}
-											>
-												{badge()}
-											</span>
-										)}
+										{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
 									</Show>
 									<Show when={row.share !== undefined}>
 										<Meter value={(row.share ?? 0) * 100} max={100} />
@@ -141,6 +243,8 @@ function SectionBody(props: { section: IBContentSection }) {
 function JumpChips(props: {
 	entries: Array<{ id: IBNodeId; label: string }>
 	onVisit: (id: IBNodeId) => void
+	/** Chip hover mirrored into the scene (null on leave). */
+	onHoverNode?: (id: IBNodeId | null) => void
 }) {
 	return (
 		<div class="ib-galaxy-reader-related">
@@ -150,6 +254,8 @@ function JumpChips(props: {
 						type="button"
 						class="ib-galaxy-related-chip"
 						onClick={() => props.onVisit(entry.id)}
+						onPointerEnter={() => props.onHoverNode?.(entry.id)}
+						onPointerLeave={() => props.onHoverNode?.(null)}
 					>
 						{entry.label}
 					</button>
@@ -164,7 +270,10 @@ export function GalaxyInspectorOverview(props: {
 	title: string
 	/** Bench/status note (e.g. "fixture data"). */
 	note?: string
+	/** The active colour-by lens — its value swatches key the source dust. */
+	activeFacet?: string
 	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
 }) {
 	const census = createMemo(() =>
 		props.galaxy.tiers
@@ -177,11 +286,17 @@ export function GalaxyInspectorOverview(props: {
 	const midTier = createMemo(
 		() => props.galaxy.tiers.find((tier) => tier.tier === 1)?.labelPlural ?? 'Groups',
 	)
-	const largest = createMemo(() =>
-		props.galaxy.nodes
-			.filter((node) => node.tier === 1)
-			.sort((a, b) => b.weight - a.weight)
-			.slice(0, 6)
+	// Entry points under the READER'S ordering, never "largest first" — the
+	// Respect principles bar the package from pre-ranking by popularity.
+	const [themeSort, setThemeSort] = createSignal(DEFAULT_GALAXY_SORT)
+	const themeEntries = createMemo(() =>
+		sortRows(
+			props.galaxy.nodes.filter((node) => node.tier === 1),
+			themeSort(),
+			(node) => node.title,
+			(node) => node.weight,
+		)
+			.slice(0, 8)
 			.map((node) => ({ id: node.id, label: node.title })),
 	)
 	const hottest = createMemo(() => {
@@ -191,6 +306,16 @@ export function GalaxyInspectorOverview(props: {
 			.sort((a, b) => (b.intensity ?? 0) - (a.intensity ?? 0))
 			.slice(0, 5)
 			.map((node) => ({ id: node.id, label: node.title }))
+	})
+	// The active lens's key: value → swatch, matching the dust colours exactly
+	// (same palette function the engine uses).
+	const facetKey = createMemo(() => {
+		const key = props.activeFacet
+		if (key === undefined) return null
+		const label = props.galaxy.sourceFacets?.find((facet) => facet.key === key)?.label
+		const palette = [...facetPalette(facetValues(props.galaxy, key)).entries()]
+		if (palette.length === 0) return null
+		return { label: label ?? key, palette }
 	})
 	return (
 		<>
@@ -206,14 +331,42 @@ export function GalaxyInspectorOverview(props: {
 				<Show when={props.note}>{(note) => <p class="ib-galaxy-overview-note">{note()}</p>}</Show>
 			</InspectorHeader>
 			<section class="ib-galaxy-reader-section">
-				<Rule label={`Largest ${midTier().toLowerCase()}`} />
-				<JumpChips entries={largest()} onVisit={props.onVisit} />
+				<Rule label={midTier()} />
+				<div class="ib-galaxy-nodes-head">
+					<GalaxySortControl sort={themeSort()} onChange={setThemeSort} />
+				</div>
+				<JumpChips
+					entries={themeEntries()}
+					onVisit={props.onVisit}
+					onHoverNode={props.onHoverNode}
+				/>
 			</section>
 			<Show when={hottest().length > 0}>
 				<section class="ib-galaxy-reader-section">
 					<Rule label="Hottest topics" />
-					<JumpChips entries={hottest()} onVisit={props.onVisit} />
+					<JumpChips entries={hottest()} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
 				</section>
+			</Show>
+			<Show when={facetKey()}>
+				{(legend) => (
+					<section class="ib-galaxy-reader-section">
+						<Rule label={`Sources by ${legend().label.toLowerCase()}`} />
+						<ul class="ib-galaxy-facet-legend">
+							<For each={legend().palette}>
+								{([value, swatch]) => (
+									<li>
+										<span
+											class="ib-galaxy-facet-swatch"
+											style={{ background: swatch }}
+											aria-hidden="true"
+										/>
+										{value}
+									</li>
+								)}
+							</For>
+						</ul>
+					</section>
+				)}
 			</Show>
 		</>
 	)
@@ -227,17 +380,19 @@ export function GalaxyInspectorNode(props: {
 	content: () => IBNodeContent | null
 	onVisit: (id: IBNodeId) => void
 	onClear: () => void
+	onHoverNode?: (id: IBNodeId | null) => void
 	/** Host slot — "open the full drawer" links etc. */
 	action?: (node: IBNode) => JSX.Element
 }) {
-	const tierLabel = createMemo(
-		() => props.galaxy.tiers.find((tier) => tier.tier === props.node.tier)?.label ?? '',
+	const tierMeta = createMemo(() =>
+		props.galaxy.tiers.find((tier) => tier.tier === props.node.tier),
 	)
+	const tierLabel = createMemo(() => tierMeta()?.label ?? '')
 	return (
 		<>
 			<InspectorHeader eyebrow={<Eyebrow>{tierLabel()}</Eyebrow>} title={props.node.title}>
 				<p class="ib-galaxy-node-stats">
-					{props.node.weight} {props.galaxy.weightLabel}
+					{props.node.weight} {tierMeta()?.weightLabel ?? props.galaxy.weightLabel}
 					<Show when={props.node.intensityLabel !== undefined}>
 						{' '}
 						· {props.node.intensityLabel}
@@ -296,14 +451,22 @@ export function GalaxyInspectorNode(props: {
 											{(section) => (
 												<section class="ib-galaxy-reader-section">
 													<Rule label={section.title} />
-													<SectionBody section={section} />
+													<SectionBody
+														section={section}
+														onVisit={props.onVisit}
+														onHoverNode={props.onHoverNode}
+													/>
 												</section>
 											)}
 										</For>
 										<Show when={(content().related?.length ?? 0) > 0}>
 											<section class="ib-galaxy-reader-section">
 												<Rule label="Related" />
-												<JumpChips entries={content().related ?? []} onVisit={props.onVisit} />
+												<JumpChips
+													entries={content().related ?? []}
+													onVisit={props.onVisit}
+													onHoverNode={props.onHoverNode}
+												/>
 											</section>
 										</Show>
 									</>

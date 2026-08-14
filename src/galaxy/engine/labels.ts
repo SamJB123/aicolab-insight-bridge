@@ -64,9 +64,9 @@ export function createGalaxyLabels(
 		element.dataset.tier = String(tier)
 		element.textContent = galaxy.nodes[node].title
 		const object = new CSS2DObject(element)
-		// Topic labels sit clear of their PLANET (larger than the star), the
-		// anchor tiers just above their glow cores.
-		const lift = tier === 0 ? radii[node] * 3.4 + 1.6 : radii[node] * 1.6 + 0.9
+		// Topic/source labels sit clear of their body (stars glow, sources
+		// planetify), the anchor tiers just above their glow cores.
+		const lift = tier <= 0 ? radii[node] * 3.4 + 1.6 : radii[node] * 1.6 + 0.9
 		object.position.set(
 			positions[node * 3],
 			positions[node * 3 + 1],
@@ -76,9 +76,11 @@ export function createGalaxyLabels(
 		return object
 	}
 
+	// Anchor tiers only: sources (tier -1) are unnamed dust at rest and get
+	// their labels via setFocusTopics when a constellation planetifies them.
 	const anchors: AnchorLabel[] = []
 	galaxy.nodes.forEach((node, i) => {
-		if (node.tier === 0) return
+		if (node.tier <= 0) return
 		const object = makeLabel(i, node.tier)
 		anchors.push({ node: i, tier: node.tier, object })
 		group.add(object)
@@ -95,7 +97,7 @@ export function createGalaxyLabels(
 				label.element.remove()
 			}
 			topicLabels = topics.map((node) => {
-				const object = makeLabel(node, 0)
+				const object = makeLabel(node, galaxy.nodes[node].tier)
 				group.add(object)
 				return object
 			})

@@ -10,7 +10,7 @@
 
 import * as THREE from 'three/webgpu'
 import type { IBGalaxy, IBNodeId } from '../types.ts'
-import { primaryParents } from '../layout/spiral-seed.ts'
+import { primaryParents } from '../layout/cosmos.ts'
 
 export interface ArmIdentity {
 	/** Node index → index into `hues` (and `ownerNodes`), or -1 (orphans). */

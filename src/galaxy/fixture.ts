@@ -42,6 +42,8 @@ export interface FixtureGalaxyOptions {
 	families?: number
 	groups?: number
 	topics?: number
+	/** Source/contributor nodes (tier -1 dust) with topic memberships. */
+	sources?: number
 	/** Share of topics that get a secondary (non-primary) parent. */
 	secondaryShare?: number
 	/** Attach stance mixes (legal/basin flavour) vs none (audit flavour). */
@@ -94,6 +96,23 @@ const QUALIFIERS = [
 	'Annual',
 	'Independent',
 ]
+const ORG_NOUNS = [
+	'Alliance',
+	'Institute',
+	'Commission',
+	'Council',
+	'Observatory',
+	'Cooperative',
+	'Authority',
+	'Federation',
+	'Chamber',
+	'Trust',
+]
+const FIXTURE_FACETS: Record<string, string[]> = {
+	Voice: ['Academia', 'Practitioners', 'Industry', 'Government', 'Civil society'],
+	Era: ['Pre-2010', '2010s', 'Early 2020s', 'Mid 2020s'],
+}
+const MEMBERSHIP_GRADES = ['standard', 'standard', 'standard', 'high_value', 'high_value', 'exemplar'] as const
 
 export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy {
 	const {
@@ -101,6 +120,7 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 		families = 7,
 		groups = 34,
 		topics = 180,
+		sources = 140,
 		secondaryShare = 0.15,
 		withMix = true,
 		orphans = 2,
@@ -238,20 +258,69 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 		}
 	}
 
+	// Sources: skewed engagement (a few prolific contributors, a long tail of
+	// single-topic ones), each membership carrying BOTH layout signals — the
+	// 3-step grade and a continuous soft intensity varied around it.
+	const facetKeys = Object.keys(FIXTURE_FACETS)
+	for (let k = 0; k < sources; k++) {
+		const memberships = 1 + Math.floor(rng() ** 1.8 * 6)
+		const joined = new Set<number>()
+		let bestGrade = -1
+		let bestTopic = -1
+		const pending: Array<{ topic: number; grade: number }> = []
+		for (let m = 0; m < memberships; m++) {
+			const topic = skewedIndex(topics - orphans)
+			if (joined.has(topic)) continue
+			joined.add(topic)
+			const gradeName = pick(MEMBERSHIP_GRADES)
+			const grade = gradeName === 'exemplar' ? 10 : gradeName === 'high_value' ? 5 : 1
+			pending.push({ topic, grade })
+			if (grade > bestGrade) {
+				bestGrade = grade
+				bestTopic = topic
+			}
+		}
+		const facets: Record<string, string> = {}
+		for (const key of facetKeys) facets[key] = pick(FIXTURE_FACETS[key])
+		// A source's weight counts the TOPICS it engages (breadth — the tier
+		// meta names it); membership depth shapes the layout, not the size.
+		nodes.push({
+			id: `s:${k}`,
+			tier: -1,
+			title: `${pick(QUALIFIERS)} ${pick(REALMS)} ${pick(ORG_NOUNS)}`,
+			key: 100000 + k,
+			weight: Math.max(1, joined.size),
+			facets,
+		})
+		for (const { topic, grade } of pending) {
+			edges.push({
+				child: `s:${k}`,
+				parent: `t:${topic}`,
+				isPrimary: topic === bestTopic,
+				membershipType: grade === 10 ? 'exemplar' : grade === 5 ? 'high_value' : 'standard',
+				similarity: grade / 10,
+				softIntensity: grade * (0.4 + rng() ** 1.2 * 2),
+			})
+		}
+	}
+
 	const tiers: IBTierMeta[] =
 		families > 0
 			? [
 					{ tier: 2, label: 'Family', labelPlural: 'Families' },
 					{ tier: 1, label: 'Theme', labelPlural: 'Themes' },
 					{ tier: 0, label: 'Topic', labelPlural: 'Topics' },
+					{ tier: -1, label: 'Source', labelPlural: 'Sources', weightLabel: 'topics' },
 				]
 			: [
 					{ tier: 1, label: 'Group', labelPlural: 'Groups' },
 					{ tier: 0, label: 'Topic', labelPlural: 'Topics' },
+					{ tier: -1, label: 'Source', labelPlural: 'Sources', weightLabel: 'topics' },
 				]
 
 	return {
 		tiers,
+		sourceFacets: facetKeys.map((key) => ({ key, label: key })),
 		nodes,
 		edges,
 		weightLabel: 'sources',
@@ -306,6 +375,7 @@ export function buildFixtureContent(node: IBNode): IBNodeContent {
 				title: 'Key points',
 				points: Array.from({ length: pointCount }, () => ({
 					text: pick(POINT_SHAPES).replace('%s', subject),
+					detail: `The elaboration behind this point about ${subject} — fixture prose standing in for the extracted detail, long enough to prove the accordion body wraps properly.`,
 					quotes:
 						rng() < 0.8
 							? [

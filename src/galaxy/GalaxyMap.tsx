@@ -26,8 +26,10 @@ import {
 	CommandPalette,
 	type CommandPaletteItem,
 	CommandPaletteTrigger,
+	Eyebrow,
 	ResponsiveInspector,
 	SceneStage,
+	Segmented,
 	StageHint,
 	WorkspaceNavigation,
 	WorkspaceShell,
@@ -51,14 +53,16 @@ import {
 	GalaxyInspectorOverview,
 } from './chrome/inspector-content.tsx'
 import { GalaxyNavigator } from './chrome/navigator.tsx'
-import { primaryParents } from './layout/spiral-seed.ts'
+import { primaryParents } from './layout/cosmos.ts'
 import type {
 	GalaxyCommand,
 	GalaxyEvents,
 	IBGalaxy,
+	IBIntensityMode,
 	IBNode,
 	IBNodeContent,
 	IBNodeId,
+	IBTier,
 } from './types.ts'
 import './galaxy-map.css'
 
@@ -104,11 +108,23 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	})
 
 	const adapter = createGalaxyAdapter()
-	// Stable unless the corpus itself changes — a fresh configuration object
-	// every render would remount the renderer.
-	const configuration = createMemo(
-		(): GalaxyConfiguration => ({ galaxy: props.galaxy }),
+	// The intensity mode weights the force layout itself, so switching it
+	// deliberately re-bakes the sky (an engine remount via configuration).
+	const [intensityMode, setIntensityMode] = createSignal<IBIntensityMode>('grades')
+	// Only corpora carrying continuous scores can offer the choice.
+	const hasSoftScores = createMemo(() =>
+		props.galaxy.edges.some((edge) => edge.softIntensity !== undefined && edge.softIntensity !== null),
 	)
+	// Stable unless the corpus (or bake mode) changes — a fresh configuration
+	// object every render would remount the renderer.
+	const configuration = createMemo(
+		(): GalaxyConfiguration => ({ galaxy: props.galaxy, intensityMode: intensityMode() }),
+	)
+
+	// The colour-by lens: which source facet paints the dust.
+	const facets = createMemo(() => props.galaxy.sourceFacets ?? [])
+	const [chosenFacet, setChosenFacet] = createSignal<string | undefined>(undefined)
+	const activeFacet = createMemo(() => chosenFacet() ?? facets()[0]?.key)
 
 	const [hovered, setHovered] = createSignal<IBNode | null>(null)
 	const [selected, setSelected] = createSignal<IBNode | null>(null)
@@ -133,6 +149,27 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		setInteracted(true)
 		localRevision += 1
 		setCommand({ focus: node.id, revision: localRevision })
+	}
+	const chooseFacet = (key: string): void => {
+		setChosenFacet(key)
+		localRevision += 1
+		setCommand({ colorFacet: key, revision: localRevision })
+	}
+	/** Chrome hover → scene highlight (rows, chips). Scene pointer hover
+	 * wins engine-side while the pointer is over the canvas. */
+	const hoverNode = (id: IBNodeId | null): void => {
+		localRevision += 1
+		setCommand({ highlight: id, revision: localRevision })
+	}
+	const chooseIntensityMode = (mode: IBIntensityMode): void => {
+		setIntensityMode(mode)
+		// The re-baked engine starts on the default lens — restate the choice
+		// so the fresh mount picks it up from the buffered command.
+		const facet = activeFacet()
+		if (facet !== undefined) {
+			localRevision += 1
+			setCommand({ colorFacet: facet, revision: localRevision })
+		}
 	}
 
 	const engineEvents: GalaxyEvents = {
@@ -191,13 +228,18 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		]
 	})
 
+	/** What a tier's weight counts (sources' weight counts topics, etc.). */
+	const weightLabelFor = (tier: IBTier): string =>
+		props.galaxy.tiers.find((meta) => meta.tier === tier)?.weightLabel ??
+		props.galaxy.weightLabel
+
 	const paletteId = `ib-galaxy-palette-${createUniqueId()}`
 	const paletteItems = createMemo((): CommandPaletteItem[] => {
 		const tierLabel = new Map(props.galaxy.tiers.map((tier) => [tier.tier, tier.label]))
 		return props.galaxy.nodes.map((node) => ({
 			id: node.id,
 			label: node.title,
-			detail: `${node.weight} ${props.galaxy.weightLabel}${
+			detail: `${node.weight} ${weightLabelFor(node.tier)}${
 				node.intensityLabel ? ` · ${node.intensityLabel}` : ''
 			}`,
 			kind: tierLabel.get(node.tier),
@@ -235,8 +277,10 @@ export function GalaxyMap(props: GalaxyMapProps) {
 									title={props.title}
 									focused={focused()}
 									selected={selected()}
+									hovered={hovered()}
 									onChoose={chooseNode}
 									onRoot={() => navigate(null)}
+									onHoverNode={hoverNode}
 								/>
 							</WorkspaceNavigation>
 						}
@@ -271,13 +315,45 @@ export function GalaxyMap(props: GalaxyMapProps) {
 												<StageHint>{props.hint ?? DEFAULT_HINT}</StageHint>
 											</div>
 										</Show>
+										<Show when={facets().length > 1 || hasSoftScores()}>
+											<div class="ib-galaxy-lenses">
+												<Show when={facets().length > 1}>
+													<div class="ib-galaxy-lens">
+														<Eyebrow>Colour sources by</Eyebrow>
+														<Segmented
+															label="Colour sources by facet"
+															options={facets().map((facet) => ({
+																id: facet.key,
+																label: facet.label,
+															}))}
+															value={activeFacet() ?? ''}
+															onChange={chooseFacet}
+														/>
+													</div>
+												</Show>
+												<Show when={hasSoftScores()}>
+													<div class="ib-galaxy-lens">
+														<Eyebrow>Membership weighting</Eyebrow>
+														<Segmented
+															label="Membership weighting"
+															options={[
+																{ id: 'grades', label: 'Graded' },
+																{ id: 'soft', label: 'Continuous' },
+															]}
+															value={intensityMode()}
+															onChange={chooseIntensityMode}
+														/>
+													</div>
+												</Show>
+											</div>
+										</Show>
 										<Show when={hovered()}>
 											{(node) => (
 												<Show when={node().id !== selected()?.id}>
 													<div class="ib-galaxy-hover">
 														<WorkspaceStageTooltip
 															label={node().title}
-															detail={`${node().weight} ${props.galaxy.weightLabel}${
+															detail={`${node().weight} ${weightLabelFor(node().tier)}${
 																node().intensityLabel
 																	? ` · ${node().intensityLabel}`
 																	: ''
@@ -305,7 +381,9 @@ export function GalaxyMap(props: GalaxyMapProps) {
 											galaxy={props.galaxy}
 											title={props.title}
 											note={props.overviewNote}
+											activeFacet={activeFacet()}
 											onVisit={visit}
+											onHoverNode={hoverNode}
 										/>
 									}
 								>
@@ -316,6 +394,7 @@ export function GalaxyMap(props: GalaxyMapProps) {
 											content={readerContent}
 											onVisit={visit}
 											onClear={() => setSelected(null)}
+											onHoverNode={hoverNode}
 											action={props.readerAction}
 										/>
 									)}

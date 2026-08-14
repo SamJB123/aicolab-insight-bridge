@@ -178,6 +178,54 @@
 			max-inline-size: 34rem;
 		}
 
+		/* ── Lens controls: colour-by facet + membership weighting ──────── */
+		/* Bottom-left, stacked; each lens is an eyebrow over a Segmented.
+		 * Sits above the onboarding hint's centre lane, clear of the drawer. */
+		.ib-galaxy-lenses {
+			position: absolute;
+			inset-block-end: 0.9rem;
+			inset-inline-start: 1rem;
+			display: flex;
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.55rem;
+		}
+
+		.ib-galaxy-lens {
+			display: flex;
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.25rem;
+			padding: 0.45rem 0.6rem;
+			border-radius: var(--r-lg);
+			background: var(--color-overlay-surface);
+			border: 1px solid var(--color-overlay-border);
+		}
+
+		/* ── Facet legend (inspector overview) ──────────────────────────── */
+		.ib-galaxy-facet-legend {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.35rem 0.9rem;
+			font-size: var(--t-xs);
+		}
+
+		.ib-galaxy-facet-legend li {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4rem;
+		}
+
+		.ib-galaxy-facet-swatch {
+			inline-size: 0.7rem;
+			block-size: 0.7rem;
+			border-radius: 50%;
+			flex: none;
+		}
+
 		/* ── Left navigator: contextual drill-down ──────────────────────── */
 		/* Filter, back row and context header stay anchored (flex: none — a
 		 * shrinkable header is how the back row got crushed under the list);
@@ -260,6 +308,43 @@
 			margin: 0;
 			font-size: var(--t-xs);
 			color: var(--color-base-content-muted);
+		}
+
+		/* The reader's ordering control (A–Z / reach, reversible) — compact
+		 * everywhere it appears; row lists must never be pre-ranked. */
+		.ib-galaxy-nav-sort {
+			flex: none;
+			display: flex;
+			justify-content: flex-start;
+		}
+
+		.ib-galaxy-nodes-head {
+			display: flex;
+			justify-content: flex-start;
+			margin-block-end: 0.45rem;
+		}
+
+		/* Accordion summaries that pair a label with a stance badge. */
+		.ib-galaxy-acc-summary {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			flex-wrap: wrap;
+			min-inline-size: 0;
+		}
+
+		.ib-galaxy-acc-label {
+			min-inline-size: 0;
+		}
+
+		/* Reverse hover sync: scene pointer hover tints the matching row with
+		 * the SAME voice as the row's own :hover (ink adapters + surface), so
+		 * panel and sky always agree about what's under the pointer. */
+		.ib-galaxy-nav-rows .ui-rich-list-item.ib-galaxy-nav-hot:not([data-selected]) {
+			--_ui-rl-title-ink: var(--ui-ink-selected);
+			--_ui-rl-description-ink: var(--ui-ink-selected);
+			background: var(--ui-surface-selected);
+			color: var(--ui-ink-selected);
 		}
 
 		/* ── Inspector content (base surface, not overlay) ──────────────── */

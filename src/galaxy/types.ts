@@ -16,10 +16,15 @@
  * keyed by `key`.
  */
 
-/** 0 = leaf topic · 1 = mid group (theme/supercluster) · 2 = top family. */
-export type IBTier = 0 | 1 | 2
+/** -1 = source/contributor · 0 = leaf topic · 1 = mid group
+ * (theme/supercluster) · 2 = top family. Sources joined the sky in the
+ * cosmos-v2 rework (2026-08-14): they render as facet-coloured dust, fully
+ * present in the force layout; groups and families no longer have bodies at
+ * all (constellation line-work and nebula fog respectively). */
+export type IBTier = -1 | 0 | 1 | 2
 
-/** Namespaced so ids can't collide across tiers: `t:106` | `g1:14` | `g2:3`. */
+/** Namespaced so ids can't collide across tiers:
+ * `s:acme-inst` | `t:106` | `g1:14` | `g2:3`. */
 export type IBNodeId = string
 
 export interface IBFlag {
@@ -57,20 +62,43 @@ export interface IBNode {
 	/** Primary children, for cluster sizing and breadcrumb counts. */
 	childCount?: number
 	flags?: IBFlag[]
+	/** Source nodes only: facet values keyed by `IBGalaxy.sourceFacets` keys
+	 * (e.g. { Voice: 'Academia', Era: '2020s' }) — drives the colour-by-facet
+	 * dust lens. */
+	facets?: Record<string, string>
 }
 
-/** Child→parent membership across adjacent tiers. Multi-parent is legal:
- * audit topics genuinely belong to several superclusters — exactly one edge
- * per child should be primary (it wins placement; the rest tug the bake and
- * light up as secondary beams). */
+/** Child→parent membership across adjacent tiers. Multi-parent is legal
+ * everywhere: audit topics belong to several superclusters, and SOURCES
+ * (tier -1 children of topics) typically feed many topics — exactly one
+ * edge per child should be primary (highest membership grade; it names the
+ * source's "sun"). Source→topic edges are the layout's input signal: their
+ * membershipType maps to the legacy intensity grades
+ * {exemplar: 10, high_value: 5, standard/member: 1}. */
 export interface IBEdge {
 	child: IBNodeId
 	parent: IBNodeId
 	isPrimary: boolean
-	/** exemplar | high_value | member — audit's membership strength tiers. */
+	/** exemplar | high_value | standard/member — membership strength tiers. */
 	membershipType?: string | null
-	/** 0..1 where known; brightens the beam. */
+	/** 0..1 where known. */
 	similarity?: number | null
+	/** Continuous membership weight (aggregated chunk soft scores) — the
+	 * alternative layout signal to the 3-step grades. Any positive scale;
+	 * the bake normalises per edge class. */
+	softIntensity?: number | null
+}
+
+/** Which signal drives the force layout: the legacy 3-step membership
+ * grades, or the continuous soft scores (where the corpus supplies them). */
+export type IBIntensityMode = 'grades' | 'soft'
+
+/** A colour-by lens over the source dust (voice, era, body type, sector…). */
+export interface IBSourceFacet {
+	/** Key into `IBNode.facets`. */
+	key: string
+	/** Display name for the picker. */
+	label: string
 }
 
 export interface IBTierMeta {
@@ -78,6 +106,10 @@ export interface IBTierMeta {
 	/** Singular display name — "Family" | "Theme" | "Topic". */
 	label: string
 	labelPlural: string
+	/** What this tier's `weight` counts, when it differs from the galaxy's
+	 * `weightLabel` — e.g. a source's weight counts topic memberships while
+	 * every other tier counts sources. */
+	weightLabel?: string
 }
 
 /* ── Node content (full drawer parity, settled 2026-08-14) ──────────────
@@ -95,7 +127,11 @@ export interface IBQuote {
 }
 
 export interface IBPoint {
+	/** The headline — an accordion summary, so keep it one scannable line. */
 	text: string
+	/** Elaboration shown inside the opened point (never concatenated into
+	 * `text`: the headline/detail split IS the reading anatomy). */
+	detail?: string
 	quotes?: IBQuote[]
 }
 
@@ -120,10 +156,25 @@ export interface IBEntityRow {
 	max?: number
 }
 
+/** One ACTIONABLE child-node row (a theme's topics, a family's themes):
+ * choosing it flies the camera there, hovering it highlights the body in the
+ * scene. Rendered with the reader-switchable A–Z/reach ordering — the
+ * package NEVER pre-ranks these (the Respect principles: how common a view
+ * is does not say how much it matters). */
+export interface IBNodeRow {
+	id: IBNodeId
+	label: string
+	/** Quiet corpus-describing metadata ("12 sources") — text, never a bar. */
+	detail?: string
+	/** Reach value for the reader's optional reach ordering. */
+	weight?: number
+}
+
 export type IBContentSection =
 	| { kind: 'points'; title: string; points: IBPoint[] }
 	| { kind: 'facets'; title: string; rows: IBFacetRow[] }
 	| { kind: 'entities'; title: string; rows: IBEntityRow[] }
+	| { kind: 'nodes'; title: string; rows: IBNodeRow[] }
 
 export interface IBNodeContent {
 	/** One-paragraph framing, rendered under the title. */
@@ -143,6 +194,12 @@ export interface GalaxyCommand {
 	 * itself flies too; this exists so hosts can drive the camera from list
 	 * rows and deep links. */
 	focus?: IBNodeId | null
+	/** Colour the source dust by this facet key (from sourceFacets). */
+	colorFacet?: string
+	/** Light a node up exactly as scene hover would (`null` clears) — chrome
+	 * rows/chips drive this so panel and sky always agree about what the
+	 * pointer is over. Pointer hover over the canvas wins while present. */
+	highlight?: IBNodeId | null
 	revision: number
 }
 
@@ -156,8 +213,10 @@ export interface GalaxyEvents {
 }
 
 export interface IBGalaxy {
-	/** One entry per tier PRESENT — basin passes two, the others three. */
+	/** One entry per tier PRESENT (include -1 when sources ride along). */
 	tiers: IBTierMeta[]
+	/** Colour-by lenses available for the source dust, picker order. */
+	sourceFacets?: IBSourceFacet[]
 	nodes: IBNode[]
 	edges: IBEdge[]
 	/** Legend name for `weight` — "sources" | "bodies" | "entities". */

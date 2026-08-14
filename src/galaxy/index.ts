@@ -23,18 +23,15 @@ export {
 	FIXTURE_MIX_ORDER,
 	type FixtureGalaxyOptions,
 } from './fixture.ts'
+export { facetPalette, facetValues } from './facets.ts'
 export { GalaxyMap, type GalaxyMapProps } from './GalaxyMap.tsx'
 export {
 	bakeGalaxyLayout,
-	type GalaxyBakeOptions,
-	relaxGalaxyLayout,
-} from './layout/bake.ts'
-export {
+	type CosmosBakeOptions,
+	DISC_RADIUS,
 	type GalaxyLayout,
-	type GalaxyLayoutOptions,
 	primaryParents,
-	seedGalaxyLayout,
-} from './layout/spiral-seed.ts'
+} from './layout/cosmos.ts'
 export type {
 	GalaxyCommand,
 	GalaxyEvents,
@@ -44,11 +41,14 @@ export type {
 	IBFacetRow,
 	IBFlag,
 	IBGalaxy,
+	IBIntensityMode,
 	IBNode,
 	IBNodeContent,
 	IBNodeId,
+	IBNodeRow,
 	IBPoint,
 	IBQuote,
+	IBSourceFacet,
 	IBTier,
 	IBTierMeta,
 } from './types.ts'

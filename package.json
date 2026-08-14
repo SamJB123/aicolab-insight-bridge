@@ -25,7 +25,8 @@
 		"three": "catalog:"
 	},
 	"dependencies": {
-		"@aicolab/better-auth": "workspace:^"
+		"@aicolab/better-auth": "workspace:^",
+		"d3-force": "catalog:"
 	},
 	"devDependencies": {
 		"@aicolab/kolo": "workspace:^",
@@ -35,6 +36,7 @@
 		"@solidjs/web": "catalog:",
 		"@tanstack/solid-router": "catalog:",
 		"@tanstack/solid-start": "catalog:",
+		"@types/d3-force": "catalog:",
 		"@types/three": "catalog:",
 		"solid-js": "catalog:",
 		"three": "catalog:",

@@ -8,12 +8,15 @@
 
 import type { SceneStageAdapter } from '@aicolab/ui-solid'
 import type { GalaxyEngineHandle } from './engine/engine.ts'
-import type { GalaxyCommand, GalaxyEvents, IBGalaxy } from './types.ts'
+import type { GalaxyCommand, GalaxyEvents, IBGalaxy, IBIntensityMode } from './types.ts'
 
 /** Renderer construction inputs. SceneStage remounts the engine when this
- * value changes — hand it a stable (memoed) object. */
+ * value changes — hand it a stable (memoed) object. The intensity mode is a
+ * LAYOUT input (it changes the baked sky), so switching it is deliberately a
+ * remount, not a command. */
 export interface GalaxyConfiguration {
 	galaxy: IBGalaxy
+	intensityMode?: IBIntensityMode
 }
 
 export function createGalaxyAdapter(): SceneStageAdapter<
@@ -33,6 +36,7 @@ export function createGalaxyAdapter(): SceneStageAdapter<
 						canvas: context.canvas,
 						host: context.host,
 						galaxy: context.configuration.galaxy,
+						intensityMode: context.configuration.intensityMode,
 						events: context.events,
 						onReady: context.onReady,
 						onError: context.onError,
