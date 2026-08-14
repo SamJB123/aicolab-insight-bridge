@@ -76,7 +76,18 @@ export interface PoweredByInsightBridgeProps<
 
 // Strict public signature: TRouter pinned for TypeScript performance, TOptions
 // left open so the consumer's `to` / `params` / `search` infer correctly.
-export function PoweredByInsightBridge<
+//
+// The overload pair lives on a camelCase name, alias-exported as
+// `PoweredByInsightBridge` below: the Solid 2 RC dev toolchain's HMR
+// transform rewrites every componentish-NAMED (PascalCase) function into
+// `const <name> = $$component(…)` — bodiless overload declarations included —
+// which collides with the surviving overload declaration (duplicate
+// identifier, breaking every consumer's client transform; found 2026-08-14).
+// The camelCase name sits outside the transform's component heuristic, so the
+// documented ValidateLinkOptions pattern survives intact. The only cost is
+// dev HMR registration for this one component (edits full-reload instead of
+// hot-swap).
+function poweredByInsightBridge<
 	TRouter extends RegisteredRouter = RegisteredRouter,
 	TOptions = unknown,
 >(props: PoweredByInsightBridgeProps<TRouter, TOptions>): JSX.Element
@@ -84,7 +95,7 @@ export function PoweredByInsightBridge<
 // Loose implementation signature — never called directly by consumers. Only
 // `linkOptions` is spread, so `label` and `class` cannot leak onto the anchor
 // as stray DOM attributes; props are read (not destructured) to stay reactive.
-export function PoweredByInsightBridge(props: PoweredByInsightBridgeProps): JSX.Element {
+function poweredByInsightBridge(props: PoweredByInsightBridgeProps): JSX.Element {
 	return (
 		<Link
 			{...props.linkOptions}
@@ -96,3 +107,5 @@ export function PoweredByInsightBridge(props: PoweredByInsightBridgeProps): JSX.
 		</Link>
 	)
 }
+
+export { poweredByInsightBridge as PoweredByInsightBridge }

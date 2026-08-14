@@ -8,3 +8,10 @@ declare module '*.svg?url' {
 	const url: string
 	export default url
 }
+
+/**
+ * Side-effect CSS imports (component CSS rides along with the component
+ * module, better-auth/solid style). Consuming apps' bundlers collect these;
+ * this ambient declaration only satisfies `noUncheckedSideEffectImports`.
+ */
+declare module '*.css' {}

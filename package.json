@@ -5,32 +5,40 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./galaxy": "./src/galaxy/index.ts",
 		"./server": "./src/server/index.ts",
 		"./styles.css": "./src/styles.css",
 		"./package.json": "./package.json"
 	},
 	"scripts": {
-		"check-types": "tsc --noEmit"
+		"check-types": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"peerDependencies": {
-		"@aicolab/ui-solid": "workspace:^",
-		"@modelcontextprotocol/sdk": "catalog:",
-		"@solidjs/web": "catalog:",
-		"@tanstack/solid-router": "catalog:",
-		"@tanstack/solid-start": "catalog:",
-		"solid-js": "catalog:"
-	},
-	"dependencies": {
-		"@aicolab/better-auth": "workspace:^"
-	},
-	"devDependencies": {
-		"@aicolab/tsconfig": "workspace:^",
+		"@aicolab/kolo": "workspace:^",
 		"@aicolab/ui-solid": "workspace:^",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@solidjs/web": "catalog:",
 		"@tanstack/solid-router": "catalog:",
 		"@tanstack/solid-start": "catalog:",
 		"solid-js": "catalog:",
-		"typescript": "catalog:"
+		"three": "catalog:"
+	},
+	"dependencies": {
+		"@aicolab/better-auth": "workspace:^"
+	},
+	"devDependencies": {
+		"@aicolab/kolo": "workspace:^",
+		"@aicolab/tsconfig": "workspace:^",
+		"@aicolab/ui-solid": "workspace:^",
+		"@modelcontextprotocol/sdk": "catalog:",
+		"@solidjs/web": "catalog:",
+		"@tanstack/solid-router": "catalog:",
+		"@tanstack/solid-start": "catalog:",
+		"@types/three": "catalog:",
+		"solid-js": "catalog:",
+		"three": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	}
 }
