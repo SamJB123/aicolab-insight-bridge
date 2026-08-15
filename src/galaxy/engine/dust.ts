@@ -108,7 +108,15 @@ export function createDust(data: DustData): Dust {
 	const anchorLevel = mix(float(0.06), float(1.0), aHighlight)
 	const dimming = mix(float(1), anchorLevel, uniforms.anchorActive)
 
-	const d = uv().sub(0.5).length()
+	// The hyperbolic falloff is clamped away from its centre singularity:
+	// 0.05/d is unbounded as d→0, so whenever a fragment sample happened to
+	// land near a grain's uv centre (likelier the bigger the grain drew on
+	// screen), that grain flared orders of magnitude over its neighbours and
+	// FLICKERED as the sub-pixel alignment shifted every frame — bloom then
+	// amplified the spike (angle-dependent bright-flicker bug, 2026-08-16).
+	// The clamp bounds the peak at ~1.3 while leaving the visible falloff
+	// (d ≳ 0.05 across a normally-sized grain) untouched.
+	const d = uv().sub(0.5).length().max(0.035)
 	const glow = float(0.05).div(d).sub(0.1).max(0)
 	const brightness = float(0.34).mul(dimming).mul(ignite.mul(1.4).add(1))
 	material.colorNode = aColor.mul(glow).mul(brightness)

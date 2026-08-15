@@ -80,8 +80,6 @@ export interface GalaxyMapProps {
 	/** The reading contract: real drawer content for a node, shown in the
 	 * inspector when a selection binds it. */
 	loadContent?: (node: IBNode) => Promise<IBNodeContent | null>
-	/** Header slot inside the bound inspector — the host's "open full view" link. */
-	readerAction?: (node: IBNode) => JSX.Element
 	/** Bench/status note shown under the left menu's census. */
 	overviewNote?: string
 	/** Onboarding hint text over the stage. */
@@ -199,15 +197,19 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	 * (topics/sources) select. */
 	const pickNode = (node: IBNode): void => {
 		setInteracted(true)
+		// Containers clear the ENGINE selection too (select: null), not just
+		// the chrome's — without it, stepping back to an already-focused
+		// group via the breadcrumb early-returns engine-side and the selected
+		// topic's fleet + contributor labels stay stale (fixed 2026-08-16).
 		if (node.tier === 2) {
 			setTopicPath({ family: node.id, group: null })
 			setSelected(null)
-			issue({ focus: node.id })
+			issue({ select: null, focus: node.id })
 		} else if (node.tier === 1) {
 			const family = parentNode(node)
 			setTopicPath({ family: family?.id ?? null, group: node.id })
 			setSelected(null)
-			issue({ focus: node.id })
+			issue({ select: null, focus: node.id })
 		} else {
 			chooseNode(node)
 		}
@@ -577,7 +579,6 @@ export function GalaxyMap(props: GalaxyMapProps) {
 												issue({ select: null })
 											}}
 											onHoverNode={hoverNode}
-											action={props.readerAction}
 										/>
 									)}
 								</Show>

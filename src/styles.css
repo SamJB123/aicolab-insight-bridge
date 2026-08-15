@@ -355,3 +355,21 @@ a.ib-corpus-ref:focus-visible {
 	font-size: 0.88rem;
 	line-height: 1.5;
 }
+
+/* NO /galaxy frame styling here (settled 2026-08-16 after the body:has()
+   detour): the app shell (100dvh flex column, main as the flexing scroll
+   pane) is each HOST's own base layout, and GalaxyMap's root already fills
+   whatever frame the host hands it (galaxy-map.css: block-size 100%, flex
+   end-to-end, no viewport math). Nothing here may style the host document. */
+
+/* NO find-in-page (::search-text) author styling anywhere in a galaxy
+   host — measured ban (perf audit 2026-08-16, Chromium 144). The PRESENCE
+   of any `::search-text:current` rule — any value, any ancestor scope —
+   taxes EVERY style recalc document-wide; with hundreds of galaxy pins
+   recalcing per moving frame it was THE camera-motion chug (9fps orbiting
+   with the rule, ~120fps without; rule-level bisect). And a plain
+   ::search-text rule WITHOUT a :current twin is worse than nothing: it
+   outcascades the UA's :current default, making the active match
+   indistinguishable while stepping through matches. Native styling
+   (yellow matches, orange current) applies in full. Re-test before any
+   consumer restores either rule. */

@@ -21,7 +21,6 @@ import {
 	RichListItem,
 	Rule,
 } from '@aicolab/ui-solid'
-import type { JSX } from '@solidjs/web'
 import { createMemo, createSignal, Errored, For, Loading, Show } from 'solid-js'
 import type {
 	IBContentSection,
@@ -278,8 +277,6 @@ export function GalaxyInspectorNode(props: {
 	onVisit: (id: IBNodeId) => void
 	onClear: () => void
 	onHoverNode?: (id: IBNodeId | null) => void
-	/** Host slot — "open the full drawer" links etc. */
-	action?: (node: IBNode) => JSX.Element
 }) {
 	const tierMeta = createMemo(() =>
 		props.galaxy.tiers.find((tier) => tier.tier === props.node.tier),
@@ -311,6 +308,13 @@ export function GalaxyInspectorNode(props: {
 	})
 	return (
 		<>
+			{/* The same ‹ Back anatomy as every drill level (settled
+			    2026-08-16, replacing the header's "Back to overview" chip and
+			    the host "full record" slot — this reader IS the record):
+			    returns to the drill exactly where it was left. */}
+			<button type="button" class="ib-galaxy-nav-back" onClick={() => props.onClear()}>
+				<span aria-hidden="true">‹</span> Back
+			</button>
 			<InspectorHeader eyebrow={<Eyebrow>{tierLabel()}</Eyebrow>} title={props.node.title}>
 				<p class="ib-galaxy-node-stats">
 					{props.node.weight} {tierMeta()?.weightLabel ?? props.galaxy.weightLabel}
@@ -331,16 +335,6 @@ export function GalaxyInspectorNode(props: {
 						</For>
 					</div>
 				</Show>
-				<div class="ib-galaxy-inspector-actions">
-					{props.action?.(props.node)}
-					<button
-						type="button"
-						class="ib-galaxy-related-chip"
-						onClick={() => props.onClear()}
-					>
-						Back to overview
-					</button>
-				</div>
 			</InspectorHeader>
 			<Errored
 				fallback={(err) => (
