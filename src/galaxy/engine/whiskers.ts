@@ -111,7 +111,10 @@ export function createWhiskers(links: WhiskerLink[], positions: Float32Array): W
 	const mid = positionGeometry.add(axis.mul(t))
 	const toCamera = cameraPosition.sub(mid).add(vec3(0.011, 0.017, 0.013))
 	const ribbon = axis.cross(toCamera).normalize()
-	material.positionNode = mid.add(ribbon.mul(side).mul(uWidth))
+	// Width follows the grade ladder too: exemplar links render solid,
+	// member links hairline (settled 2026-08-15).
+	const width = uWidth.mul(aStrength.mul(0.9).add(0.45))
+	material.positionNode = mid.add(ribbon.mul(side).mul(width))
 
 	// Reveal: hovered source at a whisper, selected source fully committed.
 	const hoverMatch = step(aKey.sub(uniforms.hoverSource).abs(), float(0.5))

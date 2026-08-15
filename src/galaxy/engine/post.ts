@@ -21,7 +21,7 @@
  */
 
 import { vignette } from '@aicolab/kolo/rendering/vignette'
-import { dof, floatFrom, lensflare } from '@aicolab/kolo/webgpu/tsl-helpers'
+import { dof, floatFrom, gaussianBlur, lensflare } from '@aicolab/kolo/webgpu/tsl-helpers'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import {
 	color,
@@ -61,11 +61,20 @@ export interface GalaxyPost {
 const STREAK_SAMPLES = 44
 const STREAK_TINT = '#8fa4ff'
 
+/** The fog pass renders at this fraction of the frame (settled 2026-08-15,
+ * the official webgpu_volume_lighting value): 1/16th the fog fragments; the
+ * gaussian composite both upsamples and launders the march's bayer grain. */
+const FOG_RESOLUTION_SCALE = 0.25
+
 export function createGalaxyPost(
 	renderer: THREE.WebGPURenderer,
 	scene: THREE.Scene,
 	camera: THREE.Camera,
 	quality: GalaxyQuality,
+	/** The nebula's own scene — rendered quarter-res and composited additively
+	 * (its old in-scene alpha-over-void differs only against the near-black
+	 * background). Omit when the tier has no fog. */
+	fogScene?: THREE.Scene,
 ): GalaxyPost {
 	const uniforms: GalaxyPostUniforms = {
 		focusDistance: uniform(300),
@@ -88,6 +97,14 @@ export function createGalaxyPost(
 
 	const maskedBright = sceneColor.mul(bloomMask)
 	let composed = sceneColor.add(bloom(maskedBright, 1.0, 0.45, 0.18))
+
+	if (fogScene) {
+		const fogPass = pass(fogScene, camera, { depthBuffer: false })
+		fogPass.setResolutionScale(FOG_RESOLUTION_SCALE)
+		// The fog leaves the shared bloom MRT here; its old contribution was
+		// a negligible 0.05 (settled: dropped).
+		composed = composed.add(gaussianBlur(fogPass, 0.7).rgb)
+	}
 
 	if (quality.anamorphic) {
 		// Bright areas cached once (rtt), then smeared horizontally with a
@@ -120,7 +137,15 @@ export function createGalaxyPost(
 		)
 	}
 
-	const focused = dof(composed, viewZ, uniforms.focusDistance, 30, uniforms.bokeh)
+	/** DOF bypassed 2026-08-15 (user A/B for constellation-line aliasing):
+	 * the asterism ribbons are depthWrite:false, so the DOF reads the FAR
+	 * depth behind them, assigns crisp nearby line-work a large blur radius,
+	 * and its discrete tap gather chews the thin edges into shimmer. Flip to
+	 * restore the focus-pull. */
+	const DOF_ENABLED = false
+	const focused = DOF_ENABLED
+		? dof(composed, viewZ, uniforms.focusDistance, 30, uniforms.bokeh)
+		: composed
 	const pipeline = new THREE.RenderPipeline(renderer)
 	pipeline.outputNode = focused.mul(vignette({ innerRadius: 0.35, outerRadius: 1.05 }))
 	pipeline.needsUpdate = true

@@ -200,6 +200,16 @@ export interface GalaxyCommand {
 	 * rows/chips drive this so panel and sky always agree about what the
 	 * pointer is over. Pointer hover over the canvas wins while present. */
 	highlight?: IBNodeId | null
+	/** FACET SPOTLIGHT (settled 2026-08-16): while the source drill sits on a
+	 * facet value, the cohort stays lit and everything else recedes — the
+	 * drill is literally a lens on the sky. `null` clears. An active
+	 * selection's anchor outranks it; the spotlight returns when selection
+	 * clears. */
+	spotlight?: { facet: string; value: string } | null
+	/** Clear the engine's selection IN PLACE (no camera flight) — the
+	 * reader's "back to overview" and drill-level returns use this so the
+	 * anchor/fleet state matches the chrome. */
+	select?: null
 	revision: number
 }
 

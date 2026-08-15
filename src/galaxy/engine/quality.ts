@@ -15,10 +15,13 @@ export interface GalaxyQuality {
 }
 
 export function resolveGalaxyQuality(coarsePointer: boolean): GalaxyQuality {
+	// Step counts assume the dithered march + quarter-res fog pass (settled
+	// 2026-08-15): bayer jitter + the gaussian composite make 4–8 steps read
+	// like the old 12–28.
 	return coarsePointer
 		? {
 				nebula: true,
-				nebulaSteps: 12,
+				nebulaSteps: 4,
 				anamorphic: false,
 				lensflare: false,
 				dprFloor: 1,
@@ -26,9 +29,12 @@ export function resolveGalaxyQuality(coarsePointer: boolean): GalaxyQuality {
 			}
 		: {
 				nebula: true,
-				nebulaSteps: 28,
+				nebulaSteps: 8,
 				anamorphic: true,
-				lensflare: true,
+				// OFF (user call 2026-08-15): its ghost samples mirror bright
+				// grains across the screen centre — they read as displaced
+				// "ghost grains" that wander with the view angle.
+				lensflare: false,
 				dprFloor: 1,
 				dprCeiling: Math.min(devicePixelRatio, 2),
 			}

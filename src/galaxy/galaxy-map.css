@@ -73,40 +73,17 @@
 		}
 
 		/* ── In-scene labels (CSS2D overlay) ────────────────────────────── */
-		.ib-galaxy-labels {
-			position: absolute;
-			inset: 0;
-			overflow: hidden;
-			pointer-events: none;
-			/* In-scene names sit beneath the chrome. */
-			z-index: 0;
-		}
-
-		.ib-galaxy-label {
-			/* The DS micro-label voice — same chain Chip/Eyebrow/ToolPanel use. */
-			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
-			color: var(--color-overlay-content);
-			letter-spacing: 0.04em;
-			text-shadow: 0 1px 6px rgb(0 0 0 / 0.8);
-			white-space: nowrap;
-			pointer-events: none;
-		}
-
-		.ib-galaxy-label[data-tier='2'] {
-			font-size: var(--t-sm);
-			text-transform: uppercase;
-			letter-spacing: 0.14em;
-			opacity: 0.85;
-		}
-
-		.ib-galaxy-label[data-tier='1'] {
-			font-size: var(--t-xs);
-			opacity: 0.75;
-		}
-
-		.ib-galaxy-label[data-tier='0'] {
-			font-size: var(--t-2xs);
-			opacity: 0.85;
+		/* ── Wayfinding labels (kolo overlay, adopted 2026-08-16) ───────── */
+		/* The structural sheet ships with kolo; here only the theme hooks
+		 * map onto the DS voices and the galaxy's dark stage. */
+		.ib-galaxy .kolo-wayfinding {
+			--kw-font-display: var(--font-label, var(--font-data, ui-monospace, monospace));
+			--kw-copy-ink: var(--color-overlay-content);
+			--kw-copy-surface-mix: #10141f;
+			--kw-face-surface: #e9edf9;
+			--kw-face-ink: #182034;
+			--kw-focus-ring: var(--color-ring);
+			--kw-copy-max-width: 11rem;
 		}
 
 		/* ── Chrome over the canvas ─────────────────────────────────────── */
@@ -178,16 +155,18 @@
 			max-inline-size: 34rem;
 		}
 
-		/* ── Lens controls: colour-by facet + membership weighting ──────── */
-		/* Bottom-left, stacked; each lens is an eyebrow over a Segmented.
-		 * Sits above the onboarding hint's centre lane, clear of the drawer. */
-		.ib-galaxy-lenses {
-			position: absolute;
-			inset-block-end: 0.9rem;
-			inset-inline-start: 1rem;
+		/* ── Left menu (IA reform 2026-08-16): modes · lenses · census ──── */
+		.ib-galaxy-menu {
 			display: flex;
 			flex-direction: column;
-			align-items: flex-start;
+			gap: 1rem;
+			flex: 1 1 auto;
+			min-block-size: 0;
+		}
+
+		.ib-galaxy-menu-lenses {
+			display: flex;
+			flex-direction: column;
 			gap: 0.55rem;
 		}
 
@@ -196,27 +175,42 @@
 			flex-direction: column;
 			align-items: flex-start;
 			gap: 0.25rem;
-			padding: 0.45rem 0.6rem;
-			border-radius: var(--r-lg);
-			background: var(--color-overlay-surface);
-			border: 1px solid var(--color-overlay-border);
 		}
 
-		/* ── Facet legend (inspector overview) ──────────────────────────── */
-		.ib-galaxy-facet-legend {
-			list-style: none;
-			margin: 0;
-			padding: 0;
+		/* The census card sinks to the rail's foot. */
+		.ib-galaxy-menu-census {
+			margin-block-start: auto;
 			display: flex;
-			flex-wrap: wrap;
-			gap: 0.35rem 0.9rem;
-			font-size: var(--t-xs);
+			flex-direction: column;
+			gap: 0.4rem;
 		}
 
-		.ib-galaxy-facet-legend li {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.4rem;
+		.ib-galaxy-menu-census dl {
+			margin: 0;
+			display: flex;
+			flex-direction: column;
+			gap: 0.15rem;
+		}
+
+		.ib-galaxy-menu-census dl > div {
+			display: flex;
+			justify-content: space-between;
+			gap: 0.6rem;
+			font-size: var(--t-xs);
+			color: var(--color-base-content-muted);
+		}
+
+		.ib-galaxy-menu-census dd {
+			margin: 0;
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			color: var(--color-base-content);
+		}
+
+		.ib-galaxy-menu-note {
+			margin: 0;
+			font-size: var(--t-2xs);
+			font-style: italic;
+			color: var(--color-base-content-faint);
 		}
 
 		.ib-galaxy-facet-swatch {
@@ -226,32 +220,22 @@
 			flex: none;
 		}
 
-		/* ── Left navigator: contextual drill-down ──────────────────────── */
-		/* Filter, back row and context header stay anchored (flex: none — a
-		 * shrinkable header is how the back row got crushed under the list);
-		 * the row list is THE scroller (nothing nested inside it). */
-		.ib-galaxy-navigator {
+		/* ── The drill (the inspector's resting surface) ────────────────── */
+		/* Lives inside the inspector sheet, whose body is THE scroller —
+		 * the drill never adds its own overflow (house rule); it just flows. */
+		.ib-galaxy-drill {
 			display: flex;
 			flex-direction: column;
 			gap: 0.6rem;
-			flex: 1 1 auto;
-			min-block-size: 0;
-		}
-
-		.ib-galaxy-navigator > * {
-			flex: none;
 		}
 
 		.ib-galaxy-nav-rows {
-			flex: 1 1 auto;
-			min-block-size: 0;
-			overflow-y: auto;
-			overscroll-behavior: contain;
+			display: block;
 		}
 
 		/* Corpus titles run long: rows clamp to two lines (the description
 		 * line beneath carries the scent), the context header to three. */
-		.ib-galaxy-navigator .ui-rich-list-title {
+		.ib-galaxy-drill .ui-rich-list-title {
 			display: -webkit-box;
 			-webkit-line-clamp: 2;
 			-webkit-box-orient: vertical;
@@ -505,7 +489,9 @@
 		}
 
 		/* ── Mobile bottom bar's centre action (Search) ─────────────────── */
-		.ib-galaxy-bnav-search {
+		/* The radial trigger inherits the centre-slot anatomy; the fan itself
+		 * is the RadialMenu organism's own contract. */
+		.ib-galaxy-bnav-radial {
 			all: unset;
 			cursor: pointer;
 			display: flex;
@@ -514,7 +500,7 @@
 			gap: 0.3rem;
 		}
 
-		.ib-galaxy-bnav-search:focus-visible {
+		.ib-galaxy-bnav-radial:focus-visible {
 			outline: 2px solid var(--color-ring);
 			outline-offset: 2px;
 		}

@@ -23,7 +23,6 @@ import {
 } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { createMemo, createSignal, Errored, For, Loading, Show } from 'solid-js'
-import { facetPalette, facetValues } from '../facets.ts'
 import type {
 	IBContentSection,
 	IBGalaxy,
@@ -265,112 +264,10 @@ function JumpChips(props: {
 	)
 }
 
-export function GalaxyInspectorOverview(props: {
-	galaxy: IBGalaxy
-	title: string
-	/** Bench/status note (e.g. "fixture data"). */
-	note?: string
-	/** The active colour-by lens — its value swatches key the source dust. */
-	activeFacet?: string
-	onVisit: (id: IBNodeId) => void
-	onHoverNode?: (id: IBNodeId | null) => void
-}) {
-	const census = createMemo(() =>
-		props.galaxy.tiers
-			.map((tier) => {
-				const count = props.galaxy.nodes.filter((node) => node.tier === tier.tier).length
-				return `${count} ${tier.labelPlural.toLowerCase()}`
-			})
-			.join(' · '),
-	)
-	const midTier = createMemo(
-		() => props.galaxy.tiers.find((tier) => tier.tier === 1)?.labelPlural ?? 'Groups',
-	)
-	// Entry points under the READER'S ordering, never "largest first" — the
-	// Respect principles bar the package from pre-ranking by popularity.
-	const [themeSort, setThemeSort] = createSignal(DEFAULT_GALAXY_SORT)
-	const themeEntries = createMemo(() =>
-		sortRows(
-			props.galaxy.nodes.filter((node) => node.tier === 1),
-			themeSort(),
-			(node) => node.title,
-			(node) => node.weight,
-		)
-			.slice(0, 8)
-			.map((node) => ({ id: node.id, label: node.title })),
-	)
-	const hottest = createMemo(() => {
-		if (props.galaxy.intensityLabel === undefined) return []
-		return props.galaxy.nodes
-			.filter((node) => node.tier === 0 && node.intensity !== undefined)
-			.sort((a, b) => (b.intensity ?? 0) - (a.intensity ?? 0))
-			.slice(0, 5)
-			.map((node) => ({ id: node.id, label: node.title }))
-	})
-	// The active lens's key: value → swatch, matching the dust colours exactly
-	// (same palette function the engine uses).
-	const facetKey = createMemo(() => {
-		const key = props.activeFacet
-		if (key === undefined) return null
-		const label = props.galaxy.sourceFacets?.find((facet) => facet.key === key)?.label
-		const palette = [...facetPalette(facetValues(props.galaxy, key)).entries()]
-		if (palette.length === 0) return null
-		return { label: label ?? key, palette }
-	})
-	return (
-		<>
-			<InspectorHeader eyebrow={<Eyebrow>Corpus</Eyebrow>} title={props.title}>
-				<p class="ib-galaxy-node-stats">{census()}</p>
-				<p class="ib-galaxy-node-stats">
-					size — {props.galaxy.weightLabel}
-					<Show when={props.galaxy.intensityLabel !== undefined}>
-						{' '}
-						· heat — {props.galaxy.intensityLabel}
-					</Show>
-				</p>
-				<Show when={props.note}>{(note) => <p class="ib-galaxy-overview-note">{note()}</p>}</Show>
-			</InspectorHeader>
-			<section class="ib-galaxy-reader-section">
-				<Rule label={midTier()} />
-				<div class="ib-galaxy-nodes-head">
-					<GalaxySortControl sort={themeSort()} onChange={setThemeSort} />
-				</div>
-				<JumpChips
-					entries={themeEntries()}
-					onVisit={props.onVisit}
-					onHoverNode={props.onHoverNode}
-				/>
-			</section>
-			<Show when={hottest().length > 0}>
-				<section class="ib-galaxy-reader-section">
-					<Rule label="Hottest topics" />
-					<JumpChips entries={hottest()} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
-				</section>
-			</Show>
-			<Show when={facetKey()}>
-				{(legend) => (
-					<section class="ib-galaxy-reader-section">
-						<Rule label={`Sources by ${legend().label.toLowerCase()}`} />
-						<ul class="ib-galaxy-facet-legend">
-							<For each={legend().palette}>
-								{([value, swatch]) => (
-									<li>
-										<span
-											class="ib-galaxy-facet-swatch"
-											style={{ background: swatch }}
-											aria-hidden="true"
-										/>
-										{value}
-									</li>
-								)}
-							</For>
-						</ul>
-					</section>
-				)}
-			</Show>
-		</>
-	)
-}
+// The resting-overview component was RETIRED 2026-08-16 (IA reform): the
+// inspector's resting surface is now the drill (chrome/drill.tsx), the
+// census lives in the left menu, and the "hottest topics" section and
+// standalone facet legend were retired outright.
 
 export function GalaxyInspectorNode(props: {
 	galaxy: IBGalaxy
@@ -388,6 +285,30 @@ export function GalaxyInspectorNode(props: {
 		props.galaxy.tiers.find((tier) => tier.tier === props.node.tier),
 	)
 	const tierLabel = createMemo(() => tierMeta()?.label ?? '')
+	/** A TOPIC's member sources, grouped by membership grade (settled
+	 * 2026-08-16): the grade semantics — exemplar progenitors, high-value
+	 * contributors, related members — become readable in prose land too.
+	 * Computed from the galaxy itself, so it needs no host content. */
+	const contributors = createMemo(() => {
+		if (props.node.tier !== 0) return null
+		const byId = new Map(props.galaxy.nodes.map((node) => [node.id, node]))
+		const tiers: Array<{ label: string; rows: IBNode[] }> = [
+			{ label: 'Exemplars', rows: [] },
+			{ label: 'High-value', rows: [] },
+			{ label: 'Members', rows: [] },
+		]
+		for (const edge of props.galaxy.edges) {
+			if (edge.parent !== props.node.id) continue
+			const child = byId.get(edge.child)
+			if (child?.tier !== -1) continue
+			const at =
+				edge.membershipType === 'exemplar' ? 0 : edge.membershipType === 'high_value' ? 1 : 2
+			tiers[at].rows.push(child)
+		}
+		for (const tier of tiers) tier.rows.sort((a, b) => a.title.localeCompare(b.title))
+		const filled = tiers.filter((tier) => tier.rows.length > 0)
+		return filled.length > 0 ? filled : null
+	})
 	return (
 		<>
 			<InspectorHeader eyebrow={<Eyebrow>{tierLabel()}</Eyebrow>} title={props.node.title}>
@@ -476,6 +397,37 @@ export function GalaxyInspectorNode(props: {
 					})()}
 				</Loading>
 			</Errored>
+			<Show when={contributors()}>
+				{(tiers) => (
+					<section class="ib-galaxy-reader-section">
+						<Rule label="Contributors" />
+						<Accordion density="compact" spacing="joined" label="Contributors by grade">
+							<For each={tiers()}>
+								{(tier, at) => (
+									<AccordionItem
+										summary={`${tier.label} (${tier.rows.length})`}
+										open={at() === 0}
+									>
+										<RichList label={tier.label}>
+											<For each={tier.rows}>
+												{(row) => (
+													<RichListItem
+														title={row.title}
+														onSelect={() => props.onVisit(row.id)}
+														onHoverChange={(hovering) =>
+															props.onHoverNode?.(hovering ? row.id : null)
+														}
+													/>
+												)}
+											</For>
+										</RichList>
+									</AccordionItem>
+								)}
+							</For>
+						</Accordion>
+					</section>
+				)}
+			</Show>
 		</>
 	)
 }

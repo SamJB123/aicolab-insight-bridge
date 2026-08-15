@@ -1,21 +1,24 @@
 /**
  * The Insight Galaxy — shared 3D dashboard organism (design settled
- * 2026-08-14 over 16 MCQs + two DS-adoption rounds).
+ * 2026-08-14 over 16 MCQs + reform rounds; IA convention settled 2026-08-16
+ * over 12 MCQs).
  *
  * Corpus-agnostic: hosts hand it an `IBGalaxy` (a ~20-line adapter over
  * their landscape queries), a `loadContent` reader over their drawer
  * queries, and get every selection back through `onSelect`. The WebGPU gate
  * renders a styled panel with the host's own way back into flat exploration.
  *
- * Supported browsers get the WORKSPACE organism — the shell ui-solid
- * designed for three.js stages: hierarchy tree in the left navigation
- * (families as group labels, groups as items, the focused constellation's
- * topics indented beneath), the SceneStage canvas in the workspace stage
- * (breadcrumb, palette, hint and hover tooltip floating over it), and the
- * ResponsiveInspector on the right — corpus overview at rest, the real
- * drawer content when a node binds it. On ≤900px the organism takes over:
- * the nav hides, the inspector becomes a draggable bottom drawer, and a
- * BottomNavigation carries Galaxy · Search.
+ * THE CONVENTION (2026-08-16): the LEFT bar is a conventional menu — the
+ * navigation modes (topic structure vs source facets), the lens controls
+ * and the corpus census — and maps onto MOBILE as the BottomNavigation
+ * (modes as bar items) plus a RADIAL fan on the raised centre trigger
+ * (search / fly home / colour-by). The RIGHT bar is the reading surface —
+ * the mode's three-level contextual DRILL at rest (families → superclusters
+ * → topics, or facets → values → sources with the facet spotlight), the
+ * reader when a node is selected — and maps onto mobile as the sliding
+ * bottom drawer. Drill state survives selection: "Back to overview" returns
+ * exactly where you left it. The stage breadcrumb narrates the SAME unified
+ * trail (mode path or selection lineage).
  */
 
 import {
@@ -26,10 +29,10 @@ import {
 	CommandPalette,
 	type CommandPaletteItem,
 	CommandPaletteTrigger,
-	Eyebrow,
+	RadialMenu,
+	type RadialMenuItem,
 	ResponsiveInspector,
 	SceneStage,
-	Segmented,
 	StageHint,
 	WorkspaceNavigation,
 	WorkspaceShell,
@@ -47,12 +50,10 @@ import {
 } from 'solid-js'
 import { probeWebGpu } from '@aicolab/kolo/webgpu/backend-guard'
 import { createGalaxyAdapter, type GalaxyConfiguration } from './adapter.ts'
+import { GalaxyDrill, type SourcePath, type TopicPath } from './chrome/drill.tsx'
 import { GalaxyGatePanel } from './chrome/gate-panel.tsx'
-import {
-	GalaxyInspectorNode,
-	GalaxyInspectorOverview,
-} from './chrome/inspector-content.tsx'
-import { GalaxyNavigator } from './chrome/navigator.tsx'
+import { GalaxyInspectorNode } from './chrome/inspector-content.tsx'
+import { GalaxyMenu, type GalaxyMode } from './chrome/menu.tsx'
 import { primaryParents } from './layout/cosmos.ts'
 import type {
 	GalaxyCommand,
@@ -62,6 +63,7 @@ import type {
 	IBNode,
 	IBNodeContent,
 	IBNodeId,
+	IBSourceFacet,
 	IBTier,
 } from './types.ts'
 import './galaxy-map.css'
@@ -80,7 +82,7 @@ export interface GalaxyMapProps {
 	loadContent?: (node: IBNode) => Promise<IBNodeContent | null>
 	/** Header slot inside the bound inspector — the host's "open full view" link. */
 	readerAction?: (node: IBNode) => JSX.Element
-	/** Bench/status note shown in the inspector's resting overview. */
+	/** Bench/status note shown under the left menu's census. */
 	overviewNote?: string
 	/** Onboarding hint text over the stage. */
 	hint?: string
@@ -126,49 +128,131 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	const [chosenFacet, setChosenFacet] = createSignal<string | undefined>(undefined)
 	const activeFacet = createMemo(() => chosenFacet() ?? facets()[0]?.key)
 
+	// ── Unified navigation state (the 2026-08-16 IA) ──────────────────────
+	const [mode, setMode] = createSignal<GalaxyMode>('topics')
+	const [topicPath, setTopicPath] = createSignal<TopicPath>({ family: null, group: null })
+	const [sourcePath, setSourcePath] = createSignal<SourcePath>({ facet: null, value: null })
+
 	const [hovered, setHovered] = createSignal<IBNode | null>(null)
 	const [selected, setSelected] = createSignal<IBNode | null>(null)
-	const [focused, setFocused] = createSignal<IBNode | null>(null)
 	const [interacted, setInteracted] = createSignal(false)
 	const [command, setCommand] = createSignal<GalaxyCommand | undefined>(undefined)
 	let localRevision = LOCAL_REVISION_BASE
+	const issue = (part: Omit<GalaxyCommand, 'revision'>): void => {
+		localRevision += 1
+		setCommand({ ...part, revision: localRevision })
+	}
 	createEffect(
 		() => props.command,
 		(hostCommand) => {
 			if (hostCommand !== undefined) setCommand(hostCommand)
 		},
 	)
-	const navigate = (target: IBNodeId | null): void => {
-		localRevision += 1
-		setCommand({ focus: target, revision: localRevision })
-		if (target === null) setSelected(null)
+
+	const nodesById = createMemo(() => {
+		const map = new Map<IBNodeId, IBNode>()
+		for (const node of props.galaxy.nodes) map.set(node.id, node)
+		return map
+	})
+	const parents = createMemo(() => primaryParents(props.galaxy))
+	const parentNode = (node: IBNode): IBNode | undefined => {
+		const parentId = parents().get(node.id)
+		return parentId !== undefined ? nodesById().get(parentId) : undefined
 	}
-	/** Chrome-initiated node choice: select AND fly (nav, palette, related). */
+
+	const resetAll = (): void => {
+		setSelected(null)
+		setTopicPath({ family: null, group: null })
+		setSourcePath((path) => ({ ...path, value: null }))
+		issue({ focus: null, spotlight: null })
+	}
+	/** Chrome-initiated node choice: select AND fly (drill leaves, palette,
+	 * related, reader rows). */
 	const chooseNode = (node: IBNode): void => {
 		setSelected(node)
 		setInteracted(true)
-		localRevision += 1
-		setCommand({ focus: node.id, revision: localRevision })
+		issue({ focus: node.id })
 	}
 	const chooseFacet = (key: string): void => {
 		setChosenFacet(key)
-		localRevision += 1
-		setCommand({ colorFacet: key, revision: localRevision })
+		issue({ colorFacet: key })
 	}
 	/** Chrome hover → scene highlight (rows, chips). Scene pointer hover
 	 * wins engine-side while the pointer is over the canvas. */
 	const hoverNode = (id: IBNodeId | null): void => {
-		localRevision += 1
-		setCommand({ highlight: id, revision: localRevision })
+		issue({ highlight: id })
 	}
-	const chooseIntensityMode = (mode: IBIntensityMode): void => {
-		setIntensityMode(mode)
+	const chooseIntensityMode = (nextMode: IBIntensityMode): void => {
+		setIntensityMode(nextMode)
 		// The re-baked engine starts on the default lens — restate the choice
 		// so the fresh mount picks it up from the buffered command.
 		const facet = activeFacet()
-		if (facet !== undefined) {
-			localRevision += 1
-			setCommand({ colorFacet: facet, revision: localRevision })
+		if (facet !== undefined) issue({ colorFacet: facet })
+	}
+
+	// ── Drill actions (camera-coupled; settled 2026-08-16) ────────────────
+	/** A drill row press: containers drill+fly WITHOUT selecting; leaves
+	 * (topics/sources) select. */
+	const pickNode = (node: IBNode): void => {
+		setInteracted(true)
+		if (node.tier === 2) {
+			setTopicPath({ family: node.id, group: null })
+			setSelected(null)
+			issue({ focus: node.id })
+		} else if (node.tier === 1) {
+			const family = parentNode(node)
+			setTopicPath({ family: family?.id ?? null, group: node.id })
+			setSelected(null)
+			issue({ focus: node.id })
+		} else {
+			chooseNode(node)
+		}
+	}
+	const pickFacet = (facet: IBSourceFacet): void => {
+		setInteracted(true)
+		setSourcePath({ facet: facet.key, value: null })
+	}
+	/** Facet value = the SPOTLIGHT (settled 2026-08-16): the cohort stays
+	 * lit, the rest recedes, and the colour-by lens follows the facet. */
+	const pickValue = (value: string): void => {
+		const facet = sourcePath().facet
+		if (facet === null) return
+		setInteracted(true)
+		setSourcePath({ facet, value })
+		setChosenFacet(facet)
+		issue({ spotlight: { facet, value }, colorFacet: facet })
+	}
+	const drillBack = (): void => {
+		if (mode() === 'sources') {
+			const path = sourcePath()
+			if (path.value !== null) {
+				setSourcePath({ facet: path.facet, value: null })
+				issue({ spotlight: null })
+			} else if (path.facet !== null) {
+				setSourcePath({ facet: null, value: null })
+			}
+			return
+		}
+		const path = topicPath()
+		if (path.group !== null) {
+			setTopicPath({ family: path.family, group: null })
+			if (path.family !== null) issue({ focus: path.family })
+			else issue({ focus: null })
+		} else if (path.family !== null) {
+			setTopicPath({ family: null, group: null })
+			issue({ focus: null })
+		}
+	}
+	const switchMode = (next: GalaxyMode): void => {
+		if (next === mode()) return
+		setMode(next)
+		setInteracted(true)
+		// Leaving the source drill retires its spotlight; entering it
+		// re-applies the one its path still holds.
+		const path = sourcePath()
+		if (next === 'topics') issue({ spotlight: null })
+		else if (path.facet !== null && path.value !== null) {
+			issue({ spotlight: { facet: path.facet, value: path.value } })
 		}
 	}
 
@@ -183,49 +267,110 @@ export function GalaxyMap(props: GalaxyMapProps) {
 			props.onSelect?.(node)
 		},
 		onFocusChange: (node) => {
-			setFocused(node)
 			setInteracted(true)
+			// The sky's commitment updates the drill path — panel and sky
+			// never disagree about where you are.
+			if (node && node.tier === 1) {
+				const family = parentNode(node)
+				setTopicPath({ family: family?.id ?? null, group: node.id })
+			} else if (node && node.tier === 2) {
+				setTopicPath({ family: node.id, group: null })
+			}
 			// A topic selection belongs to its constellation; leaving it
 			// retires the stale reading.
 			if (node === null && selected()?.tier === 0) setSelected(null)
 		},
 	}
 
-	const nodesById = createMemo(() => {
-		const map = new Map<IBNodeId, IBNode>()
-		for (const node of props.galaxy.nodes) map.set(node.id, node)
-		return map
-	})
-	const parents = createMemo(() => primaryParents(props.galaxy))
 	const visit = (id: IBNodeId): void => {
 		const target = nodesById().get(id)
 		if (target) chooseNode(target)
 	}
 
-	const trail = createMemo((): IBNode[] => {
-		const crumbs: IBNode[] = []
-		const focus = focused()
-		const chosen = selected()
-		const anchor = focus ?? (chosen && chosen.tier > 0 ? chosen : null)
-		if (anchor) {
-			const parentId = parents().get(anchor.id)
-			const parent = parentId !== undefined ? nodesById().get(parentId) : undefined
-			if (parent && parent !== anchor) crumbs.push(parent)
-			crumbs.push(anchor)
-		}
-		if (focus && chosen && chosen.tier === 0) crumbs.push(chosen)
-		return crumbs
-	})
+	// ── The unified trail (settled 2026-08-16: breadcrumb = drill state) ──
+	const facetLabelOf = (key: string | null): string | undefined =>
+		facets().find((facet) => facet.key === key)?.label
 	const crumbs = createMemo((): BreadcrumbItem[] => {
-		const nodes = trail()
-		return [
-			{ label: props.title, onSelect: () => navigate(null) },
-			...nodes.map((node, index) =>
-				index < nodes.length - 1
-					? { label: node.title, onSelect: () => navigate(node.id) }
-					: { label: node.title },
-			),
-		]
+		const items: BreadcrumbItem[] = [{ label: props.title, onSelect: resetAll }]
+		const chosen = selected()
+		const lineage = (node: IBNode): IBNode[] => {
+			const chain: IBNode[] = [node]
+			let cursor: IBNode | undefined = node
+			for (let hop = 0; hop < 3 && cursor; hop++) {
+				cursor = parentNode(cursor)
+				if (cursor) chain.unshift(cursor)
+			}
+			return chain
+		}
+		const pushNodeTrail = (nodes: IBNode[]): void => {
+			nodes.forEach((node, index) => {
+				items.push(
+					index < nodes.length - 1
+						? { label: node.title, onSelect: () => pickNode(node) }
+						: { label: node.title },
+				)
+			})
+		}
+		if (chosen) {
+			if (chosen.tier === -1 && mode() === 'sources' && sourcePath().value !== null) {
+				const facetLabel = facetLabelOf(sourcePath().facet)
+				if (facetLabel) {
+					items.push({
+						label: facetLabel,
+						onSelect: () => {
+							setSelected(null)
+							setSourcePath((path) => ({ facet: path.facet, value: null }))
+							issue({ spotlight: null, select: null })
+						},
+					})
+				}
+				const value = sourcePath().value
+				if (value !== null) {
+					items.push({
+						label: value,
+						onSelect: () => {
+							setSelected(null)
+							issue({ select: null })
+						},
+					})
+				}
+				items.push({ label: chosen.title })
+			} else {
+				pushNodeTrail(lineage(chosen))
+			}
+			return items
+		}
+		if (mode() === 'sources') {
+			const path = sourcePath()
+			const facetLabel = facetLabelOf(path.facet)
+			if (facetLabel) {
+				items.push(
+					path.value !== null
+						? {
+								label: facetLabel,
+								onSelect: () => {
+									setSourcePath({ facet: path.facet, value: null })
+									issue({ spotlight: null })
+								},
+							}
+						: { label: facetLabel },
+				)
+			}
+			if (path.value !== null) items.push({ label: path.value })
+			return items
+		}
+		const path = topicPath()
+		const family = path.family !== null ? nodesById().get(path.family) : undefined
+		const group = path.group !== null ? nodesById().get(path.group) : undefined
+		if (family) {
+			items.push(
+				group
+					? { label: family.title, onSelect: () => pickNode(family) }
+					: { label: family.title },
+			)
+		}
+		if (group) items.push({ label: group.title })
+		return items
 	})
 
 	/** What a tier's weight counts (sources' weight counts topics, etc.). */
@@ -234,6 +379,7 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		props.galaxy.weightLabel
 
 	const paletteId = `ib-galaxy-palette-${createUniqueId()}`
+	const radialId = `ib-galaxy-radial-${createUniqueId()}`
 	const paletteItems = createMemo((): CommandPaletteItem[] => {
 		const tierLabel = new Map(props.galaxy.tiers.map((tier) => [tier.tier, tier.label]))
 		return props.galaxy.nodes.map((node) => ({
@@ -247,6 +393,41 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		}))
 	})
 
+	// The radial fan — the left-bar convention's mobile actions (settled
+	// 2026-08-16: search, fly home, colour-by).
+	const radialItems = createMemo((): RadialMenuItem[] => {
+		const items: RadialMenuItem[] = [
+			{
+				id: 'search',
+				label: 'Search',
+				icon: <span aria-hidden="true">⌕</span>,
+				onSelect: () => {
+					document.getElementById(paletteId)?.showPopover()
+				},
+			},
+			{
+				id: 'home',
+				label: 'Fly home',
+				icon: <span aria-hidden="true">⌂</span>,
+				onSelect: resetAll,
+			},
+		]
+		const list = facets()
+		if (list.length > 1) {
+			items.push({
+				id: 'facet',
+				label: `Colour: ${facetLabelOf(activeFacet() ?? null) ?? ''}`,
+				icon: <span aria-hidden="true">◔</span>,
+				onSelect: () => {
+					const at = list.findIndex((facet) => facet.key === activeFacet())
+					const next = list[(at + 1) % list.length]
+					if (next) chooseFacet(next.key)
+				},
+			})
+		}
+		return items
+	})
+
 	// The reading contract: an async computation over the selection — reads
 	// under the inspector's Loading boundary until the host's fetch lands.
 	const readerContent = createMemo((): Promise<IBNodeContent | null> | null => {
@@ -254,6 +435,9 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		const load = props.loadContent
 		return node && load ? load(node) : null
 	})
+
+	const tierPlural = (tier: IBTier): string =>
+		props.galaxy.tiers.find((entry) => entry.tier === tier)?.labelPlural ?? ''
 
 	return (
 		<div class={['ib-galaxy', props.class]}>
@@ -271,16 +455,18 @@ export function GalaxyMap(props: GalaxyMapProps) {
 					<WorkspaceShell
 						class="ib-galaxy-workspace"
 						navigation={
-							<WorkspaceNavigation label={`${props.title} structure`}>
-								<GalaxyNavigator
+							<WorkspaceNavigation label={`${props.title} navigation`}>
+								<GalaxyMenu
 									galaxy={props.galaxy}
-									title={props.title}
-									focused={focused()}
-									selected={selected()}
-									hovered={hovered()}
-									onChoose={chooseNode}
-									onRoot={() => navigate(null)}
-									onHoverNode={hoverNode}
+									mode={mode()}
+									onMode={switchMode}
+									facets={facets()}
+									activeFacet={activeFacet()}
+									onFacet={chooseFacet}
+									hasSoftScores={hasSoftScores()}
+									intensityMode={intensityMode()}
+									onIntensityMode={chooseIntensityMode}
+									note={props.overviewNote}
 								/>
 							</WorkspaceNavigation>
 						}
@@ -315,38 +501,6 @@ export function GalaxyMap(props: GalaxyMapProps) {
 												<StageHint>{props.hint ?? DEFAULT_HINT}</StageHint>
 											</div>
 										</Show>
-										<Show when={facets().length > 1 || hasSoftScores()}>
-											<div class="ib-galaxy-lenses">
-												<Show when={facets().length > 1}>
-													<div class="ib-galaxy-lens">
-														<Eyebrow>Colour sources by</Eyebrow>
-														<Segmented
-															label="Colour sources by facet"
-															options={facets().map((facet) => ({
-																id: facet.key,
-																label: facet.label,
-															}))}
-															value={activeFacet() ?? ''}
-															onChange={chooseFacet}
-														/>
-													</div>
-												</Show>
-												<Show when={hasSoftScores()}>
-													<div class="ib-galaxy-lens">
-														<Eyebrow>Membership weighting</Eyebrow>
-														<Segmented
-															label="Membership weighting"
-															options={[
-																{ id: 'grades', label: 'Graded' },
-																{ id: 'soft', label: 'Continuous' },
-															]}
-															value={intensityMode()}
-															onChange={chooseIntensityMode}
-														/>
-													</div>
-												</Show>
-											</div>
-										</Show>
 										<Show when={hovered()}>
 											{(node) => (
 												<Show when={node().id !== selected()?.id}>
@@ -377,12 +531,17 @@ export function GalaxyMap(props: GalaxyMapProps) {
 								<Show
 									when={selected()}
 									fallback={
-										<GalaxyInspectorOverview
+										<GalaxyDrill
 											galaxy={props.galaxy}
 											title={props.title}
-											note={props.overviewNote}
-											activeFacet={activeFacet()}
-											onVisit={visit}
+											mode={mode()}
+											topicPath={topicPath()}
+											sourcePath={sourcePath()}
+											hovered={hovered()}
+											onPickNode={pickNode}
+											onPickFacet={pickFacet}
+											onPickValue={pickValue}
+											onBack={drillBack}
 											onHoverNode={hoverNode}
 										/>
 									}
@@ -393,7 +552,12 @@ export function GalaxyMap(props: GalaxyMapProps) {
 											node={node()}
 											content={readerContent}
 											onVisit={visit}
-											onClear={() => setSelected(null)}
+											onClear={() => {
+												// Clear the ENGINE's selection too (in place, no
+												// flight) so anchors/fleets match the chrome.
+												setSelected(null)
+												issue({ select: null })
+											}}
 											onHoverNode={hoverNode}
 											action={props.readerAction}
 										/>
@@ -406,24 +570,30 @@ export function GalaxyMap(props: GalaxyMapProps) {
 								label="Galaxy"
 								items={[
 									{
-										id: 'galaxy',
-										label: 'Galaxy',
+										id: 'topics' as const,
+										label: tierPlural(0) || 'Topics',
 										icon: <span aria-hidden="true">✦</span>,
 									},
+									{
+										id: 'sources' as const,
+										label: tierPlural(-1) || 'Sources',
+										icon: <span aria-hidden="true">◍</span>,
+									},
 								]}
-								activeId={focused() || selected() ? null : 'galaxy'}
-								onSelect={() => navigate(null)}
+								activeId={mode()}
+								onSelect={(id) => switchMode(id)}
 								centre={
-									<button
-										type="button"
-										class="ib-galaxy-bnav-search"
-										popovertarget={paletteId}
+									<RadialMenu
+										id={radialId}
+										items={radialItems()}
+										label="Galaxy actions"
+										triggerClass="ib-galaxy-bnav-radial"
 									>
 										<BottomNavigationCentreContent
-											icon={<span aria-hidden="true">⌕</span>}
-											label="Search"
+											icon={<span aria-hidden="true">✳</span>}
+											label="Actions"
 										/>
-									</button>
+									</RadialMenu>
 								}
 							/>
 						}

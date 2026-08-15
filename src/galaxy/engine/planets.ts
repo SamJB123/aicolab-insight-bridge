@@ -11,7 +11,7 @@
  * kind), broken by two octaves of noise into land and sea.
  */
 
-import { floatFrom, vec2From, vec3From } from '@aicolab/kolo/webgpu/tsl-helpers'
+import { floatFrom, vec3From, vec4From } from '@aicolab/kolo/webgpu/tsl-helpers'
 import {
 	cameraPosition,
 	cos,
@@ -44,6 +44,10 @@ export interface PlanetClusterData {
 	sunOf: Int32Array
 	/** Per-source facet colour (xyz per source, active lens). */
 	colors: Float32Array
+	/** 1 where the source is an EXEMPLAR (a progenitor of its topic) — the
+	 * world earns a brighter atmosphere signature (settled 2026-08-15:
+	 * same size, glow only). */
+	glows: Float32Array
 }
 
 export interface PlanetCluster {
@@ -59,9 +63,9 @@ const PLANET_BASE = 0.28
 export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 	const count = data.sources.length
 	const centers = new Float32Array(count * 3)
-	// Packed [radius, seed] — one vertex buffer, not two (WebGPU's 8-buffer
-	// pipeline cap; see stars.ts). This mesh sat at exactly 8.
-	const traits = new Float32Array(count * 2)
+	// Packed [radius, seed, glow, 0] — one vertex buffer, not three (WebGPU's
+	// 8-buffer pipeline cap; see stars.ts). This mesh sat at exactly 8.
+	const traits = new Float32Array(count * 4)
 	const sunDirs = new Float32Array(count * 3)
 	const colors = new Float32Array(count * 3)
 	data.sources.forEach((node, i) => {
@@ -71,8 +75,9 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 		centers[i * 3] = x
 		centers[i * 3 + 1] = y
 		centers[i * 3 + 2] = z
-		traits[i * 2] = PLANET_BASE + data.radii[node] * PLANET_SCALE
-		traits[i * 2 + 1] = ((node * 0.7639320225) % 1) * 89
+		traits[i * 4] = PLANET_BASE + data.radii[node] * PLANET_SCALE
+		traits[i * 4 + 1] = ((node * 0.7639320225) % 1) * 89
+		traits[i * 4 + 2] = data.glows[i]
 		const sun = data.sunOf[i]
 		const dx = data.positions[sun * 3] - x
 		const dy = data.positions[sun * 3 + 1] - y
@@ -87,11 +92,12 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 	})
 
 	const aCenter = vec3From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(centers, 3)))
-	const aTraits = vec2From(
-		instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 2)),
+	const aTraits = vec4From(
+		instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 4)),
 	)
 	const aRadius = aTraits.x
 	const aSeed = aTraits.y
+	const aGlow = aTraits.z
 	const aSunDir = vec3From(
 		instancedBufferAttribute(new THREE.InstancedBufferAttribute(sunDirs, 3)),
 	)
@@ -103,11 +109,14 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 	material.transparent = true
 	material.positionNode = positionLocal.mul(aRadius).add(aCenter)
 	material.opacityNode = fade
-	material.mrtNode = mrt({ bloomIntensity: float(0.12) })
+	// Exemplar worlds bloom a little harder — the progenitor signature.
+	material.mrtNode = mrt({ bloomIntensity: float(0.12).add(aGlow.mul(0.3)) })
 
 	// Axial spin: rotate the SAMPLING frame around world Z (the disc normal)
-	// so the surface drifts while geometry stands still.
-	const spin = time.mul(0.18).add(aSeed)
+	// so the surface drifts while geometry stands still. Slow drift (user
+	// call 2026-08-16): ~6 min per rotation — alive only when you rest your
+	// eyes on a world, never busy.
+	const spin = time.mul(0.018).add(aSeed)
 	const cs = cos(spin)
 	const sn = sin(spin)
 	const spun = vec3(
@@ -128,7 +137,13 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 	const daylight = normalLocal.dot(aSunDir).max(0)
 	const viewDir = cameraPosition.sub(positionWorld).normalize()
 	const fresnel = normalLocal.dot(viewDir).max(0).oneMinus().pow(2.3)
-	const atmosphere = aColor.mul(fresnel).mul(daylight.mul(0.5).add(0.22))
+	// Exemplars (progenitors) carry a distinctly brighter, whiter atmosphere
+	// at the SAME size — the settled grade signature (2026-08-15).
+	const atmosphere = aColor
+		.mul(fresnel)
+		.mul(daylight.mul(0.5).add(0.22))
+		.mul(aGlow.mul(1.1).add(1))
+		.add(vec3(0.9, 0.95, 1).mul(fresnel).mul(aGlow).mul(0.28))
 
 	material.colorNode = surface.mul(daylight.mul(0.95).add(0.08)).add(atmosphere)
 

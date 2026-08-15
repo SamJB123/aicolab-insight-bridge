@@ -1,143 +1,97 @@
 /**
- * Labels — real DOM over the canvas via CSS2DRenderer (settled 2026-08-14:
- * ui-solid typography and accessibility beat rasterised text). The renderer
- * is backend-agnostic (pure matrix math + CSS transforms), so it rides over
- * WebGPU untouched; its overlay renders after the pipeline each frame, so
- * DOM and world never separate (the wayfinding-overlay contract).
+ * Labels — the galaxy's binding over kolo's wayfinding overlay (adopted
+ * 2026-08-16, replacing CSS2DRenderer): projected DOM markers with the
+ * battle-tested space-aware collapse (overlapping labels structurally
+ * impossible — losers collapse to a remnant and reveal on hover/focus),
+ * multi-line balanced plaques, and REAL buttons — labels participate in the
+ * one interaction grammar (click = the drill-row action, hover = the scene
+ * highlight sync).
  *
- * Density follows the zoom tier: family names at overview, group names as
- * the camera dips in, topic names only inside a focused constellation.
+ * EVERY tier gets the full pin (revised 2026-08-16 after runtime testing —
+ * the pin's collapse-to-face answers crowding by design, where the plaque
+ * anatomy's dot remnant merely hid labels): leader pole + faceted face
+ * carrying the tier's icon, echoing the navigation's own mode icons
+ * (family ❂ · supercluster ✷ · topic ✦ · source ◍). Accents: anchor tiers
+ * and topics ride the arm hue the nebulae resolved; SOURCES ride the active
+ * facet lens colour (the engine re-issues the set on lens switches).
+ *
+ * WHICH nodes are labelled stays the engine's policy (the drill level's
+ * children) — this module renders exactly the set it is given.
  */
 
-import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
-import * as THREE from 'three/webgpu'
+import {
+	mountWayfindingOverlay,
+	type WayfindingTarget,
+} from '@aicolab/kolo/rendering/wayfinding-overlay'
+import '@aicolab/kolo/rendering/wayfinding-overlay.css'
+import type * as THREE from 'three/webgpu'
 import type { IBGalaxy } from '../types.ts'
 
-/** Camera radii below which each anchor tier's names appear. The default
- * overview sits above both — the first dive reveals the names, and the
- * family ring never renders as a clump of overlapping text. */
-const FAMILY_LABEL_RADIUS = 280
-const GROUP_LABEL_RADIUS = 175
-/** At close zoom, only the groups nearest the camera get names — labelling
- * all 59 at once is noise, and the far side of the disc is unreadable
- * anyway. */
-const GROUP_LABEL_LIMIT = 10
-
-interface AnchorLabel {
-	node: number
-	tier: number
-	object: CSS2DObject
+export interface GalaxyLabelsOptions {
+	/** Marker accent — the node's resolved arm hue. */
+	accentOf(node: number): string
+	/** Label press — routed like the matching drill row. */
+	onSelect(node: number): void
+	/** Label hover — the chrome-highlight sync (-1 clears). */
+	onHover(node: number): void
 }
 
 export interface GalaxyLabels {
-	group: THREE.Group
-	/** Per-frame visibility pass + overlay render. */
-	render(
-		scene: THREE.Scene,
-		camera: THREE.PerspectiveCamera,
-		cameraRadius: number,
-		focusedGroup: number,
-	): void
-	/** Swap the topic-label set when a constellation is entered/left. */
-	setFocusTopics(topics: number[]): void
-	resize(width: number, height: number): void
+	/** Declare the EXACT set of labelled nodes (indices into galaxy.nodes). */
+	setLabels(nodes: number[]): void
+	/** Projection + collapse pass; call once per rendered frame. */
+	update(camera: THREE.Camera): void
 	dispose(): void
 }
+
+/** Tier icons for the pin faces (settled 2026-08-16): leaves echo the
+ * navigation's mode icons; anchors carry heavier marks (◈ kept for
+ * families by user call). */
+const TIER_FACE: Record<number, string> = { 2: '◈', 1: '✷', 0: '✦', [-1]: '◍' }
 
 export function createGalaxyLabels(
 	host: HTMLElement,
 	galaxy: IBGalaxy,
 	positions: Float32Array,
-	radii: Float32Array,
+	options: GalaxyLabelsOptions,
 ): GalaxyLabels {
-	const renderer = new CSS2DRenderer()
-	renderer.setSize(host.clientWidth || 1, host.clientHeight || 1)
-	renderer.domElement.className = 'ib-galaxy-labels'
-	host.appendChild(renderer.domElement)
-
-	const group = new THREE.Group()
-	group.name = 'ib-galaxy:labels'
-
-	const makeLabel = (node: number, tier: number): CSS2DObject => {
-		const element = document.createElement('div')
-		element.className = 'ib-galaxy-label'
-		element.dataset.tier = String(tier)
-		element.textContent = galaxy.nodes[node].title
-		const object = new CSS2DObject(element)
-		// Topic/source labels sit clear of their body (stars glow, sources
-		// planetify), the anchor tiers just above their glow cores.
-		const lift = tier <= 0 ? radii[node] * 3.4 + 1.6 : radii[node] * 1.6 + 0.9
-		object.position.set(
-			positions[node * 3],
-			positions[node * 3 + 1],
-			positions[node * 3 + 2] + lift,
-		)
-		object.visible = false
-		return object
-	}
-
-	// Anchor tiers only: sources (tier -1) are unnamed dust at rest and get
-	// their labels via setFocusTopics when a constellation planetifies them.
-	const anchors: AnchorLabel[] = []
-	galaxy.nodes.forEach((node, i) => {
-		if (node.tier <= 0) return
-		const object = makeLabel(i, node.tier)
-		anchors.push({ node: i, tier: node.tier, object })
-		group.add(object)
+	const overlay = mountWayfindingOverlay(host, {
+		onSelect: (id) => options.onSelect(Number(id)),
+		onHover: (id) => options.onHover(id === null ? -1 : Number(id)),
 	})
-	const hasFamilies = anchors.some((a) => a.tier === 2)
 
-	let topicLabels: CSS2DObject[] = []
+	const weightLabelFor = (tier: number): string =>
+		galaxy.tiers.find((meta) => meta.tier === tier)?.weightLabel ?? galaxy.weightLabel
 
 	return {
-		group,
-		setFocusTopics(topics: number[]): void {
-			for (const label of topicLabels) {
-				group.remove(label)
-				label.element.remove()
-			}
-			topicLabels = topics.map((node) => {
-				const object = makeLabel(node, galaxy.nodes[node].tier)
-				group.add(object)
-				return object
-			})
-		},
-		render(scene, camera, cameraRadius, focusedGroup): void {
-			const constellation = focusedGroup >= 0
-			const groupCandidates: Array<{ anchor: AnchorLabel; distSq: number }> = []
-			for (const anchor of anchors) {
-				if (constellation) {
-					anchor.object.visible = anchor.node === focusedGroup
-				} else if (anchor.tier === 2) {
-					anchor.object.visible = cameraRadius < FAMILY_LABEL_RADIUS
-				} else {
-					// Two-tier corpora have no families — groups ARE the overview
-					// names, so they take the family threshold.
-					const within =
-						cameraRadius < (hasFamilies ? GROUP_LABEL_RADIUS : FAMILY_LABEL_RADIUS)
-					anchor.object.visible = false
-					if (within) {
-						groupCandidates.push({
-							anchor,
-							distSq: camera.position.distanceToSquared(anchor.object.position),
-						})
+		setLabels(nodes: number[]): void {
+			overlay.setTargets(
+				nodes.map((node): WayfindingTarget => {
+					const entry = galaxy.nodes[node]
+					// NO world-space lift (removed 2026-08-16, a CSS2D-era
+					// holdover): the pin's POLE does the elevating — its foot
+					// belongs exactly at the node.
+					return {
+						id: String(node),
+						label: entry.title,
+						detail: `${entry.weight} ${weightLabelFor(entry.tier)}`,
+						accent: options.accentOf(node),
+						anatomy: 'pin',
+						faceMarkup: `<span class="kolo-wayfinding__fallback" aria-hidden="true">${TIER_FACE[entry.tier] ?? '✦'}</span>`,
+						world: {
+							x: positions[node * 3],
+							y: positions[node * 3 + 1],
+							z: positions[node * 3 + 2],
+						},
 					}
-				}
-			}
-			groupCandidates.sort((a, b) => a.distSq - b.distSq)
-			for (const { anchor } of groupCandidates.slice(0, GROUP_LABEL_LIMIT)) {
-				anchor.object.visible = true
-			}
-			for (const label of topicLabels) label.visible = constellation
-			renderer.render(scene, camera)
+				}),
+			)
 		},
-		resize(width, height): void {
-			renderer.setSize(width, height)
+		update(camera): void {
+			overlay.update(camera)
 		},
 		dispose(): void {
-			for (const label of topicLabels) label.element.remove()
-			for (const anchor of anchors) anchor.object.element.remove()
-			renderer.domElement.remove()
+			overlay.dispose()
 		},
 	}
 }
