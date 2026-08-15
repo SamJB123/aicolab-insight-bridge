@@ -210,6 +210,12 @@ export interface GalaxyCommand {
 	 * reader's "back to overview" and drill-level returns use this so the
 	 * anchor/fleet state matches the chrome. */
 	select?: null
+	/** SOURCES-mode label override (experiment 2026-08-16): while active,
+	 * the RESTING label set becomes source pins — every source with `{}`,
+	 * or the facet-value cohort when given. `null` restores the standard
+	 * top-tier resting labels. Focus/selection states keep their own label
+	 * policies; the override re-applies when returning to rest. */
+	labelSources?: { facet?: string; value?: string } | null
 	revision: number
 }
 

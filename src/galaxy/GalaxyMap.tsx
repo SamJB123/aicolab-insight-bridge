@@ -164,7 +164,11 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		setSelected(null)
 		setTopicPath({ family: null, group: null })
 		setSourcePath((path) => ({ ...path, value: null }))
-		issue({ focus: null, spotlight: null })
+		issue({
+			focus: null,
+			spotlight: null,
+			labelSources: mode() === 'sources' ? {} : null,
+		})
 	}
 	/** Chrome-initiated node choice: select AND fly (drill leaves, palette,
 	 * related, reader rows). */
@@ -220,14 +224,20 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		setInteracted(true)
 		setSourcePath({ facet, value })
 		setChosenFacet(facet)
-		issue({ spotlight: { facet, value }, colorFacet: facet })
+		// The value filters the source-pin field down to its cohort.
+		issue({
+			spotlight: { facet, value },
+			colorFacet: facet,
+			labelSources: { facet, value },
+		})
 	}
 	const drillBack = (): void => {
 		if (mode() === 'sources') {
 			const path = sourcePath()
 			if (path.value !== null) {
 				setSourcePath({ facet: path.facet, value: null })
-				issue({ spotlight: null })
+				// Back to the unfiltered pin field.
+				issue({ spotlight: null, labelSources: {} })
 			} else if (path.facet !== null) {
 				setSourcePath({ facet: null, value: null })
 			}
@@ -247,12 +257,20 @@ export function GalaxyMap(props: GalaxyMapProps) {
 		if (next === mode()) return
 		setMode(next)
 		setInteracted(true)
-		// Leaving the source drill retires its spotlight; entering it
-		// re-applies the one its path still holds.
+		// Sources mode fields SOURCE PINS at rest (experiment 2026-08-16):
+		// all of them until a facet value filters the cohort; its spotlight
+		// re-applies with the path it still holds. Topics mode restores the
+		// standard resting labels.
 		const path = sourcePath()
-		if (next === 'topics') issue({ spotlight: null })
-		else if (path.facet !== null && path.value !== null) {
-			issue({ spotlight: { facet: path.facet, value: path.value } })
+		if (next === 'topics') {
+			issue({ spotlight: null, labelSources: null })
+		} else if (path.facet !== null && path.value !== null) {
+			issue({
+				spotlight: { facet: path.facet, value: path.value },
+				labelSources: { facet: path.facet, value: path.value },
+			})
+		} else {
+			issue({ labelSources: {} })
 		}
 	}
 

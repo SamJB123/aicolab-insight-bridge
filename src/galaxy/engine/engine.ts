@@ -451,9 +451,20 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				currentLabels = labelled
 				labels.setLabels(labelled)
 			}
+			/** Sources-mode override (experiment 2026-08-16): while set, the
+			 * RESTING labels are source pins — all of them, or a facet-value
+			 * cohort. Focus/selection label policies still win their states. */
+			let sourcesOverride: { facet?: string; value?: string } | null = null
+			const restingLabels = (): number[] => {
+				if (!sourcesOverride) return topTierNodes
+				const { facet, value } = sourcesOverride
+				if (facet === undefined || value === undefined) return [...dustNodes]
+				return dustNodes.filter((node) => nodes[node].facets?.[facet] === value)
+			}
 			// Label policy (settled 2026-08-16): the drill level's CHILDREN and
-			// nothing else — overview shows the top tier.
-			showLabels(topTierNodes)
+			// nothing else — overview shows the top tier (or the sources-mode
+			// override's pin field).
+			showLabels(restingLabels())
 			/** A topic's contributing sources, matching what planetifies. */
 			const contributorsOf = (topic: number): number[] =>
 				(membershipsOfTopic.get(topic) ?? [])
@@ -718,7 +729,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if ((focusedGroup < 0 && focusedSource < 0) || exiting) return
 				exiting = true
 				focusAnim.target = 0
-				showLabels(topTierNodes)
+				showLabels(restingLabels())
 				events().onFocusChange?.(null)
 				if (fly) {
 					const home = pose.currentHomePose()
@@ -1076,6 +1087,14 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					setChromeHighlight(target ?? -1)
 				}
 				if (command.select === null) selectIndex(-1, false)
+				if (command.labelSources !== undefined) {
+					sourcesOverride = command.labelSources
+					// Apply immediately when at rest; focus/selection states keep
+					// their own label policies until they exit.
+					if (focusedGroup < 0 && focusedSource < 0 && selectedIndex < 0) {
+						showLabels(restingLabels())
+					}
+				}
 				if (command.spotlight !== undefined) {
 					spotlight = command.spotlight
 					// Take effect only when no stronger anchor holds the sky.
@@ -1089,9 +1108,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (command.focus === null) {
 					exitFocus(true)
 					selectIndex(-1, false)
-					// Family views have no focus mode — restore top-tier labels
+					// Family views have no focus mode — restore resting labels
 					// even when exitFocus had nothing to exit.
-					showLabels(topTierNodes)
+					showLabels(restingLabels())
 				} else if (command.focus !== undefined) {
 					const index = idx(command.focus)
 					if (index !== undefined) focusIndex(index, false)
