@@ -989,7 +989,16 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					core.poseMemory.set(prev.key, { pose: snapshotPose(), aspect: prev.aspect })
 				const lensChanged = prev !== undefined && next.lens !== prev.lens
 				if (lensChanged) applyFacetColors(next.lens)
-				labels.setLabels(next.labels, next.lens)
+				// Only touch the pins when the SET (or its tinting lens)
+				// changed — re-projections that aren't about labels (resize
+				// ticks, drawer-inset changes) must not churn pin DOM
+				// (resize-squish bug, settled 2026-08-16).
+				const labelsChanged =
+					!prev ||
+					prev.lens !== next.lens ||
+					prev.labels.length !== next.labels.length ||
+					prev.labels.some((node, at) => node !== next.labels[at])
+				if (labelsChanged) labels.setLabels(next.labels, next.lens)
 				stars.uniforms.selected.value = next.selected >= 0 ? starIndexOf[next.selected] : -1
 				dust.uniforms.selected.value = next.selected >= 0 ? dustIndexOf[next.selected] : -1
 				reapplyAnchor()
