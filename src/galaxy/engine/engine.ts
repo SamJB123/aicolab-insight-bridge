@@ -31,7 +31,7 @@ import {
 	initWebGpuRendererWithRecovery,
 	surfaceGpuFailures,
 } from '@aicolab/kolo/webgpu/backend-guard'
-import { createEffect, createRoot } from 'solid-js'
+import { createEffect, createRoot, createSignal } from 'solid-js'
 import { color, screenUV } from 'three/tsl'
 import * as THREE from 'three/webgpu'
 import { facetPalette, facetValues } from '../facets.ts'
@@ -76,6 +76,56 @@ const FOCUS_DISTANCE_FAMILY = 130
 const CLICK_SLOP_PX = 6
 const CLICK_MAX_MS = 1500
 const WHEEL_EXIT_INTENT = 320
+
+/** Vertical half-angle tangent of the 46° camera on a WIDE canvas — the
+ * geometry every legacy framing constant was hand-tuned against. Fitted
+ * distances multiply by legacy·TUNED_TAN so a wide desktop canvas
+ * reproduces the shipped framing exactly, while narrower shapes pull back
+ * until the subject fits (settled 2026-08-16). */
+const TUNED_TAN = Math.tan((46 * Math.PI) / 360)
+/** Standoff added inside every fitted distance (the legacy "+14"). */
+const FIT_MARGIN = 14
+
+/** Half-angle tangents of the VISIBLE canvas strip. The camera renders a
+ * virtual canvas of height H+inset and shows its top H px (setViewOffset),
+ * so the subject centres in the strip the bottom sheet leaves uncovered;
+ * these tangents describe that strip's angular extents. Pure math — safe
+ * from any context. */
+const stripTangents = (
+	width: number,
+	height: number,
+	insetPx: number,
+): { tanH: number; tanV: number; aspect: number } => {
+	const inset = Math.min(Math.max(0, insetPx), height * 0.7)
+	const virtual = height + inset
+	const visible = height - inset
+	return {
+		tanH: (TUNED_TAN * width) / virtual,
+		tanV: (TUNED_TAN * visible) / virtual,
+		aspect: width / Math.max(1, visible),
+	}
+}
+
+const near = (a: number, b: number): boolean => Math.abs(a - b) < 1e-3
+/** Structural pose comparison — a same-place re-projection only moves the
+ * camera when the COMPUTED pose actually changed (canvas reshape, drawer
+ * inset), never on unrelated re-runs (lens switches, hover-driven data). */
+const posesEqual = (a: CameraPose | null, b: CameraPose | null): boolean => {
+	if (a === b) return true
+	if (!a || !b) return false
+	if (a.kind === 'home' && b.kind === 'home')
+		return near(a.lng, b.lng) && near(a.lat, b.lat) && near(a.radius, b.radius)
+	if (a.kind === 'ground' && b.kind === 'ground')
+		return (
+			near(a.flatX, b.flatX) &&
+			near(a.flatZ, b.flatZ) &&
+			near(a.lookAtHeight ?? 0, b.lookAtHeight ?? 0) &&
+			near(a.view.bearing, b.view.bearing) &&
+			near(a.view.pitch, b.view.pitch) &&
+			near(a.view.distance, b.view.distance)
+		)
+	return false
+}
 
 const GRADE_INTENSITY: Record<string, number> = {
 	exemplar: 10,
@@ -455,7 +505,71 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				homeMaxRadius: HOME_MAX_RADIUS,
 				glideSeconds: 1.1,
 			})
-			pose.jumpTo({ ...OVERVIEW_POSE })
+
+			// ── Viewport-attuned framing (settled 2026-08-16) ───────────────
+			// The live canvas shape and the web UI's bottom-sheet inset are
+			// reactive framing inputs: project() reads them in its COMPUTE, so
+			// a rotation, window reshape, or drawer detent re-frames the view
+			// through the ordinary projection path (animated fly).
+			const [frameGeometry, setFrameGeometry] = createSignal(
+				{ width: host.clientWidth || 1, height: host.clientHeight || 1 },
+				{ equals: (a, b) => a.width === b.width && a.height === b.height },
+			)
+			/** REACTIVE strip tangents — call ONLY from project()'s compute
+			 * (its signal reads are what re-frame on reshape). */
+			const visibleStrip = (): { tanH: number; tanV: number; aspect: number } => {
+				const { width, height } = frameGeometry()
+				return stripTangents(width, height, core.viewportInset())
+			}
+			/** Distance fitting a subject of world radius `reach` at the
+			 * view's authored tightness `legacy` (the shipped multiplier —
+			 * desktop-wide framing reproduces exactly). */
+			const fitDistance = (reach: number, legacy: number): number => {
+				const strip = visibleStrip()
+				return (
+					FIT_MARGIN +
+					(reach * legacy * TUNED_TAN) / Math.max(0.05, Math.min(strip.tanH, strip.tanV))
+				)
+			}
+			/** Aspect correction for authored FIXED distances (no reach to
+			 * fit): widen by how much the limiting half-angle narrowed. */
+			const fitFixed = (legacy: number): number => {
+				const strip = visibleStrip()
+				return (
+					FIT_MARGIN +
+					(legacy - FIT_MARGIN) * (TUNED_TAN / Math.max(0.05, Math.min(strip.tanH, strip.tanV)))
+				)
+			}
+			/** The home zoom-out clamp, widened for narrow strips so fitted
+			 * overviews are reachable. */
+			const fittedHomeMax = (): number => {
+				const strip = visibleStrip()
+				return (
+					HOME_MAX_RADIUS *
+					Math.max(1, TUNED_TAN / Math.max(0.05, Math.min(strip.tanH, strip.tanV)))
+				)
+			}
+			const overviewPose = (): HomeCameraPose => ({
+				...OVERVIEW_POSE,
+				radius: Math.min(fittedHomeMax(), fitFixed(OVERVIEW_POSE.radius)),
+			})
+			/** Applies the visible-strip camera geometry: aspect + view offset
+			 * frame a virtual canvas of height H+inset and show its top H px,
+			 * centring every pose kind in the uncovered strip. Plain values in
+			 * — callable from the resize path and the geometry effect alike. */
+			const applyViewport = (width: number, height: number, insetPx: number): void => {
+				const inset = Math.round(Math.min(Math.max(0, insetPx), height * 0.7))
+				const virtual = height + inset
+				camera.aspect = width / virtual
+				if (inset > 0) camera.setViewOffset(width, virtual, 0, inset, width, height)
+				else camera.clearViewOffset()
+				const strip = stripTangents(width, height, inset)
+				pose.setHomeMaxRadius(
+					HOME_MAX_RADIUS *
+						Math.max(1, TUNED_TAN / Math.max(0.05, Math.min(strip.tanH, strip.tanV))),
+				)
+			}
+			pose.jumpTo(overviewPose())
 
 			const obliquePose = (index: number, distance: number): HomeCameraPose => {
 				const x = positions[index * 3]
@@ -465,7 +579,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const nodeLat = length > 1e-6 ? Math.asin(z / length) : 0
 				const lat = nodeLat * 0.35 + 0.55
 				const lng = Math.atan2(y, x)
-				const radius = Math.min(HOME_MAX_RADIUS, Math.max(HOME_MIN_RADIUS, length + distance))
+				const radius = Math.min(
+					fittedHomeMax(),
+					Math.max(HOME_MIN_RADIUS, length + fitFixed(distance)),
+				)
 				return { kind: 'home', lng, lat, radius }
 			}
 
@@ -654,22 +771,24 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					positions[group * 3 + 2],
 					topicsByGroup.get(group) ?? [],
 				)
-				return groundFrame(group, Math.max(30, 14 + reach * 2.2))
+				return groundFrame(group, Math.max(30, fitDistance(reach, 2.2)))
 			}
 			/** Frames a source with its CONTEXT (settled 2026-08-16 papercut):
 			 * arrived via a topic → frame the source and THAT topic; otherwise
-			 * frame its membership reach with the readability cap. */
+			 * frame its membership reach with the readability cap (expressed
+			 * as a reach cap so narrow strips still pull back to fit it). */
 			const frameSource = (source: number, contextTopic: number): CameraPose => {
 				const cx = positions[source * 3]
 				const cy = positions[source * 3 + 1]
 				const cz = positions[source * 3 + 2]
 				if (contextTopic >= 0) {
 					const reach = reachFrom(cx, cy, cz, [contextTopic])
-					return groundFrame(source, Math.max(30, 14 + reach * 1.4))
+					return groundFrame(source, Math.max(30, fitDistance(reach, 1.4)))
 				}
 				const topics = (membershipsOfSource.get(source) ?? []).map((link) => link.topic)
 				const reach = reachFrom(cx, cy, cz, topics)
-				return groundFrame(source, Math.min(220, Math.max(30, 14 + reach * 1.2)))
+				const reachCap = (220 - FIT_MARGIN) / 1.2
+				return groundFrame(source, Math.max(30, fitDistance(Math.min(reach, reachCap), 1.2)))
 			}
 
 			// ── Projection: the core's navigation state → the sky ───────────
@@ -699,9 +818,13 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				/** Node whose position becomes the DOF/fog focus point. */
 				frameCenter: number
 				/** Computed destination pose; null = leave the camera alone.
-				 * A remembered pose for `key` always wins (up restores the
-				 * exact view you left — settled 2026-08-16). */
+				 * A remembered pose for `key` wins when it was captured under
+				 * a matching canvas shape (up restores the exact view you
+				 * left — settled 2026-08-16); a reshaped canvas re-fits. */
 				pose: CameraPose | null
+				/** Visible-strip aspect this projection was computed under —
+				 * the pose-memory compatibility key. */
+				aspect: number
 			}
 			const restingProjection = (
 				key: string,
@@ -719,17 +842,21 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				whisker: -1,
 				frameCenter: -1,
 				pose: null,
+				aspect: visibleStrip().aspect,
 			})
 			const project = (): Projection => {
 				const level = core.level()
 				const key = core.stateKey()
 				const lens = core.lens()
+				// Read once so EVERY branch tracks the canvas shape + drawer
+				// inset — a reshape re-projects regardless of where we are.
+				const aspect = visibleStrip().aspect
 				if (level.kind === 'reading' || level.kind === 'document') {
 					const node = level.kind === 'document' ? level.source : level.node
 					const trail = level.kind === 'document' ? core.trail() : level.trail
 					const index = idx(node.id) ?? -1
 					if (index < 0)
-						return { ...restingProjection(key, lens, topTierNodes), pose: { ...OVERVIEW_POSE } }
+						return { ...restingProjection(key, lens, topTierNodes), pose: overviewPose() }
 					if (node.tier === 0) {
 						const group = groupOfTopic(index)
 						return {
@@ -744,6 +871,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 							whisker: -1,
 							frameCenter: index,
 							pose: group >= 0 ? frameGroup(group) : obliquePose(index, 42),
+							aspect,
 						}
 					}
 					// Source reading — its trail names the context (equal-citizen
@@ -763,6 +891,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 						whisker: index,
 						frameCenter: index,
 						pose: frameSource(index, contextTopic),
+						aspect,
 					}
 				}
 				if (level.kind === 'children') {
@@ -781,6 +910,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 							whisker: -1,
 							frameCenter: index,
 							pose: frameGroup(index),
+							aspect,
 						}
 					}
 					// Family: oblique overview of its territory (no focus mode).
@@ -806,7 +936,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					return restingProjection(key, lens, [...dustNodes])
 				}
 				// Topics root: the authored overview.
-				return { ...restingProjection(key, lens, topTierNodes), pose: { ...OVERVIEW_POSE } }
+				return { ...restingProjection(key, lens, topTierNodes), pose: overviewPose() }
 			}
 			const snapshotPose = (): CameraPose => {
 				const goal = pose.goal()
@@ -829,8 +959,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const applyProjection = (next: Projection): void => {
 				const prev = currentProjection
 				currentProjection = next
-				// Remember the view being left so "up" can restore it exactly.
-				if (prev && prev.key !== next.key) core.poseMemory.set(prev.key, snapshotPose())
+				// Remember the view being left so "up" can restore it exactly,
+				// tagged with the canvas shape it was seen under.
+				if (prev && prev.key !== next.key)
+					core.poseMemory.set(prev.key, { pose: snapshotPose(), aspect: prev.aspect })
 				const lensChanged = prev !== undefined && next.lens !== prev.lens
 				if (lensChanged) applyFacetColors(next.lens)
 				labels.setLabels(next.labels, next.lens)
@@ -860,9 +992,18 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					)
 				}
 				if (prev?.key !== next.key) {
+					// A memory captured under a meaningfully different canvas
+					// shape would restore cropped — prefer the fresh fit then
+					// (settled 2026-08-16).
 					const remembered = core.poseMemory.get(next.key)
-					if (remembered) pose.flyTo(remembered)
+					const rememberedFits =
+						remembered && Math.abs(remembered.aspect - next.aspect) < next.aspect * 0.05
+					if (remembered && rememberedFits) pose.flyTo(remembered.pose)
 					else if (next.pose) pose.flyTo(next.pose)
+				} else if (prev && next.pose && !posesEqual(prev.pose, next.pose)) {
+					// Same place, reshaped canvas (rotation, resize, drawer
+					// detent): glide to the re-fitted framing.
+					pose.flyTo(next.pose)
 				}
 			}
 
@@ -876,9 +1017,13 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				() => {
 					const width = host.clientWidth
 					const height = host.clientHeight
-					camera.aspect = width / height
-					camera.updateProjectionMatrix()
+					// Synchronous so this very frame renders undistorted; the
+					// geometry signal then re-frames through the projection
+					// path (the inset read here is a plain non-reactive read —
+					// the reactive subscription lives in project()'s compute).
+					applyViewport(width, height, core.viewportInset())
 					renderer.setSize(width, height, false)
+					setFrameGeometry({ width, height })
 				},
 				{ applyPixelRatio: (value) => renderer.setPixelRatio(value) },
 			)
@@ -1111,6 +1256,16 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					() => project(),
 					(projection) => {
 						applyProjection(projection)
+					},
+				)
+				createEffect(
+					// The drawer inset changes the camera's view offset even
+					// between navigations (geometry changes route through the
+					// resize handler, which applies synchronously — this
+					// effect is idempotent over those).
+					() => ({ geometry: frameGeometry(), inset: core.viewportInset() }),
+					({ geometry, inset }) => {
+						applyViewport(geometry.width, geometry.height, inset)
 					},
 				)
 				createEffect(

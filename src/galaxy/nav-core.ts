@@ -37,6 +37,14 @@ import type { CameraPose } from '@aicolab/kolo/camera/pose-camera'
 import { primaryParents } from './layout/cosmos.ts'
 import type { IBGalaxy, IBNode, IBNodeId } from './types.ts'
 
+/** A remembered camera view: the pose plus the visible-strip aspect it was
+ * captured under (the type imports are erased at runtime — the core only
+ * stores what the 3D face hands it). */
+export interface RememberedView {
+	pose: CameraPose
+	aspect: number
+}
+
 export type GalaxyNavMode = 'topics' | 'sources'
 
 export type NavStep =
@@ -85,16 +93,25 @@ export class GalaxyNavCore {
 	/** Any navigation/pointer interaction happened (dismisses the hint). */
 	readonly interacted: Accessor<boolean>
 
+	/** Pixels of canvas covered by web-UI overlays from the bottom (the
+	 * mobile drawer sheet; 0 on desktop where the panel shrinks the canvas
+	 * instead). The web face writes it; the 3D face fits framing into the
+	 * visible strip that remains (settled 2026-08-16). */
+	readonly viewportInset: Accessor<number>
+
 	/** Camera poses remembered per state key — written and consumed by the
-	 * 3D face so "up" restores the exact view you left (the core only
-	 * stores them; the type import is erased at runtime). */
-	readonly poseMemory = new Map<string, CameraPose>()
+	 * 3D face so "up" restores the exact view you left. Each memory carries
+	 * the visible-strip aspect it was captured under: restoring into a
+	 * meaningfully different canvas shape discards it in favour of a fresh
+	 * fit (settled 2026-08-16). */
+	readonly poseMemory = new Map<string, RememberedView>()
 
 	#setMode: Setter<GalaxyNavMode>
 	#setLens: Setter<string | undefined>
 	#setHovered: Setter<IBNodeId | null>
 	#setHighlight: Setter<IBNodeId | null>
 	#setInteracted: Setter<boolean>
+	#setViewportInset: Setter<number>
 	#topics: Accessor<ModeState>
 	#setTopics: Setter<ModeState>
 	#sources: Accessor<ModeState>
@@ -122,6 +139,9 @@ export class GalaxyNavCore {
 		const [interacted, setInteracted] = createSignal(false)
 		this.interacted = interacted
 		this.#setInteracted = setInteracted
+		const [viewportInset, setViewportInset] = createSignal(0)
+		this.viewportInset = viewportInset
+		this.#setViewportInset = setViewportInset
 		const [topics, setTopics] = createSignal<ModeState>(EMPTY_STATE)
 		this.#topics = topics
 		this.#setTopics = setTopics
@@ -360,5 +380,9 @@ export class GalaxyNavCore {
 
 	markInteracted(): void {
 		this.#setInteracted(true)
+	}
+
+	setViewportInset(px: number): void {
+		this.#setViewportInset(Math.max(0, Math.round(px)))
 	}
 }

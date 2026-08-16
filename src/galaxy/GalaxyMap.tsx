@@ -104,6 +104,12 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	// THE navigation brain — one per corpus; identity-stable across engine
 	// remounts (intensity re-bakes keep trails, lens and remembered poses).
 	const core = createMemo(() => new GalaxyNavCore(props.galaxy))
+	// Resolved in a TRACKED scope so the handler the inspector calls from its
+	// own effect touches no reactive values (the split-effect contract).
+	const occlusionHandler = createMemo(() => {
+		const instance = core()
+		return (px: number) => instance.setViewportInset(px)
+	})
 	const configuration = createMemo(
 		(): GalaxyConfiguration => ({
 			galaxy: props.galaxy,
@@ -318,6 +324,7 @@ export function GalaxyMap(props: GalaxyMapProps) {
 							<ResponsiveInspector
 								label={core().reading()?.title ?? props.title}
 								activeKey={core().reading()?.id ?? null}
+								onOcclusionChange={occlusionHandler()}
 								class="ib-galaxy-inspector"
 							>
 								<Show
