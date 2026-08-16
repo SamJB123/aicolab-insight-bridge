@@ -28,8 +28,10 @@ import type * as THREE from 'three/webgpu'
 import type { IBGalaxy } from '../types.ts'
 
 export interface GalaxyLabelsOptions {
-	/** Marker accent — the node's resolved arm hue. */
-	accentOf(node: number): string
+	/** Marker accent for a node under the given colour-by lens. The lens
+	 * arrives AS DATA from the projection's compute (Solid's split-effect
+	 * contract) — never read ambiently here. */
+	accentOf(node: number, lens: string | undefined): string
 	/** Label press — routed like the matching drill row. */
 	onSelect(node: number): void
 	/** Label hover — the chrome-highlight sync (-1 clears). */
@@ -37,8 +39,9 @@ export interface GalaxyLabelsOptions {
 }
 
 export interface GalaxyLabels {
-	/** Declare the EXACT set of labelled nodes (indices into galaxy.nodes). */
-	setLabels(nodes: number[]): void
+	/** Declare the EXACT set of labelled nodes (indices into galaxy.nodes)
+	 * with the active colour-by lens for accent resolution. */
+	setLabels(nodes: number[], lens: string | undefined): void
 	/** Projection + collapse pass; call once per rendered frame. */
 	update(camera: THREE.Camera): void
 	dispose(): void
@@ -64,7 +67,7 @@ export function createGalaxyLabels(
 		galaxy.tiers.find((meta) => meta.tier === tier)?.weightLabel ?? galaxy.weightLabel
 
 	return {
-		setLabels(nodes: number[]): void {
+		setLabels(nodes: number[], lens: string | undefined): void {
 			overlay.setTargets(
 				nodes.map((node): WayfindingTarget => {
 					const entry = galaxy.nodes[node]
@@ -75,7 +78,7 @@ export function createGalaxyLabels(
 						id: String(node),
 						label: entry.title,
 						detail: `${entry.weight} ${weightLabelFor(entry.tier)}`,
-						accent: options.accentOf(node),
+						accent: options.accentOf(node, lens),
 						anatomy: 'pin',
 						faceMarkup: `<span class="kolo-wayfinding__fallback" aria-hidden="true">${TIER_FACE[entry.tier] ?? '✦'}</span>`,
 						world: {

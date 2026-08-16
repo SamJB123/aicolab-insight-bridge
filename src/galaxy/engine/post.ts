@@ -122,9 +122,7 @@ export function createGalaxyPost(
 			})
 			return total.div(STREAK_SAMPLES / 3)
 		})()
-		composed = composed.add(
-			streakNode.mul(color(STREAK_TINT)).mul(uniforms.streak).mul(0.5),
-		)
+		composed = composed.add(streakNode.mul(color(STREAK_TINT)).mul(uniforms.streak).mul(0.5))
 	}
 
 	if (quality.lensflare) {

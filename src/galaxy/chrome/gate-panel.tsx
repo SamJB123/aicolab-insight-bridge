@@ -33,9 +33,9 @@ export function GalaxyGatePanel(props: GalaxyGatePanelProps) {
 					/>
 				</Show>
 				<p>
-					The galaxy map draws {props.corpusTitle} with compute shaders and needs a browser
-					that exposes WebGPU — current Chrome or Edge, or Safari 26 on recent hardware.
-					This browser doesn't offer one, so the sky stays a picture here.
+					The galaxy map draws {props.corpusTitle} with compute shaders and needs a browser that
+					exposes WebGPU — current Chrome or Edge, or Safari 26 on recent hardware. This browser
+					doesn't offer one, so the sky stays a picture here.
 				</p>
 				<p class="ib-galaxy-gate-hint">
 					Everything in the galaxy is also reachable through the flat views.

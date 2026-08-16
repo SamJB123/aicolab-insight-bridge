@@ -11,7 +11,14 @@
  *
  * Sizing is flex end-to-end: the organism fills whatever frame the host
  * hands it. NO viewport math, no magic offsets. */
-@layer reset, ui.tokens, ui.resolver, ui.foundations, ui.atoms, ui.molecules, ui.organisms, ui.enhancements;
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
 
 @layer ui.organisms {
 	@scope (.ib-galaxy) {
@@ -260,7 +267,7 @@
 			overflow: hidden;
 		}
 
-		.ib-galaxy-nav-back {
+		.ib-galaxy-nav-up {
 			all: unset;
 			/* `all: unset` resets flex too, silently re-enabling shrink and
 			 * letting the column crush this row to a sliver — the layout
@@ -279,11 +286,11 @@
 			white-space: nowrap;
 		}
 
-		.ib-galaxy-nav-back:hover {
+		.ib-galaxy-nav-up:hover {
 			color: var(--color-base-content);
 		}
 
-		.ib-galaxy-nav-back:focus-visible {
+		.ib-galaxy-nav-up:focus-visible {
 			outline: 2px solid var(--color-ring);
 			outline-offset: 2px;
 		}
@@ -373,6 +380,15 @@
 		.ib-galaxy-flag-hot {
 			border-color: color-mix(in oklab, var(--color-error, #b04a3a) 60%, transparent);
 			color: var(--color-base-content);
+		}
+
+		/* Wifi-signal membership glyph (2026-08-16) — trailing slot of the
+		   topic-superclusters rows; strength inks the arcs. */
+		.ib-galaxy-signal {
+			inline-size: 1.15rem;
+			block-size: 1.15rem;
+			flex: none;
+			color: var(--color-base-content-muted, currentColor);
 		}
 
 		.ib-galaxy-reader-lede {

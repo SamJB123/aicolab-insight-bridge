@@ -73,9 +73,7 @@ export function createDust(data: DustData): Dust {
 	const aPosition = vec3From(
 		instancedBufferAttribute(new THREE.InstancedBufferAttribute(data.positions, 3)),
 	)
-	const aTraits = vec2From(
-		instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 2)),
-	)
+	const aTraits = vec2From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 2)))
 	const aRadius = aTraits.x
 	const aSeed = aTraits.y
 	const aColor = vec3From(instancedBufferAttribute(colorAttr))
@@ -100,7 +98,12 @@ export function createDust(data: DustData): Dust {
 	const selectHit = smoothstep(1, 0, self.sub(uniforms.selected).abs())
 	const ignite = hoverHit.max(selectHit).mul(igniteGain)
 
-	const twinkle = time.mul(1.1).add(aSeed.mul(Math.PI * 2)).sin().mul(0.08).add(1)
+	const twinkle = time
+		.mul(1.1)
+		.add(aSeed.mul(Math.PI * 2))
+		.sin()
+		.mul(0.08)
+		.add(1)
 	material.scaleNode = aRadius.mul(GLOW_EXTENT).mul(twinkle).mul(ignite.mul(0.5).add(1))
 
 	// Anchor dimming (legacy formula): connected grains brighten by strength,
@@ -121,7 +124,9 @@ export function createDust(data: DustData): Dust {
 	const brightness = float(0.34).mul(dimming).mul(ignite.mul(1.4).add(1))
 	material.colorNode = aColor.mul(glow).mul(brightness)
 	material.mrtNode = mrt({
-		bloomIntensity: float(0.15).add(ignite.mul(0.6)).add(aHighlight.mul(uniforms.anchorActive).mul(0.4)),
+		bloomIntensity: float(0.15)
+			.add(ignite.mul(0.6))
+			.add(aHighlight.mul(uniforms.anchorActive).mul(0.4)),
 	})
 
 	const geometry = new THREE.PlaneGeometry(1, 1)

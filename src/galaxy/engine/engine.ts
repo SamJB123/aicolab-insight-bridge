@@ -19,6 +19,7 @@
  */
 
 import {
+	type CameraPose,
 	createPoseCamera,
 	type HomeCameraPose,
 	type PoseChart,
@@ -30,16 +31,13 @@ import {
 	initWebGpuRendererWithRecovery,
 	surfaceGpuFailures,
 } from '@aicolab/kolo/webgpu/backend-guard'
+import { createEffect, createRoot } from 'solid-js'
 import { color, screenUV } from 'three/tsl'
 import * as THREE from 'three/webgpu'
 import { facetPalette, facetValues } from '../facets.ts'
 import { bakeGalaxyLayout, DISC_RADIUS, primaryParents } from '../layout/cosmos.ts'
-import type {
-	GalaxyCommand,
-	GalaxyEvents,
-	IBGalaxy,
-	IBIntensityMode,
-} from '../types.ts'
+import type { GalaxyNavCore } from '../nav-core.ts'
+import type { IBGalaxy, IBIntensityMode } from '../types.ts'
 import { createAsterisms, type AsterismGroup } from './asterisms.ts'
 import { createDust } from './dust.ts'
 import { resolveArmIdentity } from './hues.ts'
@@ -57,14 +55,17 @@ export interface GalaxyEngineOptions {
 	host: HTMLElement
 	galaxy: IBGalaxy
 	intensityMode?: IBIntensityMode
-	/** Read at event time so the host can swap handlers without a rebuild. */
-	events: () => GalaxyEvents
+	/** THE navigation truth (headless-core rewrite, 2026-08-16): this engine
+	 * is a FACE over the core — it subscribes to the core's signals and
+	 * projects them into camera/labels/fleets/dimming, and every scene input
+	 * (star click, label press, wheel-out) calls a core action. The engine
+	 * keeps no navigation state of its own. */
+	core: GalaxyNavCore
 	onReady: () => void
 	onError: (message: string) => void
 }
 
 export interface GalaxyEngineHandle {
-	updateCommand(command: GalaxyCommand): void
 	dispose(): void
 }
 
@@ -72,7 +73,6 @@ const HOME_MIN_RADIUS = 34
 const HOME_MAX_RADIUS = 480
 const OVERVIEW_POSE: HomeCameraPose = { kind: 'home', lng: -1.1, lat: 0.55, radius: 300 }
 const FOCUS_DISTANCE_FAMILY = 130
-const CONSTELLATION_EXIT_RADIUS = 262
 const CLICK_SLOP_PX = 6
 const CLICK_MAX_MS = 1500
 const WHEEL_EXIT_INTENT = 320
@@ -94,11 +94,9 @@ const GALAXY_CHART: PoseChart = {
 }
 
 export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHandle {
-	const { canvas, host, galaxy, events, onReady, onError } = options
+	const { canvas, host, galaxy, core, onReady, onError } = options
 	let disposed = false
 	const cleanups: Array<() => void> = []
-	let applyCommand: ((command: GalaxyCommand) => void) | undefined
-	let pendingCommand: GalaxyCommand | undefined
 
 	void (async () => {
 		try {
@@ -235,7 +233,11 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				facetColorCache.set(key, colors)
 				return colors
 			}
-			let activeFacet = galaxy.sourceFacets?.[0]?.key
+			// The colour-by lens is core truth. Per Solid's split-effect
+			// contract ("extract the data you need in the compute phase and
+			// pass plain values to the effect"), the lens is READ in the
+			// projection's compute and flows to every consumer AS A PARAMETER
+			// — no ambient reads, no shadow copies.
 
 			// ── Renderer ────────────────────────────────────────────────────
 			const touch = matchMedia('(pointer: coarse)').matches
@@ -335,8 +337,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				scene.remove(dust.mesh)
 				dust.dispose()
 			})
-			const applyFacetColors = (): void => {
-				const nodeColors = facetColorsFor(activeFacet)
+			const applyFacetColors = (lens: string | undefined): void => {
+				const nodeColors = facetColorsFor(lens)
 				const instanceColors = new Float32Array(dustNodes.length * 3)
 				dustNodes.forEach((node, d) => {
 					instanceColors[d * 3] = nodeColors[node * 3]
@@ -345,7 +347,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				})
 				dust.setColors(instanceColors)
 			}
-			applyFacetColors()
+			applyFacetColors(core.lens())
 
 			// Asterisms (pure-reveal constellations).
 			const asterismGroups: AsterismGroup[] = [...topicsByGroup.entries()].map(
@@ -417,54 +419,29 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			}
 
 			// Interactive wayfinding labels (kolo overlay, adopted 2026-08-16):
-			// clicks route like drill rows, hover joins the chrome-highlight
-			// sync. Runtime-late references (labelPick/setChromeHighlight) are
-			// closures — defined below, invoked only on user events.
+			// clicks and hovers call CORE ACTIONS; the label set itself is
+			// decided by the projection (the drill level's children).
 			const accentScratch = new THREE.Color()
 			const labels = createGalaxyLabels(host, galaxy, positions, {
-				accentOf: (node) => {
+				accentOf: (node, lens) => {
 					// Sources ride the ACTIVE facet lens colour (settled
 					// 2026-08-16) — the same node-indexed palette the dust uses,
 					// so pins and grains always agree; everything else rides the
-					// arm hue the nebulae resolved.
+					// arm hue the nebulae resolved. The lens arrives as a
+					// PARAMETER (from the projection's compute) — no ambient read.
 					if (nodes[node].tier === -1) {
-						const colors = facetColorsFor(activeFacet)
-						accentScratch.setRGB(
-							colors[node * 3],
-							colors[node * 3 + 1],
-							colors[node * 3 + 2],
-						)
+						const colors = facetColorsFor(lens)
+						accentScratch.setRGB(colors[node * 3], colors[node * 3 + 1], colors[node * 3 + 2])
 						return `#${accentScratch.getHexString()}`
 					}
 					const arm = arms.armOf[node]
 					const hue = arm >= 0 ? arms.hues[arm] : undefined
 					return hue ? `#${hue.getHexString()}` : '#8fa4c9'
 				},
-				onSelect: (node) => labelPick(node),
-				onHover: (node) => setChromeHighlight(node),
+				onSelect: (node) => core.openNode(nodes[node].id),
+				onHover: (node) => core.setHovered(node >= 0 ? nodes[node].id : null),
 			})
 			cleanups.push(() => labels.dispose())
-			/** The labelled set, tracked so lens switches can re-issue it with
-			 * fresh accents (live retint, settled 2026-08-16). */
-			let currentLabels: number[] = []
-			const showLabels = (labelled: number[]): void => {
-				currentLabels = labelled
-				labels.setLabels(labelled)
-			}
-			/** Sources-mode override (experiment 2026-08-16): while set, the
-			 * RESTING labels are source pins — all of them, or a facet-value
-			 * cohort. Focus/selection label policies still win their states. */
-			let sourcesOverride: { facet?: string; value?: string } | null = null
-			const restingLabels = (): number[] => {
-				if (!sourcesOverride) return topTierNodes
-				const { facet, value } = sourcesOverride
-				if (facet === undefined || value === undefined) return [...dustNodes]
-				return dustNodes.filter((node) => nodes[node].facets?.[facet] === value)
-			}
-			// Label policy (settled 2026-08-16): the drill level's CHILDREN and
-			// nothing else — overview shows the top tier (or the sources-mode
-			// override's pin field).
-			showLabels(restingLabels())
 			/** A topic's contributing sources, matching what planetifies. */
 			const contributorsOf = (topic: number): number[] =>
 				(membershipsOfTopic.get(topic) ?? [])
@@ -480,7 +457,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			})
 			pose.jumpTo({ ...OVERVIEW_POSE })
 
-			const obliqueFlight = (index: number, distance: number): void => {
+			const obliquePose = (index: number, distance: number): HomeCameraPose => {
 				const x = positions[index * 3]
 				const y = positions[index * 3 + 1]
 				const z = positions[index * 3 + 2]
@@ -489,7 +466,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const lat = nodeLat * 0.35 + 0.55
 				const lng = Math.atan2(y, x)
 				const radius = Math.min(HOME_MAX_RADIUS, Math.max(HOME_MIN_RADIUS, length + distance))
-				pose.flyTo({ kind: 'home', lng, lat, radius })
+				return { kind: 'home', lng, lat, radius }
 			}
 
 			// ── Anchor dimming ──────────────────────────────────────────────
@@ -547,31 +524,24 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			// ── Facet spotlight (settled 2026-08-16) ────────────────────────
 			// While the source drill sits on a facet value, that cohort's dust
 			// stays lit and the rest recedes; stars hold at a readable middle.
-			// Selection anchors outrank it — it returns when they clear.
-			let spotlight: { facet: string; value: string } | null = null
-			const applySpotlight = (): void => {
-				if (!spotlight) return
+			const applySpotlight = (facet: string, value: string): void => {
 				starHighlights.fill(0.55)
 				dustHighlights.fill(0)
 				for (const node of dustNodes) {
-					if (nodes[node].facets?.[spotlight.facet] === spotlight.value) {
+					if (nodes[node].facets?.[facet] === value) {
 						dustHighlights[dustIndexOf[node]] = 1
 					}
 				}
 				applyAnchor()
 			}
 
-			// ── Constellation state machine ─────────────────────────────────
-			let focusedGroup = -1
-			/** SOURCE mode (settled 2026-08-15): selecting a source no longer
-			 * enters a constellation — no MST figure (the whiskers own the line
-			 * language), fleet = the source + its co-contributors, camera frames
-			 * the source and its member topics. */
-			let focusedSource = -1
-			let exiting = false
+			// ── Fleet + focus animation (presentation, driven by projection) ─
 			let planets: PlanetCluster | undefined
 			const focusAnim = { current: 0, target: 0 }
 			const focusPoint = new THREE.Vector3()
+			/** Planets linger through the fade-out; the loop disposes them once
+			 * focusAnim settles near zero. */
+			let pendingFleetClear = false
 
 			const disposePlanets = (): void => {
 				if (!planets) return
@@ -588,6 +558,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				members: number[],
 				suns: number[],
 				glows: number[],
+				lens: string | undefined,
 			): void => {
 				disposePlanets()
 				if (members.length === 0) return
@@ -596,7 +567,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					positions,
 					radii: layout.radii,
 					sunOf: Int32Array.from(suns),
-					colors: facetColorsFor(activeFacet),
+					colors: facetColorsFor(lens),
 					glows: Float32Array.from(glows),
 				})
 				scene.add(planets.mesh)
@@ -609,203 +580,289 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			 * THAT topic's exemplars + high-value contributors only, all sun-lit
 			 * by the selected topic; its member-grade sources stay grains and
 			 * everything unengaged dims through the anchor. */
-			const buildTopicPlanets = (topic: number): void => {
+			const buildTopicPlanets = (topic: number, lens: string | undefined): void => {
 				fleet = { kind: 'topic', key: topic }
 				const links = (membershipsOfTopic.get(topic) ?? []).filter((link) => link.grade >= 1)
 				spawnPlanets(
 					links.map((link) => link.source),
 					links.map(() => topic),
 					links.map((link) => (link.grade === 2 ? 1 : 0)),
+					lens,
 				)
 			}
 			/** Source mode planetifies ONLY the selected source (revised
 			 * 2026-08-15 after seeing co-contributor fleets: too many planets) —
 			 * the one world is the selection marker, sun-lit by its primary
 			 * topic; it glows if the source is an exemplar anywhere. */
-			const buildSourcePlanets = (source: number): void => {
+			const buildSourcePlanets = (source: number, lens: string | undefined): void => {
 				fleet = { kind: 'source', key: source }
 				const links = membershipsOfSource.get(source) ?? []
-				const sun =
-					primaryTopicOf[source] >= 0 ? primaryTopicOf[source] : (links[0]?.topic ?? -1)
+				const sun = primaryTopicOf[source] >= 0 ? primaryTopicOf[source] : (links[0]?.topic ?? -1)
 				if (sun < 0) {
 					disposePlanets()
 					return
 				}
-				spawnPlanets([source], [sun], [links.some((link) => link.grade === 2) ? 1 : 0])
+				spawnPlanets([source], [sun], [links.some((link) => link.grade === 2) ? 1 : 0], lens)
 			}
-			const rebuildFleet = (): void => {
+			const rebuildFleet = (lens: string | undefined): void => {
 				if (!fleet) return
-				if (fleet.kind === 'topic') buildTopicPlanets(fleet.key)
-				else buildSourcePlanets(fleet.key)
+				if (fleet.kind === 'topic') buildTopicPlanets(fleet.key, lens)
+				else buildSourcePlanets(fleet.key, lens)
 			}
-			const enterConstellation = (group: number): void => {
-				if (focusedGroup === group && focusedSource < 0 && !exiting) return
-				focusedGroup = group
-				focusedSource = -1
-				exiting = false
-				focusAnim.current = 0
-				focusAnim.target = 1
-				// Sources stay GRAINS at constellation level (settled 2026-08-16
-				// — planets belong to topic selection); any prior fleet clears.
-				clearFleet()
-				const topics = topicsByGroup.get(group) ?? []
-				// Level children only: the constellation's topics.
-				showLabels(topics)
-				events().onFocusChange?.(nodes[group])
-				const wx = positions[group * 3]
-				const wy = positions[group * 3 + 1]
-				const wz = positions[group * 3 + 2]
-				focusPoint.set(wx, wy, wz)
+			// ── Framing (pure pose computation; the projection flies them) ──
+			const groupOfTopic = (topic: number): number => {
+				const groupId = parentOf.get(nodes[topic].id)
+				const group = groupId !== undefined ? idx(groupId) : undefined
+				return group !== undefined && nodes[group].tier === 1 ? group : -1
+			}
+			const reachFrom = (cx: number, cy: number, cz: number, members: number[]): number => {
 				let reach = 6
-				for (const topic of topics) {
+				for (const member of members) {
 					reach = Math.max(
 						reach,
 						Math.hypot(
-							positions[topic * 3] - wx,
-							positions[topic * 3 + 1] - wy,
-							positions[topic * 3 + 2] - wz,
+							positions[member * 3] - cx,
+							positions[member * 3 + 1] - cy,
+							positions[member * 3 + 2] - cz,
 						),
 					)
 				}
-				pose.flyTo({
+				return reach
+			}
+			const groundFrame = (center: number, distance: number): CameraPose => {
+				const wx = positions[center * 3]
+				const wy = positions[center * 3 + 1]
+				const wz = positions[center * 3 + 2]
+				return {
 					kind: 'ground',
 					chart: GALAXY_CHART,
 					view: {
 						bearing: Math.atan2(-wx, -wy),
 						pitch: 0.62,
-						distance: Math.max(30, 14 + reach * 2.2),
+						distance,
 						fov: 46,
 					},
 					flatX: wx,
 					flatZ: wy,
 					lookAtHeight: wz,
-				})
+				}
 			}
-			const enterSourceMode = (source: number): void => {
-				if (focusedSource === source && !exiting) return
-				focusedGroup = -1
-				focusedSource = source
-				exiting = false
-				focusAnim.current = 0
-				focusAnim.target = 1
-				buildSourcePlanets(source)
-				// Level children only: the topics this source contributes to.
+			const frameGroup = (group: number): CameraPose => {
+				const reach = reachFrom(
+					positions[group * 3],
+					positions[group * 3 + 1],
+					positions[group * 3 + 2],
+					topicsByGroup.get(group) ?? [],
+				)
+				return groundFrame(group, Math.max(30, 14 + reach * 2.2))
+			}
+			/** Frames a source with its CONTEXT (settled 2026-08-16 papercut):
+			 * arrived via a topic → frame the source and THAT topic; otherwise
+			 * frame its membership reach with the readability cap. */
+			const frameSource = (source: number, contextTopic: number): CameraPose => {
+				const cx = positions[source * 3]
+				const cy = positions[source * 3 + 1]
+				const cz = positions[source * 3 + 2]
+				if (contextTopic >= 0) {
+					const reach = reachFrom(cx, cy, cz, [contextTopic])
+					return groundFrame(source, Math.max(30, 14 + reach * 1.4))
+				}
 				const topics = (membershipsOfSource.get(source) ?? []).map((link) => link.topic)
-				showLabels(topics)
-				events().onFocusChange?.(nodes[source])
-				const wx = positions[source * 3]
-				const wy = positions[source * 3 + 1]
-				const wz = positions[source * 3 + 2]
-				focusPoint.set(wx, wy, wz)
-				let reach = 6
-				for (const topic of topics) {
-					reach = Math.max(
-						reach,
-						Math.hypot(
-							positions[topic * 3] - wx,
-							positions[topic * 3 + 1] - wy,
-							positions[topic * 3 + 2] - wz,
-						),
-					)
-				}
-				// A prolific source's topics can span half the disc — cap the
-				// pull-back so the source itself stays readable.
-				pose.flyTo({
-					kind: 'ground',
-					chart: GALAXY_CHART,
-					view: {
-						bearing: Math.atan2(-wx, -wy),
-						pitch: 0.62,
-						distance: Math.min(220, Math.max(30, 14 + reach * 1.2)),
-						fov: 46,
-					},
-					flatX: wx,
-					flatZ: wy,
-					lookAtHeight: wz,
-				})
-			}
-			/** Leaves whichever focus mode is active (constellation or source). */
-			const exitFocus = (fly: boolean): void => {
-				if ((focusedGroup < 0 && focusedSource < 0) || exiting) return
-				exiting = true
-				focusAnim.target = 0
-				showLabels(restingLabels())
-				events().onFocusChange?.(null)
-				if (fly) {
-					const home = pose.currentHomePose()
-					home.lat = Math.min(home.lat, 0.8)
-					home.radius = OVERVIEW_POSE.radius
-					pose.flyTo(home)
-				}
+				const reach = reachFrom(cx, cy, cz, topics)
+				return groundFrame(source, Math.min(220, Math.max(30, 14 + reach * 1.2)))
 			}
 
-			let selectedIndex = -1
-			const selectIndex = (index: number, fireEvent: boolean): void => {
-				selectedIndex = index
-				stars.uniforms.selected.value = index >= 0 ? starIndexOf[index] : -1
-				dust.uniforms.selected.value = index >= 0 ? dustIndexOf[index] : -1
-				// A selected source keeps its membership whiskers lit.
-				whiskers.uniforms.selectedSource.value =
-					index >= 0 && nodes[index].tier === -1 ? index : -1
-				if (index >= 0) anchorOn(index)
-				else if (focusedGroup >= 0 && !exiting) anchorOn(focusedGroup)
-				else if (focusedSource >= 0 && !exiting) anchorOn(focusedSource)
-				else if (spotlight) applySpotlight()
-				else clearAnchor()
-				// Level-children policy (settled 2026-08-16) inside a
-				// constellation: selecting a topic shows ITS contributors as
-				// planets AND labels; clearing returns to the group's topics
-				// (grains, topic labels).
-				if (focusedGroup >= 0 && !exiting) {
-					if (index >= 0 && nodes[index].tier === 0) {
-						buildTopicPlanets(index)
-						showLabels(contributorsOf(index))
-					} else if (index < 0 && fleet?.kind === 'topic') {
-						clearFleet()
-						showLabels(topicsByGroup.get(focusedGroup) ?? [])
+			// ── Projection: the core's navigation state → the sky ───────────
+			// This is the 3D FACE of the headless core (settled 2026-08-16):
+			// every visual consequence of "where the user is" — labels, camera,
+			// fleets, anchors, figures — is COMPUTED from (level, lens) here.
+			// The engine holds no navigation state of its own.
+			interface Projection {
+				key: string
+				/** The colour-by lens, READ IN THE COMPUTE and carried as data
+				 * so every consumer receives it as a parameter. */
+				lens: string | undefined
+				/** Asterism ignite key (a group's node index; -1 = none). */
+				framedGroup: number
+				/** Drives focusAnim (constellation/reading engagement). */
+				framed: boolean
+				labels: number[]
+				anchor:
+					| { kind: 'node'; index: number }
+					| { kind: 'spotlight'; facet: string; value: string }
+					| null
+				/** Selection-ring node index (-1 = none). */
+				selected: number
+				fleet: { kind: 'topic' | 'source'; key: number } | null
+				/** Whisker-lit source node index (-1 = none). */
+				whisker: number
+				/** Node whose position becomes the DOF/fog focus point. */
+				frameCenter: number
+				/** Computed destination pose; null = leave the camera alone.
+				 * A remembered pose for `key` always wins (up restores the
+				 * exact view you left — settled 2026-08-16). */
+				pose: CameraPose | null
+			}
+			const restingProjection = (
+				key: string,
+				lens: string | undefined,
+				labels: number[],
+			): Projection => ({
+				key,
+				lens,
+				framedGroup: -1,
+				framed: false,
+				labels,
+				anchor: null,
+				selected: -1,
+				fleet: null,
+				whisker: -1,
+				frameCenter: -1,
+				pose: null,
+			})
+			const project = (): Projection => {
+				const level = core.level()
+				const key = core.stateKey()
+				const lens = core.lens()
+				if (level.kind === 'reading' || level.kind === 'document') {
+					const node = level.kind === 'document' ? level.source : level.node
+					const trail = level.kind === 'document' ? core.trail() : level.trail
+					const index = idx(node.id) ?? -1
+					if (index < 0)
+						return { ...restingProjection(key, lens, topTierNodes), pose: { ...OVERVIEW_POSE } }
+					if (node.tier === 0) {
+						const group = groupOfTopic(index)
+						return {
+							key,
+							lens,
+							framedGroup: group,
+							framed: true,
+							labels: contributorsOf(index),
+							anchor: { kind: 'node', index },
+							selected: index,
+							fleet: { kind: 'topic', key: index },
+							whisker: -1,
+							frameCenter: index,
+							pose: group >= 0 ? frameGroup(group) : obliquePose(index, 42),
+						}
+					}
+					// Source reading — its trail names the context (equal-citizen
+					// rule: opened via a topic, that topic rides the trail).
+					const tail = trail.at(-1)
+					const tailNode = tail?.kind === 'node' ? idx(tail.id) : undefined
+					const contextTopic = tailNode !== undefined && nodes[tailNode].tier === 0 ? tailNode : -1
+					return {
+						key,
+						lens,
+						framedGroup: -1,
+						framed: true,
+						labels: (membershipsOfSource.get(index) ?? []).map((link) => link.topic),
+						anchor: { kind: 'node', index },
+						selected: index,
+						fleet: { kind: 'source', key: index },
+						whisker: index,
+						frameCenter: index,
+						pose: frameSource(index, contextTopic),
 					}
 				}
-				if (fireEvent && index >= 0) events().onSelect?.(nodes[index])
-			}
-			const focusIndex = (index: number, fireEvent: boolean): void => {
-				const tier = nodes[index].tier
-				if (tier === -1) {
-					// Sources get SOURCE MODE — never a constellation (settled
-					// 2026-08-15: the primary group's figure + fleet read as
-					// arbitrary from the source's point of view).
-					enterSourceMode(index)
-					selectIndex(index, fireEvent)
-				} else if (tier === 0) {
-					const groupId = parentOf.get(nodes[index].id)
-					const group = groupId !== undefined ? idx(groupId) : undefined
-					if (group !== undefined && nodes[group].tier === 1) enterConstellation(group)
-					else obliqueFlight(index, 42)
-					selectIndex(index, fireEvent)
-				} else if (tier === 1) {
-					enterConstellation(index)
-					selectIndex(index, fireEvent)
-				} else {
-					exitFocus(false)
-					obliqueFlight(index, FOCUS_DISTANCE_FAMILY)
-					selectIndex(index, fireEvent)
-					// Level children: a focused family labels its groups.
-					showLabels(groupsByFamily.get(index) ?? [])
+				if (level.kind === 'children') {
+					const index = idx(level.anchor.id) ?? -1
+					if (index < 0) return restingProjection(key, lens, topTierNodes)
+					if (level.anchor.tier === 1) {
+						return {
+							key,
+							lens,
+							framedGroup: index,
+							framed: true,
+							labels: topicsByGroup.get(index) ?? [],
+							anchor: { kind: 'node', index },
+							selected: -1,
+							fleet: null,
+							whisker: -1,
+							frameCenter: index,
+							pose: frameGroup(index),
+						}
+					}
+					// Family: oblique overview of its territory (no focus mode).
+					return {
+						...restingProjection(key, lens, groupsByFamily.get(index) ?? []),
+						anchor: { kind: 'node', index },
+						frameCenter: index,
+						pose: obliquePose(index, FOCUS_DISTANCE_FAMILY),
+					}
 				}
+				if (level.kind === 'cohort') {
+					return {
+						...restingProjection(
+							key,
+							lens,
+							dustNodes.filter((node) => nodes[node].facets?.[level.facet] === level.value),
+						),
+						anchor: { kind: 'spotlight', facet: level.facet, value: level.value },
+					}
+				}
+				if (level.kind === 'facets' || level.kind === 'values') {
+					// The sources-mode resting pin field (retained experiment).
+					return restingProjection(key, lens, [...dustNodes])
+				}
+				// Topics root: the authored overview.
+				return { ...restingProjection(key, lens, topTierNodes), pose: { ...OVERVIEW_POSE } }
 			}
-			/** Label presses route like the matching DRILL ROW (settled
-			 * 2026-08-16): containers drill + fly without selecting; leaves
-			 * select. */
-			const labelPick = (node: number): void => {
-				const tier = nodes[node].tier
-				if (tier === 1) {
-					enterConstellation(node)
-				} else if (tier === 2) {
-					exitFocus(false)
-					obliqueFlight(node, FOCUS_DISTANCE_FAMILY)
-					showLabels(groupsByFamily.get(node) ?? [])
-					events().onFocusChange?.(nodes[node])
-				} else {
-					focusIndex(node, true)
+			const snapshotPose = (): CameraPose => {
+				const goal = pose.goal()
+				if (goal.kind === 'home') return { ...goal }
+				if (goal.kind === 'place') return { ...goal, direction: goal.direction.clone() }
+				return { ...goal, view: { ...goal.view } }
+			}
+			let framedGroup = -1
+			let currentProjection: Projection | undefined
+			/** The anchor baseline hover previews restore to. */
+			const reapplyAnchor = (): void => {
+				const anchor = currentProjection?.anchor ?? null
+				if (!anchor) {
+					clearAnchor()
+					return
+				}
+				if (anchor.kind === 'node') anchorOn(anchor.index)
+				else applySpotlight(anchor.facet, anchor.value)
+			}
+			const applyProjection = (next: Projection): void => {
+				const prev = currentProjection
+				currentProjection = next
+				// Remember the view being left so "up" can restore it exactly.
+				if (prev && prev.key !== next.key) core.poseMemory.set(prev.key, snapshotPose())
+				const lensChanged = prev !== undefined && next.lens !== prev.lens
+				if (lensChanged) applyFacetColors(next.lens)
+				labels.setLabels(next.labels, next.lens)
+				stars.uniforms.selected.value = next.selected >= 0 ? starIndexOf[next.selected] : -1
+				dust.uniforms.selected.value = next.selected >= 0 ? dustIndexOf[next.selected] : -1
+				whiskers.uniforms.selectedSource.value = next.whisker
+				reapplyAnchor()
+				framedGroup = next.framedGroup
+				if (next.framed && !prev?.framed) focusAnim.current = 0
+				focusAnim.target = next.framed ? 1 : 0
+				if (next.fleet) {
+					pendingFleetClear = false
+					if (fleet?.kind !== next.fleet.kind || fleet.key !== next.fleet.key) {
+						if (next.fleet.kind === 'topic') buildTopicPlanets(next.fleet.key, next.lens)
+						else buildSourcePlanets(next.fleet.key, next.lens)
+					} else if (lensChanged) {
+						rebuildFleet(next.lens)
+					}
+				} else if (fleet) {
+					pendingFleetClear = true
+				}
+				if (next.frameCenter >= 0) {
+					focusPoint.set(
+						positions[next.frameCenter * 3],
+						positions[next.frameCenter * 3 + 1],
+						positions[next.frameCenter * 3 + 2],
+					)
+				}
+				if (prev?.key !== next.key) {
+					const remembered = core.poseMemory.get(next.key)
+					if (remembered) pose.flyTo(remembered)
+					else if (next.pose) pose.flyTo(next.pose)
 				}
 			}
 
@@ -850,9 +907,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				for (let i = 0; i < count; i++) {
 					const tier = nodes[i].tier
 					if (tier !== 0 && tier !== -1) continue
-					toNode
-						.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2])
-						.sub(rayOrigin)
+					toNode.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]).sub(rayOrigin)
 					const t = toNode.dot(rayDir)
 					if (t <= 0 || t >= bestT) continue
 					const missSq = toNode.lengthSq() - t * t
@@ -877,8 +932,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			let downY = 0
 			let downTime = 0
 			let dragging = false
-			let hoveredIndex = -1
-			let chromeHighlight = -1
 			/** A hover currently owns the anchor-dim preview (group hover). */
 			let hoverAnchored = false
 
@@ -888,13 +941,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					((event.clientX - rect.left) / rect.width) * 2 - 1,
 					-(((event.clientY - rect.top) / rect.height) * 2 - 1),
 				]
-			}
-			const restoreAnchor = (): void => {
-				if (selectedIndex >= 0) anchorOn(selectedIndex)
-				else if (focusedGroup >= 0 && !exiting) anchorOn(focusedGroup)
-				else if (focusedSource >= 0 && !exiting) anchorOn(focusedSource)
-				else if (spotlight) applySpotlight()
-				else clearAnchor()
 			}
 			/** Light `index` exactly as scene hover does — shared by pointer
 			 * hover and chrome-driven highlights (settled 2026-08-15):
@@ -940,30 +986,14 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				stars.uniforms.hoverArm.value = arm >= 0 ? arm : -2
 				if (nebula) nebula.uniforms.hoverArm.value = arm >= 0 ? arm : -3
 				// Group hover: the full anchor-dim preview engages; anything
-				// else releases it back to the selection/constellation anchor.
+				// else releases it back to the projection's own anchor.
 				if (tier === 1) {
 					anchorOn(index)
 					hoverAnchored = true
 				} else if (hoverAnchored) {
 					hoverAnchored = false
-					restoreAnchor()
+					reapplyAnchor()
 				}
-			}
-			/** Pointer hover wins while present; chrome highlight fills in. */
-			const refreshHover = (): void => {
-				applyHoverVisual(hoveredIndex >= 0 ? hoveredIndex : chromeHighlight)
-			}
-			const setHover = (index: number): void => {
-				if (index === hoveredIndex) return
-				hoveredIndex = index
-				refreshHover()
-				canvas.style.cursor = index >= 0 ? 'pointer' : 'grab'
-				events().onHover?.(index >= 0 ? nodes[index] : null)
-			}
-			const setChromeHighlight = (index: number): void => {
-				if (index === chromeHighlight) return
-				chromeHighlight = index
-				refreshHover()
 			}
 
 			const onPointerDown = (event: PointerEvent): void => {
@@ -977,6 +1007,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				downY = event.clientY
 				downTime = performance.now()
 				dragging = false
+				core.markInteracted()
 			}
 			const onPointerMove = (event: PointerEvent): void => {
 				const tracked = activePointers.get(event.pointerId)
@@ -1016,33 +1047,32 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const [ndcX, ndcY] = toNdc(event)
 				const index = pick(ndcX, ndcY)
 				if (index < 0) return
-				const tier = nodes[index].tier
-				if (focusedGroup >= 0 && tier === 0) {
-					// Inside a constellation, choosing a member TOPIC is selection,
-					// not another flight — unless it belongs elsewhere. (Sources
-					// always route to source mode via focusIndex.)
-					const groupId = parentOf.get(nodes[index].id)
-					const group = groupId !== undefined ? idx(groupId) : undefined
-					if (group === focusedGroup) {
-						selectIndex(index, true)
-						return
-					}
-				}
-				focusIndex(index, true)
+				// Every scene choice is the SAME core action drill rows use —
+				// the equal-citizen rule; the projection derives the rest.
+				core.openNode(nodes[index].id)
 			}
 			const onPointerLeave = (): void => {
 				pointerDirty = false
-				setHover(-1)
+				core.setHovered(null)
 			}
 			let wheelOutIntent = 0
+			let wheelUpFiredAt = 0
 			const onWheel = (event: WheelEvent): void => {
 				event.preventDefault()
-				if ((focusedGroup >= 0 || focusedSource >= 0) && !exiting) {
+				// Wheeling OUT of an engaged view IS the up-action (settled
+				// 2026-08-16 papercut: one exit path, same destination as the
+				// named up-control). One gesture steps ONE level: after a fire,
+				// a short cooldown swallows the burst's momentum so sustained
+				// deliberate scrolling steps further, a single flick doesn't.
+				if (currentProjection?.framed) {
 					if (event.deltaY > 0) {
+						const now = performance.now()
+						if (now - wheelUpFiredAt < 700) return
 						wheelOutIntent += event.deltaY
 						if (wheelOutIntent > WHEEL_EXIT_INTENT) {
 							wheelOutIntent = 0
-							exitFocus(true)
+							wheelUpFiredAt = now
+							core.upOneLevel()
 						}
 					}
 					return
@@ -1068,58 +1098,33 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				canvas.style.touchAction = ''
 			})
 
-			// ── Commands ────────────────────────────────────────────────────
-			let lastRevision = -1
-			applyCommand = (command) => {
-				if (command.revision === lastRevision) return
-				lastRevision = command.revision
-				if (command.colorFacet !== undefined && command.colorFacet !== activeFacet) {
-					activeFacet = command.colorFacet
-					applyFacetColors()
-					if (!exiting) rebuildFleet()
-					// Live retint (settled 2026-08-16): source pins ride the
-					// lens colour — re-issue the current set with fresh accents.
-					showLabels(currentLabels)
-				}
-				if (command.highlight !== undefined) {
-					const target =
-						command.highlight === null ? undefined : idx(command.highlight)
-					setChromeHighlight(target ?? -1)
-				}
-				if (command.select === null) selectIndex(-1, false)
-				if (command.labelSources !== undefined) {
-					sourcesOverride = command.labelSources
-					// Apply immediately when at rest; focus/selection states keep
-					// their own label policies until they exit.
-					if (focusedGroup < 0 && focusedSource < 0 && selectedIndex < 0) {
-						showLabels(restingLabels())
-					}
-				}
-				if (command.spotlight !== undefined) {
-					spotlight = command.spotlight
-					// Take effect only when no stronger anchor holds the sky.
-					if (selectedIndex < 0 && !hoverAnchored) {
-						if (spotlight) applySpotlight()
-						else if (focusedGroup >= 0 && !exiting) anchorOn(focusedGroup)
-						else if (focusedSource >= 0 && !exiting) anchorOn(focusedSource)
-						else clearAnchor()
-					}
-				}
-				if (command.focus === null) {
-					exitFocus(true)
-					selectIndex(-1, false)
-					// Family views have no focus mode — restore resting labels
-					// even when exitFocus had nothing to exit.
-					showLabels(restingLabels())
-				} else if (command.focus !== undefined) {
-					const index = idx(command.focus)
-					if (index !== undefined) focusIndex(index, false)
-				}
-			}
-			if (pendingCommand) {
-				applyCommand(pendingCommand)
-				pendingCommand = undefined
-			}
+			// ── Core subscription (the face's reactive root) ────────────────
+			// Effects re-run whenever the core's navigation state or lens
+			// changes; hover/highlight ride their own effect so pointer motion
+			// never re-projects the whole view.
+			const disposeProjection = createRoot((disposeRoot) => {
+				createEffect(
+					// EVERYTHING the projection reads lives in this COMPUTE
+					// (project() walks the core's level/trail/reading/lens and
+					// returns plain data), so the callback touches no reactive
+					// values — the split-effect contract's own prescription.
+					() => project(),
+					(projection) => {
+						applyProjection(projection)
+					},
+				)
+				createEffect(
+					() => ({ hovered: core.hovered(), highlight: core.highlight() }),
+					({ hovered, highlight }) => {
+						const target = hovered ?? highlight
+						const index = target !== null ? (idx(target) ?? -1) : -1
+						applyHoverVisual(index)
+						canvas.style.cursor = index >= 0 && hovered !== null ? 'pointer' : 'grab'
+					},
+				)
+				return disposeRoot
+			})
+			cleanups.push(disposeProjection)
 
 			// ── Loop ────────────────────────────────────────────────────────
 			let ready = false
@@ -1131,37 +1136,20 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				resize.flush()
 				pose.update(dt)
 
-				const goal = pose.goal()
-				if (
-					(focusedGroup >= 0 || focusedSource >= 0) &&
-					!exiting &&
-					goal.kind === 'home' &&
-					goal.radius > CONSTELLATION_EXIT_RADIUS
-				) {
-					exitFocus(false)
-				}
 				wheelOutIntent *= Math.exp(-dt * 1.4)
 
 				const step = Math.min(1, dt * 2.6)
 				focusAnim.current += (focusAnim.target - focusAnim.current) * step
-				if (exiting && focusAnim.current < 0.02) {
-					focusAnim.current = 0
-					focusedGroup = -1
-					focusedSource = -1
-					exiting = false
-					disposePlanets()
-					fleet = undefined
-					if (selectedIndex < 0) {
-						if (spotlight) applySpotlight()
-						else clearAnchor()
-					}
+				if (pendingFleetClear && focusAnim.current < 0.02) {
+					pendingFleetClear = false
+					clearFleet()
 				}
-				// Source mode suppresses the MST figure — the whiskers own the
-				// line language while a source holds focus.
-				const focusKey = focusedGroup >= 0 && focusedSource < 0 ? focusedGroup : -1
-				asterisms.uniforms.focusedGroup.value = focusKey
+				// A source reading suppresses the MST figure — the whiskers own
+				// the line language there (framedGroup is -1 by projection).
+				asterisms.uniforms.focusedGroup.value = framedGroup
 				asterisms.uniforms.focusFade.value = focusAnim.current
 				if (planets) planets.fade.value = focusAnim.current
+				const goal = pose.goal()
 				const goalRadius = goal.kind === 'home' ? goal.radius : camera.position.length()
 				if (nebula) {
 					// Fog belongs to the overview: it clears FULLY as focus engages
@@ -1174,17 +1162,17 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					nebula.mesh.visible = fogFade > 0.02
 				}
 				post.uniforms.bokeh.value = focusAnim.current * 1.5
-				post.uniforms.focusDistance.value =
-					focusedGroup >= 0 || focusedSource >= 0
-						? camera.position.distanceTo(focusPoint)
-						: camera.position.length()
-				const streakTarget = selectedIndex >= 0 ? 1 : 0.3
+				post.uniforms.focusDistance.value = currentProjection?.framed
+					? camera.position.distanceTo(focusPoint)
+					: camera.position.length()
+				const streakTarget = (currentProjection?.selected ?? -1) >= 0 ? 1 : 0.3
 				post.uniforms.streak.value +=
 					(streakTarget - post.uniforms.streak.value) * Math.min(1, dt * 3)
 
 				if (hoverEnabled && pointerDirty && activePointers.size === 0) {
 					pointerDirty = false
-					setHover(pick(pointerNdcX, pointerNdcY))
+					const index = pick(pointerNdcX, pointerNdcY)
+					core.setHovered(index >= 0 ? nodes[index].id : null)
 				}
 				post.pipeline.render()
 				adaptiveDpr.update()
@@ -1204,10 +1192,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 	})()
 
 	return {
-		updateCommand(command: GalaxyCommand): void {
-			if (applyCommand) applyCommand(command)
-			else pendingCommand = command
-		},
 		dispose(): void {
 			disposed = true
 			for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]?.()

@@ -10,13 +10,7 @@
  */
 
 import { mulberry32 } from '@aicolab/kolo/utils/seeded-random'
-import type {
-	IBEdge,
-	IBGalaxy,
-	IBNode,
-	IBNodeContent,
-	IBTierMeta,
-} from './types.ts'
+import type { IBEdge, IBGalaxy, IBNode, IBNodeContent, IBTierMeta } from './types.ts'
 
 export const FIXTURE_MIX_ORDER = [
 	'Supports',
@@ -112,7 +106,14 @@ const FIXTURE_FACETS: Record<string, string[]> = {
 	Voice: ['Academia', 'Practitioners', 'Industry', 'Government', 'Civil society'],
 	Era: ['Pre-2010', '2010s', 'Early 2020s', 'Mid 2020s'],
 }
-const MEMBERSHIP_GRADES = ['standard', 'standard', 'standard', 'high_value', 'high_value', 'exemplar'] as const
+const MEMBERSHIP_GRADES = [
+	'standard',
+	'standard',
+	'standard',
+	'high_value',
+	'high_value',
+	'exemplar',
+] as const
 
 export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy {
 	const {
@@ -367,7 +368,9 @@ export function buildFixtureContent(node: IBNode): IBNodeContent {
 		stats: [
 			{ label: 'sources', value: String(node.weight) },
 			...(node.volume !== undefined ? [{ label: 'documents', value: String(node.volume) }] : []),
-			...(node.intensityLabel !== undefined ? [{ label: 'score', value: node.intensityLabel }] : []),
+			...(node.intensityLabel !== undefined
+				? [{ label: 'score', value: node.intensityLabel }]
+				: []),
 		],
 		sections: [
 			{

@@ -15,6 +15,23 @@
 
 export { probeWebGpu } from '@aicolab/kolo/webgpu/backend-guard'
 export { createGalaxyAdapter, type GalaxyConfiguration } from './adapter.ts'
+export {
+	buildContainerContent,
+	buildDocumentContent,
+	buildSourceContent,
+	buildTopicContent,
+	type AnalysisBlock,
+	type ContainerContentInput,
+	type ContentVocabulary,
+	type DocumentContentInput,
+	type EngagedRow,
+	type ParentMembership,
+	type PerspectiveRow,
+	type SourceContentInput,
+	type StatChip,
+	type TopicContentInput,
+	type TopicLens,
+} from './content-builders.ts'
 export { GalaxyGatePanel, type GalaxyGatePanelProps } from './chrome/gate-panel.tsx'
 export {
 	buildFixtureContent,
@@ -32,9 +49,15 @@ export {
 	type GalaxyLayout,
 	primaryParents,
 } from './layout/cosmos.ts'
+export {
+	GalaxyNavCore,
+	type GalaxyNavMode,
+	type NavDocument,
+	type NavLevel,
+	type NavStep,
+	type UpDestination,
+} from './nav-core.ts'
 export type {
-	GalaxyCommand,
-	GalaxyEvents,
 	IBContentSection,
 	IBEdge,
 	IBEntityRow,

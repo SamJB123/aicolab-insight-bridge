@@ -138,13 +138,37 @@ export interface IBPoint {
 /** One row of a lens table (voice/era/sector × stance × analysis). */
 export interface IBFacetRow {
 	label: string
+	/** The galaxy node this row speaks about — rows carrying it are
+	 * ACTIONABLE (choosing flies there; hovering highlights the body). */
+	id?: IBNodeId
 	/** Stance/position badge for this slice. */
 	badge?: string
 	/** CSS colour for the badge (host's position colours). */
 	badgeColor?: string
 	/** 0..1 share for a trailing meter (reach/coverage). */
 	share?: number
+	/** Membership-strength glyph, 1..3 of 3 — rendered as a wifi-signal icon
+	 * (settled 2026-08-16: primary = 3/full, exemplar = 2, high-value = 1).
+	 * When set, the renderer shows the icon INSTEAD of the badge chip and
+	 * uses `badge` as the icon's accessible name. */
+	signal?: 1 | 2 | 3
 	analysis?: string
+	/** Verbatim quotes backing the row — provenance is a HARD requirement
+	 * (settled 2026-08-16): every corpus ships perspective quote tables, and
+	 * lens/perspective rows must carry them. */
+	quotes?: IBQuote[]
+}
+
+/** One document belonging to a source entity. Multi-document corpora list
+ * them in a `documents` section; choosing a row opens the DOCUMENT READING
+ * level (settled 2026-08-16) via the host's `loadDocument`. 1:1 corpora
+ * (source = document = entity) never emit the section — the entity reading
+ * IS the document reading. */
+export interface IBDocumentRow {
+	documentId: string
+	label: string
+	/** Quiet metadata — year, corpus score, etc. */
+	detail?: string
 }
 
 /** One row of an entity list (top bodies/sources/sectors with counts). */
@@ -175,6 +199,7 @@ export type IBContentSection =
 	| { kind: 'facets'; title: string; rows: IBFacetRow[] }
 	| { kind: 'entities'; title: string; rows: IBEntityRow[] }
 	| { kind: 'nodes'; title: string; rows: IBNodeRow[] }
+	| { kind: 'documents'; title: string; rows: IBDocumentRow[] }
 
 export interface IBNodeContent {
 	/** One-paragraph framing, rendered under the title. */
@@ -186,47 +211,10 @@ export interface IBNodeContent {
 	related?: Array<{ id: IBNodeId; label: string }>
 }
 
-/** Imperative commands into the stage (delivered via SceneStage). Bump
- * `revision` on every change — command objects are compared by content the
- * host controls, not identity. */
-export interface GalaxyCommand {
-	/** Fly the camera to a node (`null` returns to the overview). Selection
-	 * itself flies too; this exists so hosts can drive the camera from list
-	 * rows and deep links. */
-	focus?: IBNodeId | null
-	/** Colour the source dust by this facet key (from sourceFacets). */
-	colorFacet?: string
-	/** Light a node up exactly as scene hover would (`null` clears) — chrome
-	 * rows/chips drive this so panel and sky always agree about what the
-	 * pointer is over. Pointer hover over the canvas wins while present. */
-	highlight?: IBNodeId | null
-	/** FACET SPOTLIGHT (settled 2026-08-16): while the source drill sits on a
-	 * facet value, the cohort stays lit and everything else recedes — the
-	 * drill is literally a lens on the sky. `null` clears. An active
-	 * selection's anchor outranks it; the spotlight returns when selection
-	 * clears. */
-	spotlight?: { facet: string; value: string } | null
-	/** Clear the engine's selection IN PLACE (no camera flight) — the
-	 * reader's "back to overview" and drill-level returns use this so the
-	 * anchor/fleet state matches the chrome. */
-	select?: null
-	/** SOURCES-mode label override (experiment 2026-08-16): while active,
-	 * the RESTING label set becomes source pins — every source with `{}`,
-	 * or the facet-value cohort when given. `null` restores the standard
-	 * top-tier resting labels. Focus/selection states keep their own label
-	 * policies; the override re-applies when returning to rest. */
-	labelSources?: { facet?: string; value?: string } | null
-	revision: number
-}
-
-/** Engine→host facts. Read live at event time — replacing handlers never
- * rebuilds the renderer. */
-export interface GalaxyEvents {
-	onHover?: (node: IBNode | null) => void
-	onSelect?: (node: IBNode) => void
-	/** The focused constellation's group (null when back at the galaxy). */
-	onFocusChange?: (node: IBNode | null) => void
-}
+/* The GalaxyCommand/GalaxyEvents wire was DELETED by the headless-core
+ * rewrite (settled 2026-08-16): navigation truth lives in GalaxyNavCore
+ * (nav-core.ts); both faces — the web UI and the 3D renderer — subscribe to
+ * the same core and mutate only through its actions. */
 
 export interface IBGalaxy {
 	/** One entry per tier PRESENT (include -1 when sources ride along). */

@@ -8,27 +8,31 @@
 
 import type { SceneStageAdapter } from '@aicolab/ui-solid'
 import type { GalaxyEngineHandle } from './engine/engine.ts'
-import type { GalaxyCommand, GalaxyEvents, IBGalaxy, IBIntensityMode } from './types.ts'
+import type { GalaxyNavCore } from './nav-core.ts'
+import type { IBGalaxy, IBIntensityMode } from './types.ts'
 
 /** Renderer construction inputs. SceneStage remounts the engine when this
  * value changes — hand it a stable (memoed) object. The intensity mode is a
  * LAYOUT input (it changes the baked sky), so switching it is deliberately a
- * remount, not a command. */
+ * remount. The NAV CORE rides here too (headless-core rewrite, 2026-08-16):
+ * it is identity-stable across remounts, so trails, lens and remembered
+ * poses survive an intensity re-bake — and there is no command channel at
+ * all: the engine subscribes to the core directly. */
 export interface GalaxyConfiguration {
 	galaxy: IBGalaxy
 	intensityMode?: IBIntensityMode
+	core: GalaxyNavCore
 }
 
 export function createGalaxyAdapter(): SceneStageAdapter<
-	GalaxyCommand,
-	GalaxyEvents,
+	undefined,
+	Record<string, never>,
 	GalaxyConfiguration
 > {
 	return {
 		mount(context) {
 			let disposed = false
 			let engine: GalaxyEngineHandle | undefined
-			let pendingCommand: GalaxyCommand | undefined
 			void import('./engine/engine.ts')
 				.then(({ mountGalaxyEngine }) => {
 					if (disposed) return
@@ -37,14 +41,10 @@ export function createGalaxyAdapter(): SceneStageAdapter<
 						host: context.host,
 						galaxy: context.configuration.galaxy,
 						intensityMode: context.configuration.intensityMode,
-						events: context.events,
+						core: context.configuration.core,
 						onReady: context.onReady,
 						onError: context.onError,
 					})
-					if (pendingCommand !== undefined) {
-						engine.updateCommand(pendingCommand)
-						pendingCommand = undefined
-					}
 				})
 				.catch((error: unknown) => {
 					if (!disposed) {
@@ -52,9 +52,8 @@ export function createGalaxyAdapter(): SceneStageAdapter<
 					}
 				})
 			return {
-				updateCommand(command: GalaxyCommand): void {
-					if (engine) engine.updateCommand(command)
-					else pendingCommand = command
+				updateCommand(): void {
+					// No command channel — the engine reads the nav core.
 				},
 				dispose(): void {
 					disposed = true

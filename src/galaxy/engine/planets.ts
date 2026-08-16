@@ -92,15 +92,11 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 	})
 
 	const aCenter = vec3From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(centers, 3)))
-	const aTraits = vec4From(
-		instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 4)),
-	)
+	const aTraits = vec4From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 4)))
 	const aRadius = aTraits.x
 	const aSeed = aTraits.y
 	const aGlow = aTraits.z
-	const aSunDir = vec3From(
-		instancedBufferAttribute(new THREE.InstancedBufferAttribute(sunDirs, 3)),
-	)
+	const aSunDir = vec3From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(sunDirs, 3)))
 	const aColor = vec3From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(colors, 3)))
 
 	const fade: UniFloat = uniform(0)
@@ -125,8 +121,9 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 		positionLocal.z,
 	)
 
-	const terrain = floatFrom(mx_noise_float(spun.mul(3.4).add(aSeed)))
-		.add(floatFrom(mx_noise_float(spun.mul(9.1).add(aSeed))).mul(0.45))
+	const terrain = floatFrom(mx_noise_float(spun.mul(3.4).add(aSeed))).add(
+		floatFrom(mx_noise_float(spun.mul(9.1).add(aSeed))).mul(0.45),
+	)
 	const land = smoothstep(-0.12, 0.42, terrain)
 
 	// The facet colour IS the world's identity: seas darken it, land lifts it.

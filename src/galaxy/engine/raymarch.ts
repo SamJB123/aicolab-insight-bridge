@@ -78,9 +78,7 @@ export const ditheredRaymarchBox = (
 		const delta = bounds.y.sub(bounds.x).div(steps).toVar()
 		// Per-pixel ray-start jitter within one step — the whole trick.
 		const jitter = float(vec4From(bayer16(screenCoordinate)).x)
-		const positionRay = vec3(
-			vOrigin.add(rayDir.mul(bounds.x.add(delta.mul(jitter)))),
-		).toVar()
+		const positionRay = vec3(vOrigin.add(rayDir.mul(bounds.x.add(delta.mul(jitter))))).toVar()
 
 		Loop(steps, () => {
 			callback({ positionRay, stepLength: delta })

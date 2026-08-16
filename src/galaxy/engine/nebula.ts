@@ -58,10 +58,10 @@ const detailNode = (fieldUv: Node<'vec2'>, discRadius: number) => {
 	const scaleXY = discRadius * 1.35 * 2
 	const world = fieldUv.sub(0.5).mul(scaleXY)
 	const noiseAt = vec3(world.x, world.y, 0)
-	const filament = float(1).sub(mx_worley_noise_float(noiseAt.mul(0.035))).max(0)
-	const wisps = mx_fractal_noise_float(noiseAt.mul(0.018), 3, 2.0, 0.55, 1.0)
-		.mul(0.5)
-		.add(0.5)
+	const filament = float(1)
+		.sub(mx_worley_noise_float(noiseAt.mul(0.035)))
+		.max(0)
+	const wisps = mx_fractal_noise_float(noiseAt.mul(0.018), 3, 2.0, 0.55, 1.0).mul(0.5).add(0.5)
 	const detail = filament.mul(0.6).add(wisps.mul(0.55))
 	// R = the density breakup mask, G = the wisp lighting term.
 	return vec4(smoothstep(0.35, 0.95, detail), wisps, 0, 1)
@@ -124,8 +124,7 @@ export function createNebula(options: NebulaOptions): Nebula {
 	// Per-field density accumulation, argmaxed into a dominant-arm mask so
 	// the shader can ignite ONE family's fog on hover.
 	const armAccum = fields.map(() => new Float32Array(FIELD_SIZE * FIELD_SIZE))
-	const toPixel = (world: number): number =>
-		((world / extent) * 0.5 + 0.5) * (FIELD_SIZE - 1)
+	const toPixel = (world: number): number => ((world / extent) * 0.5 + 0.5) * (FIELD_SIZE - 1)
 	const sigmaPx = (SPLAT_SIGMA / (2 * extent)) * FIELD_SIZE
 	const reach = Math.ceil(sigmaPx * 3)
 	fields.forEach((field, arm) => {
@@ -212,17 +211,11 @@ export function createNebula(options: NebulaOptions): Nebula {
 		// early-out Break: on wave hardware it stalls the whole wave and a
 		// sparse fog almost never saturates anyway.
 		ditheredRaymarchBox(steps, ({ positionRay, stepLength }) => {
-			const fieldUv = vec2(
-				positionRay.x.add(0.5),
-				positionRay.y.add(0.5),
-			)
+			const fieldUv = vec2(positionRay.x.add(0.5), positionRay.y.add(0.5))
 			const fieldSample = texture(fieldTexture, fieldUv)
 			const fogHue = fieldSample.rgb.div(fieldSample.a.max(0.0001))
 			// Family hover: the hovered arm's territory ignites.
-			const armHit = texture(armTexture, fieldUv)
-				.r.sub(uHoverArm)
-				.abs()
-				.step(0.5)
+			const armHit = texture(armTexture, fieldUv).r.sub(uHoverArm).abs().step(0.5)
 			// R = filament breakup mask, G = wisp lighting (bakeNebulaDetail).
 			const detail = texture(detailTexture, fieldUv)
 

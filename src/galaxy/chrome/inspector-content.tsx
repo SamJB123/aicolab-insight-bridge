@@ -24,6 +24,8 @@ import {
 import { createMemo, createSignal, Errored, For, Loading, Show } from 'solid-js'
 import type {
 	IBContentSection,
+	IBDocumentRow,
+	IBFacetRow,
 	IBGalaxy,
 	IBNode,
 	IBNodeContent,
@@ -107,6 +109,35 @@ function PointsSection(props: { points: IBPoint[]; label: string }) {
 	)
 }
 
+/** Wifi-signal strength glyph (settled 2026-08-16): a dot and three arcs;
+ * `strength` of 3 inks them all, weaker levels fade the outer arcs. The
+ * accessible name comes from the row's badge text. */
+function SignalIcon(props: { strength: 1 | 2 | 3; label: string }) {
+	const arcs = [
+		'M8.4 15.2 A 5.1 5.1 0 0 1 15.6 15.2',
+		'M5.6 12.4 A 9.1 9.1 0 0 1 18.4 12.4',
+		'M2.8 9.6 A 13.1 13.1 0 0 1 21.2 9.6',
+	]
+	return (
+		<svg class="ib-galaxy-signal" viewBox="0 0 24 24" role="img" aria-label={props.label}>
+			<title>{props.label}</title>
+			<circle cx="12" cy="19" r="1.9" fill="currentColor" />
+			<For each={arcs}>
+				{(d, at) => (
+					<path
+						d={d}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						opacity={at() < props.strength ? 1 : 0.22}
+					/>
+				)}
+			</For>
+		</svg>
+	)
+}
+
 function FacetBadge(props: { badge: string; badgeColor?: string }) {
 	return (
 		<span
@@ -128,7 +159,12 @@ function NodesSection(props: {
 }) {
 	const [sort, setSort] = createSignal(DEFAULT_GALAXY_SORT)
 	const rows = createMemo(() =>
-		sortRows(props.section.rows, sort(), (row) => row.label, (row) => row.weight ?? 0),
+		sortRows(
+			props.section.rows,
+			sort(),
+			(row) => row.label,
+			(row) => row.weight ?? 0,
+		),
 	)
 	return (
 		<>
@@ -151,27 +187,37 @@ function NodesSection(props: {
 	)
 }
 
-function SectionBody(props: {
-	section: IBContentSection
+/** Lens/perspective rows. Rows carrying analysis or quotes read as an
+ * accordion (badge in the summary; analysis, PROVENANCE QUOTES — a hard
+ * requirement, 2026-08-16 — and a visit chip inside; first open). Bare rows
+ * (member-grade engagements, share-only slices) follow as a plain list,
+ * actionable when they carry a node id. */
+function FacetsSection(props: {
+	section: Extract<IBContentSection, { kind: 'facets' }>
 	onVisit: (id: IBNodeId) => void
 	onHoverNode?: (id: IBNodeId | null) => void
 }) {
-	const section = props.section
-	if (section.kind === 'points') {
-		return <PointsSection points={section.points} label={section.title} />
+	const analysed = createMemo(() =>
+		props.section.rows.filter((row) => row.analysis || (row.quotes?.length ?? 0) > 0),
+	)
+	const plain = createMemo(() =>
+		props.section.rows.filter((row) => !(row.analysis || (row.quotes?.length ?? 0) > 0)),
+	)
+	const visitOf = (row: IBFacetRow): (() => void) | undefined => {
+		const id = row.id
+		return id === undefined ? undefined : () => props.onVisit(id)
 	}
-	if (section.kind === 'nodes') {
-		return (
-			<NodesSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
-		)
+	const hoverOf = (row: IBFacetRow): ((hovering: boolean) => void) | undefined => {
+		const id = row.id
+		const onHoverNode = props.onHoverNode
+		if (id === undefined || onHoverNode === undefined) return undefined
+		return (hovering) => onHoverNode(hovering ? id : null)
 	}
-	if (section.kind === 'facets') {
-		// Rows carrying analysis read as an accordion (badge in the summary,
-		// analysis inside, first open); badge-only rows stay a plain list.
-		if (section.rows.some((row) => row.analysis)) {
-			return (
-				<Accordion density="compact" spacing="joined" label={section.title}>
-					<For each={section.rows}>
+	return (
+		<>
+			<Show when={analysed().length > 0}>
+				<Accordion density="compact" spacing="joined" label={props.section.title}>
+					<For each={analysed()}>
 						{(row, at) => (
 							<AccordionItem
 								summary={() => (
@@ -186,29 +232,92 @@ function SectionBody(props: {
 							>
 								<div class="ib-galaxy-point">
 									<Show when={row.analysis}>{(analysis) => <p>{analysis()}</p>}</Show>
+									<Quotes quotes={row.quotes} />
+									<Show when={row.id}>
+										{(id) => (
+											<button
+												type="button"
+												class="ib-galaxy-related-chip"
+												onClick={() => props.onVisit(id())}
+												onPointerEnter={() => props.onHoverNode?.(id())}
+												onPointerLeave={() => props.onHoverNode?.(null)}
+											>
+												Open in the galaxy →
+											</button>
+										)}
+									</Show>
 								</div>
 							</AccordionItem>
 						)}
 					</For>
 				</Accordion>
-			)
-		}
+			</Show>
+			<Show when={plain().length > 0}>
+				<RichList label={props.section.title}>
+					<For each={plain()}>
+						{(row) => (
+							<RichListItem
+								title={row.label}
+								onSelect={visitOf(row)}
+								onHoverChange={hoverOf(row)}
+								trailing={
+									<span class="ib-galaxy-facet-trailing">
+										<Show
+											when={row.signal}
+											fallback={
+												<Show when={row.badge}>
+													{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
+												</Show>
+											}
+										>
+											{(signal) => <SignalIcon strength={signal()} label={row.badge ?? ''} />}
+										</Show>
+										<Show when={row.share !== undefined}>
+											<Meter value={(row.share ?? 0) * 100} max={100} />
+										</Show>
+									</span>
+								}
+							/>
+						)}
+					</For>
+				</RichList>
+			</Show>
+		</>
+	)
+}
+
+function SectionBody(props: {
+	section: IBContentSection
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+	/** Present only when the host can load document readings. */
+	onOpenDocument?: (row: IBDocumentRow) => void
+}) {
+	const section = props.section
+	if (section.kind === 'points') {
+		return <PointsSection points={section.points} label={section.title} />
+	}
+	if (section.kind === 'nodes') {
+		return (
+			<NodesSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
+		)
+	}
+	if (section.kind === 'facets') {
+		return (
+			<FacetsSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
+		)
+	}
+	if (section.kind === 'documents') {
+		// Multi-document entities: rows open the DOCUMENT READING level
+		// (settled 2026-08-16) when the host supplies loadDocument.
 		return (
 			<RichList label={section.title}>
 				<For each={section.rows}>
 					{(row) => (
 						<RichListItem
 							title={row.label}
-							trailing={
-								<span class="ib-galaxy-facet-trailing">
-									<Show when={row.badge}>
-										{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
-									</Show>
-									<Show when={row.share !== undefined}>
-										<Meter value={(row.share ?? 0) * 100} max={100} />
-									</Show>
-								</span>
-							}
+							description={row.detail}
+							onSelect={props.onOpenDocument && (() => props.onOpenDocument?.(row))}
 						/>
 					)}
 				</For>
@@ -268,6 +377,77 @@ function JumpChips(props: {
 // census lives in the left menu, and the "hottest topics" section and
 // standalone facet legend were retired outright.
 
+/** The reading body shared by the NODE reader and the DOCUMENT reader:
+ * lede, stat chips, sections and related chips under the async boundary. */
+function ReaderBody(props: {
+	content: () => IBNodeContent | null
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+	onOpenDocument?: (row: IBDocumentRow) => void
+	errorLabel: string
+}) {
+	return (
+		<Errored
+			fallback={(err) => (
+				<p class="ib-galaxy-reader-error">
+					{props.errorLabel}: {String(err())}
+				</p>
+			)}
+		>
+			<Loading fallback={<p class="ib-galaxy-reader-pending">Reading the corpus…</p>}>
+				{(() => {
+					const value = props.content()
+					return (
+						<Show when={value}>
+							{(content) => (
+								<>
+									<Show when={content().lede}>
+										{(lede) => <p class="ib-galaxy-reader-lede">{lede()}</p>}
+									</Show>
+									<Show when={(content().stats?.length ?? 0) > 0}>
+										<div class="ib-galaxy-reader-stats">
+											<For each={content().stats}>
+												{(stat) => (
+													<span class="ib-galaxy-badge">
+														<strong>{stat.value}</strong> {stat.label}
+													</span>
+												)}
+											</For>
+										</div>
+									</Show>
+									<For each={content().sections}>
+										{(section) => (
+											<section class="ib-galaxy-reader-section">
+												<Rule label={section.title} />
+												<SectionBody
+													section={section}
+													onVisit={props.onVisit}
+													onHoverNode={props.onHoverNode}
+													onOpenDocument={props.onOpenDocument}
+												/>
+											</section>
+										)}
+									</For>
+									<Show when={(content().related?.length ?? 0) > 0}>
+										<section class="ib-galaxy-reader-section">
+											<Rule label="Related" />
+											<JumpChips
+												entries={content().related ?? []}
+												onVisit={props.onVisit}
+												onHoverNode={props.onHoverNode}
+											/>
+										</section>
+									</Show>
+								</>
+							)}
+						</Show>
+					)
+				})()}
+			</Loading>
+		</Errored>
+	)
+}
+
 export function GalaxyInspectorNode(props: {
 	galaxy: IBGalaxy
 	node: IBNode
@@ -275,8 +455,14 @@ export function GalaxyInspectorNode(props: {
 	 * not-ready reads suspend into the Loading boundary below. */
 	content: () => IBNodeContent | null
 	onVisit: (id: IBNodeId) => void
-	onClear: () => void
+	/** The named up-destination (settled 2026-08-16: 'back' is replaced by a
+	 * destination-labelled up-control at every level). */
+	upLabel: string
+	onUp: () => void
 	onHoverNode?: (id: IBNodeId | null) => void
+	/** Present only when the host can load document readings — the documents
+	 * section's rows are actionable exactly then. */
+	onOpenDocument?: (row: IBDocumentRow) => void
 }) {
 	const tierMeta = createMemo(() =>
 		props.galaxy.tiers.find((tier) => tier.tier === props.node.tier),
@@ -308,20 +494,14 @@ export function GalaxyInspectorNode(props: {
 	})
 	return (
 		<>
-			{/* The same ‹ Back anatomy as every drill level (settled
-			    2026-08-16, replacing the header's "Back to overview" chip and
-			    the host "full record" slot — this reader IS the record):
-			    returns to the drill exactly where it was left. */}
-			<button type="button" class="ib-galaxy-nav-back" onClick={() => props.onClear()}>
-				<span aria-hidden="true">‹</span> Back
+			{/* The named up-control — same anatomy as every drill level. */}
+			<button type="button" class="ib-galaxy-nav-up" onClick={() => props.onUp()}>
+				<span aria-hidden="true">‹</span> {props.upLabel}
 			</button>
 			<InspectorHeader eyebrow={<Eyebrow>{tierLabel()}</Eyebrow>} title={props.node.title}>
 				<p class="ib-galaxy-node-stats">
 					{props.node.weight} {tierMeta()?.weightLabel ?? props.galaxy.weightLabel}
-					<Show when={props.node.intensityLabel !== undefined}>
-						{' '}
-						· {props.node.intensityLabel}
-					</Show>
+					<Show when={props.node.intensityLabel !== undefined}> · {props.node.intensityLabel}</Show>
 				</p>
 				<MixBar galaxy={props.galaxy} node={props.node} />
 				<Show when={(props.node.flags?.length ?? 0) > 0}>
@@ -336,61 +516,13 @@ export function GalaxyInspectorNode(props: {
 					</div>
 				</Show>
 			</InspectorHeader>
-			<Errored
-				fallback={(err) => (
-					<p class="ib-galaxy-reader-error">Couldn't load this node: {String(err())}</p>
-				)}
-			>
-				<Loading fallback={<p class="ib-galaxy-reader-pending">Reading the corpus…</p>}>
-					{(() => {
-						const value = props.content()
-						return (
-							<Show when={value}>
-								{(content) => (
-									<>
-										<Show when={content().lede}>
-											{(lede) => <p class="ib-galaxy-reader-lede">{lede()}</p>}
-										</Show>
-										<Show when={(content().stats?.length ?? 0) > 0}>
-											<div class="ib-galaxy-reader-stats">
-												<For each={content().stats}>
-													{(stat) => (
-														<span class="ib-galaxy-badge">
-															<strong>{stat.value}</strong> {stat.label}
-														</span>
-													)}
-												</For>
-											</div>
-										</Show>
-										<For each={content().sections}>
-											{(section) => (
-												<section class="ib-galaxy-reader-section">
-													<Rule label={section.title} />
-													<SectionBody
-														section={section}
-														onVisit={props.onVisit}
-														onHoverNode={props.onHoverNode}
-													/>
-												</section>
-											)}
-										</For>
-										<Show when={(content().related?.length ?? 0) > 0}>
-											<section class="ib-galaxy-reader-section">
-												<Rule label="Related" />
-												<JumpChips
-													entries={content().related ?? []}
-													onVisit={props.onVisit}
-													onHoverNode={props.onHoverNode}
-												/>
-											</section>
-										</Show>
-									</>
-								)}
-							</Show>
-						)
-					})()}
-				</Loading>
-			</Errored>
+			<ReaderBody
+				content={props.content}
+				onVisit={props.onVisit}
+				onHoverNode={props.onHoverNode}
+				onOpenDocument={props.onOpenDocument}
+				errorLabel="Couldn't load this node"
+			/>
 			<Show when={contributors()}>
 				{(tiers) => (
 					<section class="ib-galaxy-reader-section">
@@ -398,10 +530,7 @@ export function GalaxyInspectorNode(props: {
 						<Accordion density="compact" spacing="joined" label="Contributors by grade">
 							<For each={tiers()}>
 								{(tier, at) => (
-									<AccordionItem
-										summary={`${tier.label} (${tier.rows.length})`}
-										open={at() === 0}
-									>
+									<AccordionItem summary={`${tier.label} (${tier.rows.length})`} open={at() === 0}>
 										<RichList label={tier.label}>
 											<For each={tier.rows}>
 												{(row) => (
@@ -422,6 +551,40 @@ export function GalaxyInspectorNode(props: {
 					</section>
 				)}
 			</Show>
+		</>
+	)
+}
+
+/** The DOCUMENT READING (settled 2026-08-16): a multi-document entity's
+ * single document, read with the same anatomy as a source panel — that
+ * document's engaged topics, key points and quotes — reached from the
+ * documents section and left via the standard ‹ Back (the breadcrumb gains
+ * a document crumb host-side). */
+export function GalaxyInspectorDocument(props: {
+	title: string
+	/** The corpus's document noun — 'Report', 'Submission', 'Document'. */
+	eyebrow: string
+	/** Async read over the host's loadDocument (same contract as the node
+	 * reader's content). */
+	content: () => IBNodeContent | null
+	/** The named up-destination (the source entity's title). */
+	upLabel: string
+	onUp: () => void
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+}) {
+	return (
+		<>
+			<button type="button" class="ib-galaxy-nav-up" onClick={() => props.onUp()}>
+				<span aria-hidden="true">‹</span> {props.upLabel}
+			</button>
+			<InspectorHeader eyebrow={<Eyebrow>{props.eyebrow}</Eyebrow>} title={props.title} />
+			<ReaderBody
+				content={props.content}
+				onVisit={props.onVisit}
+				onHoverNode={props.onHoverNode}
+				errorLabel="Couldn't load this document"
+			/>
 		</>
 	)
 }

@@ -39,9 +39,7 @@ describe('bakeGalaxyLayout', () => {
 		const bodies = galaxy.nodes
 			.map((node, i) => ({ node, i }))
 			.filter(({ node }) => node.tier === 0 || node.tier === -1)
-		const distances = bodies
-			.map(({ i }) => discRadiusOf(layout.positions, i))
-			.sort((a, b) => a - b)
+		const distances = bodies.map(({ i }) => discRadiusOf(layout.positions, i)).sort((a, b) => a - b)
 		const p92 = distances[Math.floor(distances.length * 0.92)]
 		expect(p92).toBeGreaterThan(DISC_RADIUS * 0.9)
 		expect(p92).toBeLessThan(DISC_RADIUS * 1.1)

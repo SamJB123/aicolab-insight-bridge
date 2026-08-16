@@ -42,8 +42,7 @@ export function GalaxySortControl(props: {
 	onChange: (sort: GalaxySort) => void
 	label?: string
 }) {
-	const alphaLabel = () =>
-		props.sort.key === 'alpha' && props.sort.dir === 'desc' ? 'Z–A' : 'A–Z'
+	const alphaLabel = () => (props.sort.key === 'alpha' && props.sort.dir === 'desc' ? 'Z–A' : 'A–Z')
 	const reachLabel = () =>
 		props.sort.key === 'reach'
 			? props.sort.dir === 'desc'

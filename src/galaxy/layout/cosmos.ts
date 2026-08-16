@@ -132,10 +132,7 @@ interface CosmosLink extends SimulationLinkDatum<CosmosNode> {
 	strength: number
 }
 
-export function bakeGalaxyLayout(
-	galaxy: IBGalaxy,
-	options: CosmosBakeOptions = {},
-): GalaxyLayout {
+export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = {}): GalaxyLayout {
 	const {
 		intensityMode = 'grades',
 		discRadius = DISC_RADIUS,
@@ -175,7 +172,10 @@ export function bakeGalaxyLayout(
 	})
 
 	// ── Edge intensities ────────────────────────────────────────────────────
-	const gradeOf = (membershipType: string | null | undefined, similarity: number | null | undefined): number => {
+	const gradeOf = (
+		membershipType: string | null | undefined,
+		similarity: number | null | undefined,
+	): number => {
 		if (membershipType && GRADE_INTENSITY[membershipType] !== undefined) {
 			return GRADE_INTENSITY[membershipType]
 		}
@@ -201,8 +201,7 @@ export function bakeGalaxyLayout(
 		const topic = simIndexOf.get(parentIdx)
 		if (source === undefined || topic === undefined) continue
 		const grade = gradeOf(edge.membershipType, edge.similarity)
-		const intensity =
-			intensityMode === 'soft' ? Math.max(0.1, edge.softIntensity ?? grade) : grade
+		const intensity = intensityMode === 'soft' ? Math.max(0.1, edge.softIntensity ?? grade) : grade
 		memberships.push({ source, topic, intensity })
 		const list = sourcesByTopic.get(topic)
 		if (list) list.push({ source, intensity })
@@ -239,10 +238,7 @@ export function bakeGalaxyLayout(
 		for (let a = 0; a < list.length; a++) {
 			for (let b = a + 1; b < list.length; b++) {
 				const key = pairKey(list[a].at, list[b].at)
-				pairs.set(
-					key,
-					(pairs.get(key) ?? 0) + Math.sqrt(list[a].intensity * list[b].intensity),
-				)
+				pairs.set(key, (pairs.get(key) ?? 0) + Math.sqrt(list[a].intensity * list[b].intensity))
 			}
 		}
 	}
@@ -257,7 +253,10 @@ export function bakeGalaxyLayout(
 	for (const membership of memberships) {
 		const list = topicsBySource.get(membership.source)
 		if (list) list.push({ topic: membership.topic, intensity: membership.intensity })
-		else topicsBySource.set(membership.source, [{ topic: membership.topic, intensity: membership.intensity }])
+		else
+			topicsBySource.set(membership.source, [
+				{ topic: membership.topic, intensity: membership.intensity },
+			])
 	}
 	const topicPair = new Map<number, number>()
 	for (const list of topicsBySource.values()) {
@@ -292,9 +291,7 @@ export function bakeGalaxyLayout(
 
 	// ── Links with legacy rest/strength per class ───────────────────────────
 	const links: CosmosLink[] = []
-	const addClass = (
-		entries: Array<{ a: number; b: number; intensity: number }>,
-	): void => {
+	const addClass = (entries: Array<{ a: number; b: number; intensity: number }>): void => {
 		// Loop, never spread — an edge class can hold 10⁵+ entries and
 		// Math.max(...) overflows the call stack past ~10⁵ arguments.
 		let maxIntensity = 0.001

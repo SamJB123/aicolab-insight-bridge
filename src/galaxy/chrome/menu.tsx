@@ -40,9 +40,7 @@ export function GalaxyMenu(props: {
 }) {
 	const tierPlural = (tier: number): string =>
 		props.galaxy.tiers.find((entry) => entry.tier === tier)?.labelPlural ?? ''
-	const hasSources = createMemo(() =>
-		props.galaxy.nodes.some((node) => node.tier === -1),
-	)
+	const hasSources = createMemo(() => props.galaxy.nodes.some((node) => node.tier === -1))
 	const census = createMemo(() =>
 		props.galaxy.tiers.map((tier) => ({
 			label: tier.labelPlural,
@@ -115,9 +113,7 @@ export function GalaxyMenu(props: {
 						)}
 					</For>
 				</dl>
-				<Show when={props.note}>
-					{(note) => <p class="ib-galaxy-menu-note">{note()}</p>}
-				</Show>
+				<Show when={props.note}>{(note) => <p class="ib-galaxy-menu-note">{note()}</p>}</Show>
 			</div>
 		</div>
 	)

@@ -90,9 +90,7 @@ export function createStarField(data: StarFieldData, palette: GalaxyPalette): St
 	const aPosition = vec3From(
 		instancedBufferAttribute(new THREE.InstancedBufferAttribute(data.positions, 3)),
 	)
-	const aTraits = vec4From(
-		instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 4)),
-	)
+	const aTraits = vec4From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(traits, 4)))
 	const aRadius = aTraits.x
 	const aTemp = aTraits.y
 	const aSeed = aTraits.z
@@ -115,7 +113,12 @@ export function createStarField(data: StarFieldData, palette: GalaxyPalette): St
 	material.positionNode = aPosition
 
 	const self = float(instanceIndex)
-	const twinkle = time.mul(1.7).add(aSeed.mul(Math.PI * 2)).sin().mul(0.05).add(1)
+	const twinkle = time
+		.mul(1.7)
+		.add(aSeed.mul(Math.PI * 2))
+		.sin()
+		.mul(0.05)
+		.add(1)
 	const cameraDistance = aPosition.sub(cameraPosition).length()
 	const igniteGain = smoothstep(45, 260, cameraDistance).mul(0.78).add(0.22)
 	const hoverHit = smoothstep(1, 0, self.sub(uniforms.hovered).abs())
@@ -139,11 +142,7 @@ export function createStarField(data: StarFieldData, palette: GalaxyPalette): St
 	const d = uv().sub(0.5).length()
 	const glow = float(0.06).div(d).sub(0.12).max(0)
 	const core = smoothstep(0.1, 0.02, d)
-	const brightness = aTemp
-		.mul(0.8)
-		.add(0.6)
-		.mul(ignite.mul(0.9).add(1))
-		.mul(dimming)
+	const brightness = aTemp.mul(0.8).add(0.6).mul(ignite.mul(0.9).add(1)).mul(dimming)
 	material.colorNode = rampColor
 		.mul(glow)
 		.mul(brightness)
