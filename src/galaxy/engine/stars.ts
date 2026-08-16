@@ -140,7 +140,15 @@ export function createStarField(data: StarFieldData, palette: GalaxyPalette): St
 
 	const rampColor = heatRamp(aTemp, palette.ramp)
 	const d = uv().sub(0.5).length()
-	const glow = float(0.06).div(d).sub(0.12).max(0)
+	// The hyperbolic falloff is clamped away from its centre singularity —
+	// the same 2026-08-16 dust-grain fix: 0.06/d is unbounded as d→0, so a
+	// fragment sample landing near the sprite centre (likelier the larger
+	// the star draws — reading frames zoom close) flared orders of
+	// magnitude over its neighbours and flickered with camera angle. The
+	// clamp bounds the glow peak (~1.6) while leaving the visible falloff
+	// untouched; the separate `core` term keeps its true distance so the
+	// star's centre highlight is unchanged.
+	const glow = float(0.06).div(d.max(0.035)).sub(0.12).max(0)
 	const core = smoothstep(0.1, 0.02, d)
 	const brightness = aTemp.mul(0.8).add(0.6).mul(ignite.mul(0.9).add(1)).mul(dimming)
 	material.colorNode = rampColor

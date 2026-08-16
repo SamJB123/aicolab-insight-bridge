@@ -72,10 +72,14 @@ export interface GalaxyEngineHandle {
 const HOME_MIN_RADIUS = 34
 const HOME_MAX_RADIUS = 480
 const OVERVIEW_POSE: HomeCameraPose = { kind: 'home', lng: -1.1, lat: 0.55, radius: 300 }
-const FOCUS_DISTANCE_FAMILY = 130
+/** THE galactic north (settled 2026-08-16): every framed view faces the
+ * same compass direction — the one the authored overview faces — so
+ * navigation never rotates, only slides and zooms. A home pose at
+ * longitude L looks along azimuth L+π; the ground bearing producing that
+ * same look direction is π/2 − L. */
+const GALACTIC_NORTH_BEARING = Math.PI / 2 - OVERVIEW_POSE.lng
 const CLICK_SLOP_PX = 6
 const CLICK_MAX_MS = 1500
-const WHEEL_EXIT_INTENT = 320
 
 /** Vertical half-angle tangent of the 46° camera on a WIDE canvas — the
  * geometry every legacy framing constant was hand-tuned against. Fitted
@@ -85,6 +89,11 @@ const WHEEL_EXIT_INTENT = 320
 const TUNED_TAN = Math.tan((46 * Math.PI) / 360)
 /** Standoff added inside every fitted distance (the legacy "+14"). */
 const FIT_MARGIN = 14
+/** Fit factor that CONTAINS a pin swarm: 1/TUNED_TAN puts the farthest
+ * bare position exactly at the frustum edge (plaques may overhang there —
+ * headroom removed by user call 2026-08-16 after fringe subjects showed
+ * too much empty sky). Used by reading frames. */
+const FIT_CONTAIN = 1 / TUNED_TAN
 
 /** Half-angle tangents of the VISIBLE canvas strip. The camera renders a
  * virtual canvas of height H+inset and shows its top H px (setViewOffset),
@@ -411,10 +420,11 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			})
 
 			// Membership whiskers: a source's edges to its topics, revealed on
-			// its hover/selection. Strength is the GRADE ladder (settled
-			// 2026-08-15): exemplar links solid and bright, high-value medium,
-			// member thin and faint — where a source is a progenitor reads
-			// instantly, categorically, not as a smooth ramp.
+			// HOVER only (selection reveal removed 2026-08-16 to match topics:
+			// a reading shows no line figure). Strength is the GRADE ladder
+			// (settled 2026-08-15): exemplar links solid and bright, high-value
+			// medium, member thin and faint — where a source is a progenitor
+			// reads instantly, categorically, not as a smooth ramp.
 			const WHISKER_GRADE_STRENGTH = [0.25, 0.62, 1] as const
 			const whiskerLinks: WhiskerLink[] = []
 			for (const [source, links] of membershipsOfSource) {
@@ -497,6 +507,14 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				(membershipsOfTopic.get(topic) ?? [])
 					.filter((link) => link.grade >= 1)
 					.map((link) => link.source)
+			/** A source's meaningfully-engaged topics — the mirror of
+			 * contributorsOf (settled 2026-08-16): a pin always means
+			 * exemplar/high-value; ordinary-member topics stay bare stars,
+			 * brightness-graded by the anchor dimming. */
+			const engagementsOf = (source: number): number[] =>
+				(membershipsOfSource.get(source) ?? [])
+					.filter((link) => link.grade >= 1)
+					.map((link) => link.topic)
 
 			// ── Camera rig ──────────────────────────────────────────────────
 			const pose = createPoseCamera(camera, {
@@ -570,21 +588,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				)
 			}
 			pose.jumpTo(overviewPose())
-
-			const obliquePose = (index: number, distance: number): HomeCameraPose => {
-				const x = positions[index * 3]
-				const y = positions[index * 3 + 1]
-				const z = positions[index * 3 + 2]
-				const length = Math.hypot(x, y, z)
-				const nodeLat = length > 1e-6 ? Math.asin(z / length) : 0
-				const lat = nodeLat * 0.35 + 0.55
-				const lng = Math.atan2(y, x)
-				const radius = Math.min(
-					fittedHomeMax(),
-					Math.max(HOME_MIN_RADIUS, length + fitFixed(distance)),
-				)
-				return { kind: 'home', lng, lat, radius }
-			}
 
 			// ── Anchor dimming ──────────────────────────────────────────────
 			const starHighlights = new Float32Array(starNodes.length)
@@ -750,11 +753,15 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const wx = positions[center * 3]
 				const wy = positions[center * 3 + 1]
 				const wz = positions[center * 3 + 2]
+				// Every framed view faces GALACTIC NORTH — the overview's own
+				// orientation — so moving between levels or across the disc
+				// never rotates the compass (settled 2026-08-16, superseding
+				// the per-node bearings that made transitions spin).
 				return {
 					kind: 'ground',
 					chart: GALAXY_CHART,
 					view: {
-						bearing: Math.atan2(-wx, -wy),
+						bearing: GALACTIC_NORTH_BEARING,
 						pitch: 0.62,
 						distance,
 						fov: 46,
@@ -773,22 +780,45 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				)
 				return groundFrame(group, Math.max(30, fitDistance(reach, 2.2)))
 			}
-			/** Frames a source with its CONTEXT (settled 2026-08-16 papercut):
-			 * arrived via a topic → frame the source and THAT topic; otherwise
-			 * frame its membership reach with the readability cap (expressed
-			 * as a reach cap so narrow strips still pull back to fit it). */
+			/** A family's territory, faced from galactic north like every
+			 * other framed view (replaced the swing-to-sector orbit pose,
+			 * 2026-08-16 — the one place a rotation survived). */
+			const frameFamily = (family: number): CameraPose => {
+				const reach = reachFrom(
+					positions[family * 3],
+					positions[family * 3 + 1],
+					positions[family * 3 + 2],
+					groupsByFamily.get(family) ?? [],
+				)
+				return groundFrame(family, Math.max(30, fitDistance(reach, 2.2)))
+			}
+			/** Frames a topic with its contributor PINS all in-frame (fixed
+			 * 2026-08-16: the old pose framed the parent group's topic spread
+			 * and routinely cropped the contributor swarm). */
+			const frameTopic = (topic: number): CameraPose => {
+				const reach = reachFrom(
+					positions[topic * 3],
+					positions[topic * 3 + 1],
+					positions[topic * 3 + 2],
+					contributorsOf(topic),
+				)
+				return groundFrame(topic, Math.max(30, fitDistance(reach, FIT_CONTAIN)))
+			}
+			/** Frames a source with ALL its engagement pins in-frame (fixed
+			 * 2026-08-16: the context-topic-only reach and the membership
+			 * distance cap both cropped pins). The arrival topic joins the
+			 * fit so the narrative connection stays visible even when the
+			 * source is a mere member of it. */
 			const frameSource = (source: number, contextTopic: number): CameraPose => {
-				const cx = positions[source * 3]
-				const cy = positions[source * 3 + 1]
-				const cz = positions[source * 3 + 2]
-				if (contextTopic >= 0) {
-					const reach = reachFrom(cx, cy, cz, [contextTopic])
-					return groundFrame(source, Math.max(30, fitDistance(reach, 1.4)))
-				}
-				const topics = (membershipsOfSource.get(source) ?? []).map((link) => link.topic)
-				const reach = reachFrom(cx, cy, cz, topics)
-				const reachCap = (220 - FIT_MARGIN) / 1.2
-				return groundFrame(source, Math.max(30, fitDistance(Math.min(reach, reachCap), 1.2)))
+				const members = engagementsOf(source)
+				if (contextTopic >= 0) members.push(contextTopic)
+				const reach = reachFrom(
+					positions[source * 3],
+					positions[source * 3 + 1],
+					positions[source * 3 + 2],
+					members,
+				)
+				return groundFrame(source, Math.max(30, fitDistance(reach, FIT_CONTAIN)))
 			}
 
 			// ── Projection: the core's navigation state → the sky ───────────
@@ -813,8 +843,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				/** Selection-ring node index (-1 = none). */
 				selected: number
 				fleet: { kind: 'topic' | 'source'; key: number } | null
-				/** Whisker-lit source node index (-1 = none). */
-				whisker: number
 				/** Node whose position becomes the DOF/fog focus point. */
 				frameCenter: number
 				/** Computed destination pose; null = leave the camera alone.
@@ -839,7 +867,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				anchor: null,
 				selected: -1,
 				fleet: null,
-				whisker: -1,
 				frameCenter: -1,
 				pose: null,
 				aspect: visibleStrip().aspect,
@@ -868,9 +895,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 							anchor: { kind: 'node', index },
 							selected: index,
 							fleet: { kind: 'topic', key: index },
-							whisker: -1,
 							frameCenter: index,
-							pose: group >= 0 ? frameGroup(group) : obliquePose(index, 42),
+							pose: frameTopic(index),
 							aspect,
 						}
 					}
@@ -884,11 +910,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 						lens,
 						framedGroup: -1,
 						framed: true,
-						labels: (membershipsOfSource.get(index) ?? []).map((link) => link.topic),
+						labels: engagementsOf(index),
 						anchor: { kind: 'node', index },
 						selected: index,
 						fleet: { kind: 'source', key: index },
-						whisker: index,
 						frameCenter: index,
 						pose: frameSource(index, contextTopic),
 						aspect,
@@ -907,7 +932,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 							anchor: { kind: 'node', index },
 							selected: -1,
 							fleet: null,
-							whisker: -1,
 							frameCenter: index,
 							pose: frameGroup(index),
 							aspect,
@@ -918,7 +942,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 						...restingProjection(key, lens, groupsByFamily.get(index) ?? []),
 						anchor: { kind: 'node', index },
 						frameCenter: index,
-						pose: obliquePose(index, FOCUS_DISTANCE_FAMILY),
+						pose: frameFamily(index),
 					}
 				}
 				if (level.kind === 'cohort') {
@@ -968,7 +992,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				labels.setLabels(next.labels, next.lens)
 				stars.uniforms.selected.value = next.selected >= 0 ? starIndexOf[next.selected] : -1
 				dust.uniforms.selected.value = next.selected >= 0 ? dustIndexOf[next.selected] : -1
-				whiskers.uniforms.selectedSource.value = next.whisker
 				reapplyAnchor()
 				framedGroup = next.framedGroup
 				if (next.framed && !prev?.framed) focusAnim.current = 0
@@ -1073,6 +1096,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			let pointerNdcY = 0
 			let pointerDirty = false
 			let pinchDistance = 0
+			let pinchAngle = 0
+			let pinchCentroidY = 0
+			const angleDelta = (to: number, from: number): number =>
+				((to - from + Math.PI * 3) % (Math.PI * 2)) - Math.PI
 			let downX = 0
 			let downY = 0
 			let downTime = 0
@@ -1141,12 +1168,44 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				}
 			}
 
+			// Manual camera control (settled 2026-08-16): EVERY level has the
+			// full set — drag pans, right-drag rotates, wheel/pinch zooms,
+			// two-finger twist rotates, two-finger vertical drag tilts.
+			// Canonical north is only where navigation ARRIVES; it never
+			// limits what you can do.
+			//
+			// Handlers live on the HOST, not the canvas: wayfinding pins sit
+			// over the sky and swallow canvas-targeted events, which silently
+			// broke any two-finger gesture with a finger on a pin (588 pins
+			// make that the common case). Pins are gesture surface like any
+			// map's markers — drag-from-pin pans, pinch-over-pin zooms — and
+			// a pin's own tap only fires when the gesture stayed a tap. Other
+			// stage UI (breadcrumb, search, tooltips) keeps its input.
+			const gestureSurface = (target: EventTarget | null): boolean => {
+				if (target === canvas) return true
+				if (!(target instanceof Element)) return false
+				if (target.closest('.kolo-wayfinding')) return true
+				return (
+					target.closest('button, [role=button], a, input, select, textarea, [contenteditable]') ===
+					null
+				)
+			}
+			const rotatePointers = new Set<number>()
+			/** A drag/pinch happened — the release must not read as a pin tap. */
+			let gestureConsumed = false
 			const onPointerDown = (event: PointerEvent): void => {
-				canvas.setPointerCapture(event.pointerId)
+				if (!gestureSurface(event.target)) return
+				// Capture only canvas-born pointers: capturing pin-born ones
+				// would retarget their stream and break the pin's own click.
+				if (event.target === canvas) canvas.setPointerCapture(event.pointerId)
+				if (event.button === 2) rotatePointers.add(event.pointerId)
 				activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+				if (activePointers.size === 1) gestureConsumed = false
 				if (activePointers.size === 2) {
 					const [a, b] = [...activePointers.values()]
 					pinchDistance = Math.hypot(a.x - b.x, a.y - b.y)
+					pinchAngle = Math.atan2(b.y - a.y, b.x - a.x)
+					pinchCentroidY = (a.y + b.y) / 2
 				}
 				downX = event.clientX
 				downY = event.clientY
@@ -1162,33 +1221,73 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					tracked.x = event.clientX
 					tracked.y = event.clientY
 					if (activePointers.size === 2) {
+						// Touch mirror of desktop right-drag (settled 2026-08-16):
+						// pinch zooms, TWISTING the two fingers rotates the bearing
+						// (content follows the twist), dragging both fingers
+						// up/down tilts the pitch.
 						const [a, b] = [...activePointers.values()]
 						const distance = Math.hypot(a.x - b.x, a.y - b.y)
-						if (pinchDistance > 0) pose.zoomBy(pinchDistance / Math.max(1, distance))
+						const angle = Math.atan2(b.y - a.y, b.x - a.x)
+						const centroidY = (a.y + b.y) / 2
+						if (pinchDistance > 0) {
+							gestureConsumed = true
+							pose.zoomBy(pinchDistance / Math.max(1, distance))
+							const heightPx = host.clientHeight || 1
+							// Bearing sign probe-verified 2026-08-16: content
+							// follows the twist direction.
+							pose.rotateBy(
+								angleDelta(pinchAngle, angle),
+								((centroidY - pinchCentroidY) / heightPx) * 2.2,
+							)
+						}
 						pinchDistance = distance
+						pinchAngle = angle
+						pinchCentroidY = centroidY
 						return
 					}
 					if (Math.hypot(event.clientX - downX, event.clientY - downY) > CLICK_SLOP_PX) {
 						dragging = true
+						gestureConsumed = true
 					}
 					if (dragging) {
 						const heightPx = host.clientHeight || 1
-						pose.panBy((-dx / heightPx) * 2.2, (dy / heightPx) * 2.2)
+						if (rotatePointers.has(event.pointerId)) {
+							pose.rotateBy((dx / heightPx) * 2.2, (dy / heightPx) * 2.2)
+						} else {
+							pose.panBy((-dx / heightPx) * 2.2, (dy / heightPx) * 2.2)
+						}
 					}
 				}
-				const [ndcX, ndcY] = toNdc(event)
-				pointerNdcX = ndcX
-				pointerNdcY = ndcY
-				pointerDirty = true
+				// Hover picking follows the pointer only over the open sky —
+				// over a pin, the pin's own hover callbacks govern.
+				if (event.target === canvas) {
+					const [ndcX, ndcY] = toNdc(event)
+					pointerNdcX = ndcX
+					pointerNdcY = ndcY
+					pointerDirty = true
+				}
 			}
 			const endPointer = (event: PointerEvent): void => {
 				activePointers.delete(event.pointerId)
+				rotatePointers.delete(event.pointerId)
 				pinchDistance = 0
 			}
 			const onPointerUp = (event: PointerEvent): void => {
 				const wasPinch = activePointers.size === 2
+				const wasRotate = rotatePointers.has(event.pointerId)
 				endPointer(event)
-				if (wasPinch || dragging || performance.now() - downTime > CLICK_MAX_MS) return
+				if (event.target !== canvas) return
+				// gestureConsumed also catches the SECOND finger of a pinch
+				// lifting last — its release is the gesture ending, not a tap
+				// (pre-existing pinch-end tap-through, caught 2026-08-16).
+				if (
+					wasPinch ||
+					wasRotate ||
+					dragging ||
+					gestureConsumed ||
+					performance.now() - downTime > CLICK_MAX_MS
+				)
+					return
 				const [ndcX, ndcY] = toNdc(event)
 				const index = pick(ndcX, ndcY)
 				if (index < 0) return
@@ -1200,47 +1299,61 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				pointerDirty = false
 				core.setHovered(null)
 			}
-			let wheelOutIntent = 0
-			let wheelUpFiredAt = 0
-			const onWheel = (event: WheelEvent): void => {
-				event.preventDefault()
-				// Wheeling OUT of an engaged view IS the up-action (settled
-				// 2026-08-16 papercut: one exit path, same destination as the
-				// named up-control). One gesture steps ONE level: after a fire,
-				// a short cooldown swallows the burst's momentum so sustained
-				// deliberate scrolling steps further, a single flick doesn't.
-				if (currentProjection?.framed) {
-					if (event.deltaY > 0) {
-						const now = performance.now()
-						if (now - wheelUpFiredAt < 700) return
-						wheelOutIntent += event.deltaY
-						if (wheelOutIntent > WHEEL_EXIT_INTENT) {
-							wheelOutIntent = 0
-							wheelUpFiredAt = now
-							core.upOneLevel()
-						}
-					}
-					return
+			// A drag/pinch that involved a pin must not fire the pin's click
+			// on release (map convention: dragging from a marker pans, it
+			// doesn't select).
+			const onOverlayClick = (event: MouseEvent): void => {
+				if (!gestureConsumed) return
+				if (event.target instanceof Element && event.target.closest('.kolo-wayfinding')) {
+					event.preventDefault()
+					event.stopPropagation()
 				}
+			}
+			// Wheel is ZOOM at every level, both directions (settled
+			// 2026-08-16, superseding wheel-out-as-up: leaving a level goes
+			// through the named up-control or breadcrumb only).
+			const onWheel = (event: WheelEvent): void => {
+				if (!gestureSurface(event.target)) return
+				event.preventDefault()
 				pose.zoomBy(Math.exp(event.deltaY * 0.0012))
+			}
+			const onContextMenu = (event: Event): void => {
+				// Right-drag is the rotate gesture; the browser menu would
+				// swallow it on release.
+				if (gestureSurface(event.target)) event.preventDefault()
+			}
+			// Pointers released outside the host (drag-from-pin has no
+			// capture) still need their tracking cleared.
+			const onWindowPointerEnd = (event: PointerEvent): void => {
+				endPointer(event)
 			}
 			canvas.style.cursor = 'grab'
 			canvas.style.touchAction = 'none'
-			canvas.addEventListener('pointerdown', onPointerDown)
-			canvas.addEventListener('pointermove', onPointerMove)
-			canvas.addEventListener('pointerup', onPointerUp)
-			canvas.addEventListener('pointercancel', endPointer)
-			canvas.addEventListener('pointerleave', onPointerLeave)
-			canvas.addEventListener('wheel', onWheel, { passive: false })
+			host.style.touchAction = 'none'
+			host.addEventListener('pointerdown', onPointerDown)
+			host.addEventListener('pointermove', onPointerMove)
+			host.addEventListener('pointerup', onPointerUp)
+			host.addEventListener('pointercancel', endPointer)
+			host.addEventListener('pointerleave', onPointerLeave)
+			host.addEventListener('wheel', onWheel, { passive: false })
+			host.addEventListener('contextmenu', onContextMenu)
+			host.addEventListener('click', onOverlayClick, { capture: true })
+			window.addEventListener('pointerup', onWindowPointerEnd)
+			window.addEventListener('pointercancel', onWindowPointerEnd)
 			cleanups.push(() => {
-				canvas.removeEventListener('pointerdown', onPointerDown)
-				canvas.removeEventListener('pointermove', onPointerMove)
-				canvas.removeEventListener('pointerup', onPointerUp)
-				canvas.removeEventListener('pointercancel', endPointer)
-				canvas.removeEventListener('pointerleave', onPointerLeave)
-				canvas.removeEventListener('wheel', onWheel)
+				host.removeEventListener('pointerdown', onPointerDown)
+				host.removeEventListener('pointermove', onPointerMove)
+				host.removeEventListener('pointerup', onPointerUp)
+				host.removeEventListener('pointercancel', endPointer)
+				host.removeEventListener('pointerleave', onPointerLeave)
+				host.removeEventListener('wheel', onWheel)
+				host.removeEventListener('contextmenu', onContextMenu)
+				host.removeEventListener('click', onOverlayClick, { capture: true })
+				window.removeEventListener('pointerup', onWindowPointerEnd)
+				window.removeEventListener('pointercancel', onWindowPointerEnd)
 				canvas.style.cursor = ''
 				canvas.style.touchAction = ''
+				host.style.touchAction = ''
 			})
 
 			// ── Core subscription (the face's reactive root) ────────────────
@@ -1284,6 +1397,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			// ── Loop ────────────────────────────────────────────────────────
 			let ready = false
 			let lastTime = performance.now()
+			let fleetFade = 0
 			const loop = (): void => {
 				const now = performance.now()
 				const dt = Math.min((now - lastTime) / 1000, 0.1)
@@ -1291,19 +1405,24 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				resize.flush()
 				pose.update(dt)
 
-				wheelOutIntent *= Math.exp(-dt * 1.4)
-
 				const step = Math.min(1, dt * 2.6)
 				focusAnim.current += (focusAnim.target - focusAnim.current) * step
-				if (pendingFleetClear && focusAnim.current < 0.02) {
+				// The fleet fades on its OWN track: an up-navigation from a
+				// topic to its still-framed group keeps focusAnim at 1, so
+				// gating the fleet's fade and disposal on focusAnim left the
+				// planets hanging forever (bug fixed 2026-08-16).
+				const fleetGoal = pendingFleetClear ? 0 : focusAnim.current
+				fleetFade += (fleetGoal - fleetFade) * step
+				if (pendingFleetClear && fleetFade < 0.02) {
 					pendingFleetClear = false
 					clearFleet()
 				}
-				// A source reading suppresses the MST figure — the whiskers own
-				// the line language there (framedGroup is -1 by projection).
+				// A source reading suppresses the MST figure (framedGroup is -1
+				// by projection) — readings show NO line figure at all; lines
+				// are hover previews only (aligned with topics 2026-08-16).
 				asterisms.uniforms.focusedGroup.value = framedGroup
 				asterisms.uniforms.focusFade.value = focusAnim.current
-				if (planets) planets.fade.value = focusAnim.current
+				if (planets) planets.fade.value = fleetFade
 				const goal = pose.goal()
 				const goalRadius = goal.kind === 'home' ? goal.radius : camera.position.length()
 				if (nebula) {
