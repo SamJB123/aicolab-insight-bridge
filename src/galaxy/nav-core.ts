@@ -32,7 +32,7 @@
  * derivations over the STATIC galaxy are plain functions.
  */
 
-import { type Accessor, createSignal, type Setter } from 'solid-js'
+import { type Accessor, createSignal, type Setter, untrack } from 'solid-js'
 import type { CameraPose } from '@aicolab/kolo/camera/pose-camera'
 import { primaryParents } from './layout/cosmos.ts'
 import type { IBGalaxy, IBNode, IBNodeId } from './types.ts'
@@ -371,6 +371,12 @@ export class GalaxyNavCore {
 	}
 
 	setHovered(id: IBNodeId | null): void {
+		// The 3D face calls this from its pick pass on every frame the
+		// pointer moved, usually with an unchanged id (null → null while
+		// sweeping empty space). Bail here rather than relying on the
+		// signal's own equality: solid's setter walks its transition
+		// bookkeeping before comparing values, so a no-op write is not free.
+		if (untrack(this.hovered) === id) return
 		this.#setHovered(id)
 	}
 

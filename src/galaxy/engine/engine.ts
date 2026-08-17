@@ -35,7 +35,8 @@ import { createEffect, createRoot, createSignal } from 'solid-js'
 import { color, screenUV } from 'three/tsl'
 import * as THREE from 'three/webgpu'
 import { facetPalette, facetValues } from '../facets.ts'
-import { bakeGalaxyLayout, DISC_RADIUS, primaryParents } from '../layout/cosmos.ts'
+import { bakeGalaxyLayoutAsync } from '../layout/bake-async.ts'
+import { DISC_RADIUS, primaryParents } from '../layout/cosmos.ts'
 import type { GalaxyNavCore } from '../nav-core.ts'
 import type { IBGalaxy, IBIntensityMode } from '../types.ts'
 import { createAsterisms, type AsterismGroup } from './asterisms.ts'
@@ -159,10 +160,13 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 
 	void (async () => {
 		try {
-			// ── Layout: bake once, freeze, mirror ───────────────────────────
-			const layout = bakeGalaxyLayout(galaxy, {
+			// ── Layout: bake once (worker + cache), freeze, mirror ─────────
+			// Off the main thread: the 300-tick simulation froze first paint
+			// for seconds on weak devices when it ran inline.
+			const layout = await bakeGalaxyLayoutAsync(galaxy, {
 				intensityMode: options.intensityMode ?? 'grades',
 			})
+			if (disposed) return
 			const nodes = galaxy.nodes
 			const count = nodes.length
 			// Pose-camera convention: +Z is the world axis, equator in XY. The
@@ -305,7 +309,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				() => {
 					const r = new THREE.WebGPURenderer({
 						canvas,
-						antialias: true,
+						antialias: quality.msaa,
 						logarithmicDepthBuffer: true,
 					})
 					r.setPixelRatio(touch ? quality.dprFloor : quality.dprCeiling)
@@ -1060,6 +1064,13 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				{ applyPixelRatio: (value) => renderer.setPixelRatio(value) },
 			)
 			cleanups.push(() => resize.dispose())
+			// Effect rungs below the DPR floor, cheapest-looking sacrifice
+			// first (attribution measured on a weak adapter, 2026-08-17:
+			// anamorphic ≈35% of frame, scene MSAA ≈38%, compounding to 72%
+			// together; the quarter-res nebula measured ~1% and never sheds).
+			const shedRungs: Array<(on: boolean) => void> = []
+			if (quality.anamorphic) shedRungs.push((on) => post.setAnamorphic(on))
+			if (quality.msaa) shedRungs.push((on) => post.setSceneMsaa(on))
 			const adaptiveDpr = createAdaptiveDpr({
 				ceiling: quality.dprCeiling,
 				floor: quality.dprFloor,
@@ -1068,6 +1079,14 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				// are dropped, so this is safe for the mobile 1..1.5 envelope).
 				steps: [1.25, 1.5],
 				apply: (value) => resize.requestPixelRatio(value),
+				...(shedRungs.length > 0
+					? {
+							belowFloor: {
+								levels: shedRungs.length,
+								apply: (level) => shedRungs.forEach((rung, i) => rung(i >= level)),
+							},
+						}
+					: {}),
 			})
 
 			// ── Picking (analytic, all bodies: stars + dust) ────────────────

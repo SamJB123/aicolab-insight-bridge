@@ -187,11 +187,17 @@ function NodesSection(props: {
 	)
 }
 
+/** Bare member-grade rows preview at a few before an expander; lists at or
+ * under the cap render whole — an expander hiding one or two rows is noise. */
+const PLAIN_ROWS_PREVIEW = 6
+const PLAIN_ROWS_CAP = 8
+
 /** Lens/perspective rows. Rows carrying analysis or quotes read as an
  * accordion (badge in the summary; analysis, PROVENANCE QUOTES — a hard
  * requirement, 2026-08-16 — and a visit chip inside; first open). Bare rows
- * (member-grade engagements, share-only slices) follow as a plain list,
- * actionable when they carry a node id. */
+ * (member-grade engagements, share-only slices) follow as a subordinate
+ * list — accordion-summary type, muted ink — previewed behind an expander
+ * when long, actionable when they carry a node id. */
 function FacetsSection(props: {
 	section: Extract<IBContentSection, { kind: 'facets' }>
 	onVisit: (id: IBNodeId) => void
@@ -203,6 +209,11 @@ function FacetsSection(props: {
 	const plain = createMemo(() =>
 		props.section.rows.filter((row) => !(row.analysis || (row.quotes?.length ?? 0) > 0)),
 	)
+	const [allPlain, setAllPlain] = createSignal(false)
+	const visiblePlain = createMemo(() => {
+		const rows = plain()
+		return allPlain() || rows.length <= PLAIN_ROWS_CAP ? rows : rows.slice(0, PLAIN_ROWS_PREVIEW)
+	})
 	const visitOf = (row: IBFacetRow): (() => void) | undefined => {
 		const id = row.id
 		return id === undefined ? undefined : () => props.onVisit(id)
@@ -253,34 +264,55 @@ function FacetsSection(props: {
 				</Accordion>
 			</Show>
 			<Show when={plain().length > 0}>
-				<RichList label={props.section.title}>
-					<For each={plain()}>
+				<RichList
+					label={props.section.title}
+					titleSize="var(--t-sm)"
+					titleInk="var(--color-base-content-muted)"
+					rowPadBlock="0.35rem"
+				>
+					<For each={visiblePlain()}>
 						{(row) => (
 							<RichListItem
 								title={row.label}
 								onSelect={visitOf(row)}
 								onHoverChange={hoverOf(row)}
+								/* An empty trailing edge still reserves its aligned
+								   min-inline-size, wrapping every title early — rows
+								   with nothing to show get no trailing at all. */
 								trailing={
-									<span class="ib-galaxy-facet-trailing">
-										<Show
-											when={row.signal}
-											fallback={
-												<Show when={row.badge}>
-													{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
-												</Show>
-											}
-										>
-											{(signal) => <SignalIcon strength={signal()} label={row.badge ?? ''} />}
-										</Show>
-										<Show when={row.share !== undefined}>
-											<Meter value={(row.share ?? 0) * 100} max={100} />
-										</Show>
-									</span>
+									row.signal !== undefined ||
+									row.badge !== undefined ||
+									row.share !== undefined ? (
+										<span class="ib-galaxy-facet-trailing">
+											<Show
+												when={row.signal}
+												fallback={
+													<Show when={row.badge}>
+														{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
+													</Show>
+												}
+											>
+												{(signal) => <SignalIcon strength={signal()} label={row.badge ?? ''} />}
+											</Show>
+											<Show when={row.share !== undefined}>
+												<Meter value={(row.share ?? 0) * 100} max={100} />
+											</Show>
+										</span>
+									) : undefined
 								}
 							/>
 						)}
 					</For>
 				</RichList>
+				<Show when={plain().length > PLAIN_ROWS_CAP}>
+					<button
+						type="button"
+						class="ib-galaxy-show-all"
+						onClick={() => setAllPlain((expanded) => !expanded)}
+					>
+						{allPlain() ? 'Show fewer ▴' : `Show all ${plain().length} ▾`}
+					</button>
+				</Show>
 			</Show>
 		</>
 	)

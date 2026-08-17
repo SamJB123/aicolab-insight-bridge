@@ -4,14 +4,15 @@
  * Adapters supply normalised DATA; the builders own section composition,
  * order and titles, so every corpus reads the same way:
  *
- *   SOURCE panel: one uniform engaged-topics section (analysed rows carry
- *   position + analysis + QUOTES — provenance is a hard requirement —
- *   member-grade rows follow as bare actionable titles; the title reads
- *   naturally whatever the mix); documents section ONLY when the entity has
- *   ≥2 documents (1:1 corpora: the entity reading IS the document reading);
- *   key points; optional structured-analysis blocks. Grades never badge in
- *   the panel — the sky owns them (whiskers/planetification). No related
- *   chips: the sections ARE the navigation.
+ *   SOURCE panel: key points and optional structured-analysis blocks lead;
+ *   then one uniform engaged-topics section (analysed rows carry position +
+ *   analysis + QUOTES — provenance is a hard requirement — member-grade
+ *   rows follow as bare actionable titles; the title reads naturally
+ *   whatever the mix); documents section ONLY when the entity has ≥2
+ *   documents (1:1 corpora: the entity reading IS the document reading).
+ *   Grades never badge in the panel — the sky owns them
+ *   (whiskers/planetification). No related chips: the sections ARE the
+ *   navigation.
  *
  *   TOPIC panel: key points; ONE lens section per facet the corpus ships
  *   (with quotes); a 'Member of' parent-membership section only when the
@@ -175,11 +176,11 @@ export function buildSourceContent(
 			...(input.stats ?? []),
 		],
 		sections: [
+			...pointsSections(input, vocabulary),
 			...(engaged ? [engaged] : []),
 			...(documents.length >= 2
 				? [{ kind: 'documents' as const, title: vocabulary.documentsTitle, rows: documents }]
 				: []),
-			...pointsSections(input, vocabulary),
 		],
 	}
 }

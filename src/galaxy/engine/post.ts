@@ -21,12 +21,14 @@
  */
 
 import { vignette } from '@aicolab/kolo/rendering/vignette'
+import { setPassSamples } from '@aicolab/kolo/webgpu/three-internals'
 import { dof, floatFrom, gaussianBlur, lensflare } from '@aicolab/kolo/webgpu/tsl-helpers'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import {
 	color,
 	float,
 	Fn,
+	If,
 	Loop,
 	mrt,
 	output,
@@ -55,6 +57,15 @@ export interface GalaxyPostUniforms {
 export interface GalaxyPost {
 	pipeline: THREE.RenderPipeline
 	uniforms: GalaxyPostUniforms
+	/** Governor rung: skip the streak's bright-pass render (rtt autoUpdate)
+	 * AND its 44-tap loop (uniform branch — GPUs skip uniform control flow).
+	 * Measured 35% of frame cost on weak adapters, 2026-08-17. No-op when
+	 * the tier built without anamorphic. */
+	setAnamorphic(on: boolean): void
+	/** Governor rung: toggle the scene pass's 4×MSAA at runtime (measured
+	 * 38% of frame cost on weak adapters, 2026-08-17). PassNode re-reads
+	 * `options.samples` every update, so this applies next frame. */
+	setSceneMsaa(on: boolean): void
 	dispose(): void
 }
 
@@ -81,6 +92,7 @@ export function createGalaxyPost(
 		bokeh: uniform(0),
 		streak: uniform(0.3),
 	}
+	const anamorphicOn = uniform(1)
 
 	const scenePass = pass(scene, camera)
 	scenePass.setMRT(
@@ -99,26 +111,36 @@ export function createGalaxyPost(
 	let composed = sceneColor.add(bloom(maskedBright, 1.0, 0.45, 0.18))
 
 	if (fogScene) {
-		const fogPass = pass(fogScene, camera, { depthBuffer: false })
+		// samples: 0 — the quarter-res fog is a soft additive cloud that the
+		// gaussian composite blurs anyway; inheriting the renderer's 4×MSAA
+		// here was pure bandwidth cost.
+		const fogPass = pass(fogScene, camera, { depthBuffer: false, samples: 0 })
 		fogPass.setResolutionScale(FOG_RESOLUTION_SCALE)
 		// The fog leaves the shared bloom MRT here; its old contribution was
 		// a negligible 0.05 (settled: dropped).
 		composed = composed.add(gaussianBlur(fogPass, 0.7).rgb)
 	}
 
+	let streakBrightPass: ReturnType<typeof rtt> | undefined
 	if (quality.anamorphic) {
 		// Bright areas cached once (rtt), then smeared horizontally with a
-		// softness-weighted loop — the classic anamorphic streak.
+		// softness-weighted loop — the classic anamorphic streak. The whole
+		// effect sits behind the governor's uniform gate: uniform control
+		// flow is skipped wholesale on GPUs, and setAnamorphic also pauses
+		// the bright-pass render itself.
 		const brightPass = rtt(maskedBright)
+		streakBrightPass = brightPass
 		const streakNode = Fn(() => {
 			const total = vec4(0).toVar()
-			const half = STREAK_SAMPLES / 2
-			const invSize = vec2(1).div(viewportSize)
-			Loop({ start: -half, end: half }, ({ i }) => {
-				const step = floatFrom(i)
-				const softness = step.abs().div(half).oneMinus().pow(2)
-				const shifted = vec2(uv().x.add(invSize.x.mul(step).mul(4)), uv().y)
-				total.addAssign(brightPass.sample(shifted).mul(softness))
+			If(anamorphicOn.greaterThan(0.5), () => {
+				const half = STREAK_SAMPLES / 2
+				const invSize = vec2(1).div(viewportSize)
+				Loop({ start: -half, end: half }, ({ i }) => {
+					const step = floatFrom(i)
+					const softness = step.abs().div(half).oneMinus().pow(2)
+					const shifted = vec2(uv().x.add(invSize.x.mul(step).mul(4)), uv().y)
+					total.addAssign(brightPass.sample(shifted).mul(softness))
+				})
 			})
 			return total.div(STREAK_SAMPLES / 3)
 		})()
@@ -151,6 +173,13 @@ export function createGalaxyPost(
 	return {
 		pipeline,
 		uniforms,
+		setAnamorphic(on: boolean): void {
+			anamorphicOn.value = on ? 1 : 0
+			if (streakBrightPass) streakBrightPass.autoUpdate = on
+		},
+		setSceneMsaa(on: boolean): void {
+			setPassSamples(scenePass, on ? 4 : 0)
+		},
 		dispose(): void {
 			pipeline.dispose()
 		},

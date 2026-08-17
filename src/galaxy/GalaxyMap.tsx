@@ -38,7 +38,15 @@ import {
 	WorkspaceStageTooltip,
 } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { createEffect, createMemo, createSignal, createUniqueId, onSettled, Show } from 'solid-js'
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	createUniqueId,
+	onSettled,
+	Show,
+	untrack,
+} from 'solid-js'
 import { probeWebGpu } from '@aicolab/kolo/webgpu/backend-guard'
 import { createGalaxyAdapter, type GalaxyConfiguration } from './adapter.ts'
 import { GalaxyDrill } from './chrome/drill.tsx'
@@ -94,43 +102,49 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	// The intensity mode weights the force layout itself, so switching it
 	// deliberately re-bakes the sky (an engine remount via configuration).
 	const [intensityMode, setIntensityMode] = createSignal<IBIntensityMode>('grades')
+
+	// THE galaxy is a CONSTRUCTION-TIME input, pinned once per component
+	// lifetime (fixed 2026-08-17): router hosts re-emit identity-fresh but
+	// data-equal galaxy objects (hydration takeover, loader revalidation),
+	// and deriving the world from that identity rebuilt the core and
+	// remounted the engine mid-session — stale UI closures then wrote into
+	// the disposed core's signals. Component bodies run once, so a body
+	// pin is immune by construction. Corpus data is stable per route; a
+	// truly different corpus is a different route (host remounts us).
+	const galaxy = untrack(() => props.galaxy)
 	// Only corpora carrying continuous scores can offer the choice.
-	const hasSoftScores = createMemo(() =>
-		props.galaxy.edges.some(
-			(edge) => edge.softIntensity !== undefined && edge.softIntensity !== null,
-		),
+	const hasSoftScores = galaxy.edges.some(
+		(edge) => edge.softIntensity !== undefined && edge.softIntensity !== null,
 	)
 
-	// THE navigation brain — one per corpus; identity-stable across engine
-	// remounts (intensity re-bakes keep trails, lens and remembered poses).
-	const core = createMemo(() => new GalaxyNavCore(props.galaxy))
-	// Resolved in a TRACKED scope so the handler the inspector calls from its
-	// own effect touches no reactive values (the split-effect contract).
-	const occlusionHandler = createMemo(() => {
-		const instance = core()
-		return (px: number) => instance.setViewportInset(px)
-	})
+	// THE navigation brain — ONE per component lifetime, a plain body
+	// instantiation (the house headless-core convention: cores are never
+	// created inside derivations). Identity-stable across engine remounts
+	// (intensity re-bakes keep trails, lens and remembered poses) AND
+	// across host prop churn; every closure below may capture it freely.
+	const core = new GalaxyNavCore(galaxy)
+	const occlusionHandler = (px: number) => core.setViewportInset(px)
 	const configuration = createMemo(
 		(): GalaxyConfiguration => ({
-			galaxy: props.galaxy,
+			galaxy,
 			intensityMode: intensityMode(),
-			core: core(),
+			core,
 		}),
 	)
 
-	const facets = createMemo(() => props.galaxy.sourceFacets ?? [])
+	const facets = galaxy.sourceFacets ?? []
 
 	// Host events derive from the core (no engine event wire). Handlers are
 	// read in the COMPUTE so the callbacks touch no reactive values.
 	createEffect(
-		() => ({ node: core().reading(), onSelect: props.onSelect }),
+		() => ({ node: core.reading(), onSelect: props.onSelect }),
 		({ node, onSelect }, previous) => {
 			if (node && node !== previous?.node) onSelect?.(node)
 		},
 	)
 	const hoveredNode = createMemo((): IBNode | null => {
-		const id = core().hovered()
-		return id !== null ? (core().nodeOf(id) ?? null) : null
+		const id = core.hovered()
+		return id !== null ? (core.nodeOf(id) ?? null) : null
 	})
 	createEffect(
 		() => ({ node: hoveredNode(), onHover: props.onHover }),
@@ -142,14 +156,14 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	/** The up-control's display label (destination-NAMED, settled
 	 * 2026-08-16); null = at root, control hidden. */
 	const upLabel = createMemo((): string | null => {
-		const destination = core().upDestination()
+		const destination = core.upDestination()
 		if (destination === null) return null
 		return destination === 'root' ? props.title : destination.label
 	})
 
 	// ── The unified trail: ONE breadcrumb builder over the core ───────────
 	const crumbs = createMemo((): BreadcrumbItem[] => {
-		const c = core()
+		const c = core
 		const items: BreadcrumbItem[] = [{ label: props.title, onSelect: () => c.reset() }]
 		const trail = c.trail()
 		const reading = c.reading()
@@ -172,13 +186,13 @@ export function GalaxyMap(props: GalaxyMapProps) {
 
 	/** What a tier's weight counts (sources' weight counts topics, etc.). */
 	const weightLabelFor = (tier: IBTier): string =>
-		props.galaxy.tiers.find((meta) => meta.tier === tier)?.weightLabel ?? props.galaxy.weightLabel
+		galaxy.tiers.find((meta) => meta.tier === tier)?.weightLabel ?? galaxy.weightLabel
 
 	const paletteId = `ib-galaxy-palette-${createUniqueId()}`
 	const radialId = `ib-galaxy-radial-${createUniqueId()}`
 	const paletteItems = createMemo((): CommandPaletteItem[] => {
-		const tierLabel = new Map(props.galaxy.tiers.map((tier) => [tier.tier, tier.label]))
-		return props.galaxy.nodes.map((node) => ({
+		const tierLabel = new Map(galaxy.tiers.map((tier) => [tier.tier, tier.label]))
+		return galaxy.nodes.map((node) => ({
 			id: node.id,
 			label: node.title,
 			detail: `${node.weight} ${weightLabelFor(node.tier)}${
@@ -205,19 +219,19 @@ export function GalaxyMap(props: GalaxyMapProps) {
 				id: 'home',
 				label: 'Fly home',
 				icon: <span aria-hidden="true">⌂</span>,
-				onSelect: () => core().reset(),
+				onSelect: () => core.reset(),
 			},
 		]
-		const list = facets()
+		const list = facets
 		if (list.length > 1) {
 			items.push({
 				id: 'facet',
-				label: `Colour: ${core().facetLabelOf(core().lens() ?? '')}`,
+				label: `Colour: ${core.facetLabelOf(core.lens() ?? '')}`,
 				icon: <span aria-hidden="true">◔</span>,
 				onSelect: () => {
-					const at = list.findIndex((facet) => facet.key === core().lens())
+					const at = list.findIndex((facet) => facet.key === core.lens())
 					const next = list[(at + 1) % list.length]
-					if (next) core().setLens(next.key)
+					if (next) core.setLens(next.key)
 				},
 			})
 		}
@@ -227,18 +241,18 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	// The reading contract: async computations over the core's state — reads
 	// under the inspector's Loading boundary until the host's fetch lands.
 	const readerContent = createMemo((): Promise<IBNodeContent | null> | null => {
-		const node = core().reading()
+		const node = core.reading()
 		const load = props.loadContent
 		return node && load ? load(node) : null
 	})
 	const documentContent = createMemo((): Promise<IBNodeContent | null> | null => {
-		const doc = core().document()
+		const doc = core.document()
 		const load = props.loadDocument
 		return doc && load ? load(doc.documentId) : null
 	})
 
 	const tierPlural = (tier: IBTier): string =>
-		props.galaxy.tiers.find((entry) => entry.tier === tier)?.labelPlural ?? ''
+		galaxy.tiers.find((entry) => entry.tier === tier)?.labelPlural ?? ''
 
 	return (
 		<div class={['ib-galaxy', props.class]}>
@@ -258,13 +272,13 @@ export function GalaxyMap(props: GalaxyMapProps) {
 						navigation={
 							<WorkspaceNavigation label={`${props.title} navigation`}>
 								<GalaxyMenu
-									galaxy={props.galaxy}
-									mode={core().mode()}
-									onMode={(mode) => core().switchMode(mode)}
-									facets={facets()}
-									activeFacet={core().lens()}
-									onFacet={(key) => core().setLens(key)}
-									hasSoftScores={hasSoftScores()}
+									galaxy={galaxy}
+									mode={core.mode()}
+									onMode={(mode) => core.switchMode(mode)}
+									facets={facets}
+									activeFacet={core.lens()}
+									onFacet={(key) => core.setLens(key)}
+									hasSoftScores={hasSoftScores}
 									intensityMode={intensityMode()}
 									onIntensityMode={setIntensityMode}
 									note={props.overviewNote}
@@ -293,17 +307,17 @@ export function GalaxyMap(props: GalaxyMapProps) {
 												id={paletteId}
 												items={paletteItems()}
 												placeholder="Jump to a topic, theme or family…"
-												onSelect={(item) => core().openNode(item.id)}
+												onSelect={(item) => core.openNode(item.id)}
 											/>
 										</div>
-										<Show when={!core().interacted()}>
+										<Show when={!core.interacted()}>
 											<div class="ib-galaxy-hint">
 												<StageHint>{props.hint ?? DEFAULT_HINT}</StageHint>
 											</div>
 										</Show>
 										<Show when={hoveredNode()}>
 											{(node) => (
-												<Show when={node().id !== core().reading()?.id}>
+												<Show when={node().id !== core.reading()?.id}>
 													<div class="ib-galaxy-hover">
 														<WorkspaceStageTooltip
 															label={node().title}
@@ -322,39 +336,39 @@ export function GalaxyMap(props: GalaxyMapProps) {
 						}
 						inspector={
 							<ResponsiveInspector
-								label={core().reading()?.title ?? props.title}
-								activeKey={core().reading()?.id ?? null}
-								onOcclusionChange={occlusionHandler()}
+								label={core.reading()?.title ?? props.title}
+								activeKey={core.reading()?.id ?? null}
+								onOcclusionChange={occlusionHandler}
 								class="ib-galaxy-inspector"
 							>
 								<Show
-									when={core().reading()}
+									when={core.reading()}
 									fallback={
 										<GalaxyDrill
-											galaxy={props.galaxy}
+											galaxy={galaxy}
 											title={props.title}
-											core={core()}
-											hoveredId={core().hovered()}
+											core={core}
+											hoveredId={core.hovered()}
 											upLabel={upLabel()}
 										/>
 									}
 								>
 									{(node) => (
 										<Show
-											when={core().document()}
+											when={core.document()}
 											fallback={
 												<GalaxyInspectorNode
-													galaxy={props.galaxy}
+													galaxy={galaxy}
 													node={node()}
 													content={readerContent}
-													onVisit={(id) => core().openNode(id)}
+													onVisit={(id) => core.openNode(id)}
 													upLabel={upLabel() ?? props.title}
-													onUp={() => core().upOneLevel()}
-													onHoverNode={(id) => core().setHighlight(id)}
+													onUp={() => core.upOneLevel()}
+													onHoverNode={(id) => core.setHighlight(id)}
 													onOpenDocument={
 														props.loadDocument &&
 														((row) =>
-															core().openDocument({
+															core.openDocument({
 																documentId: row.documentId,
 																label: row.label,
 															}))
@@ -368,9 +382,9 @@ export function GalaxyMap(props: GalaxyMapProps) {
 													eyebrow={props.documentLabel ?? 'Document'}
 													content={documentContent}
 													upLabel={node().title}
-													onUp={() => core().upOneLevel()}
-													onVisit={(id) => core().openNode(id)}
-													onHoverNode={(id) => core().setHighlight(id)}
+													onUp={() => core.upOneLevel()}
+													onVisit={(id) => core.openNode(id)}
+													onHoverNode={(id) => core.setHighlight(id)}
 												/>
 											)}
 										</Show>
@@ -393,8 +407,8 @@ export function GalaxyMap(props: GalaxyMapProps) {
 										icon: <span aria-hidden="true">◍</span>,
 									},
 								]}
-								activeId={core().mode()}
-								onSelect={(id) => core().switchMode(id)}
+								activeId={core.mode()}
+								onSelect={(id) => core.switchMode(id)}
 								centre={
 									<RadialMenu
 										id={radialId}

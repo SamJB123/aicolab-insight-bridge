@@ -491,6 +491,26 @@
 			outline-offset: 2px;
 		}
 
+		.ib-galaxy-show-all {
+			all: unset;
+			cursor: pointer;
+			display: block;
+			padding: 0.35rem 0.25rem;
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-2xs);
+			letter-spacing: 0.04em;
+			color: var(--color-base-content-muted);
+		}
+
+		.ib-galaxy-show-all:hover {
+			color: var(--color-base-content);
+		}
+
+		.ib-galaxy-show-all:focus-visible {
+			outline: 2px solid var(--color-ring);
+			outline-offset: 2px;
+		}
+
 		.ib-galaxy-reader-pending,
 		.ib-galaxy-reader-error {
 			margin: 0;

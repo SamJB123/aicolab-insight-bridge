@@ -57,8 +57,10 @@ export interface PlanetCluster {
 	dispose(): void
 }
 
-const PLANET_SCALE = 2.6
-const PLANET_BASE = 0.28
+// Reduced to 10% of the original 2.6/0.28 (user call 2026-08-17): the
+// planetified sources read as subtle worlds among the pins, not billboards.
+const PLANET_SCALE = 0.26
+const PLANET_BASE = 0.028
 
 export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 	const count = data.sources.length
