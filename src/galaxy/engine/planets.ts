@@ -62,7 +62,11 @@ export interface PlanetCluster {
 const PLANET_SCALE = 0.26
 const PLANET_BASE = 0.028
 
-export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
+export function createPlanetCluster(
+	data: PlanetClusterData,
+	/** A/B: analytic edge coverage in place of MSAA (see quality.analyticAA). */
+	analyticAA = false,
+): PlanetCluster {
 	const count = data.sources.length
 	const centers = new Float32Array(count * 3)
 	// Packed [radius, seed, glow, 0] — one vertex buffer, not three (WebGPU's
@@ -145,6 +149,16 @@ export function createPlanetCluster(data: PlanetClusterData): PlanetCluster {
 		.add(vec3(0.9, 0.95, 1).mul(fresnel).mul(aGlow).mul(0.28))
 
 	material.colorNode = surface.mul(daylight.mul(0.95).add(0.08)).add(atmosphere)
+	if (analyticAA) {
+		// Silhouette coverage: fwidth can't see a mesh's geometric edge, but
+		// on a sphere `facing → 0` exactly at the silhouette, so fading
+		// opacity over one pixel footprint of `facing` antialiases the rim
+		// analytically — the mesh substitute for MSAA.
+		const facing = normalLocal.dot(viewDir).max(0)
+		material.opacityNode = fade.mul(
+			smoothstep(float(0), facing.fwidth().mul(1.5).max(0.02), facing),
+		)
+	}
 
 	// 24×14 is visually identical at mini-world sizes and meaningfully
 	// cheaper with hundreds of instances (retina frame-budget fix).

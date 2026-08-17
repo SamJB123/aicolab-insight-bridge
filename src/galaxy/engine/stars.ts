@@ -69,7 +69,12 @@ export interface StarField {
 	dispose(): void
 }
 
-export function createStarField(data: StarFieldData, palette: GalaxyPalette): StarField {
+export function createStarField(
+	data: StarFieldData,
+	palette: GalaxyPalette,
+	/** Diagnostic multiplier on the glow quad extent (overdraw ∝ its square). */
+	glowScale = 1,
+): StarField {
 	const count = data.radii.length
 
 	// WebGPU caps a pipeline at 8 vertex buffers and each attribute takes
@@ -136,7 +141,10 @@ export function createStarField(data: StarFieldData, palette: GalaxyPalette): St
 	const anchorLevel = mix(float(0.03), connected, smoothstep(0.0, 0.05, aHighlight))
 	const dimming = mix(float(1), anchorLevel, uniforms.anchorActive)
 
-	material.scaleNode = aRadius.mul(GLOW_EXTENT).mul(twinkle).mul(ignite.mul(0.35).add(1))
+	material.scaleNode = aRadius
+		.mul(GLOW_EXTENT * glowScale)
+		.mul(twinkle)
+		.mul(ignite.mul(0.35).add(1))
 
 	const rampColor = heatRamp(aTemp, palette.ramp)
 	const d = uv().sub(0.5).length()

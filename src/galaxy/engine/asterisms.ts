@@ -96,6 +96,8 @@ export function createAsterisms(
 	groups: AsterismGroup[],
 	positions: Float32Array,
 	arms: ArmIdentity,
+	/** A/B: analytic edge coverage in place of MSAA (see quality.analyticAA). */
+	analyticAA = false,
 ): Asterisms {
 	interface LineRecord {
 		a: number
@@ -180,7 +182,19 @@ export function createAsterisms(
 	const alpha = focusMatch.mul(uniforms.focusFade).max(hoverMatch.mul(0.3))
 
 	// Atlas lines: crisp lateral edge, a slow shimmer so the figure breathes.
-	const lateral = float(1).sub(side.abs()).pow(1.5)
+	// With analytic AA the profile additionally fades over one pixel
+	// footprint of `side` — hairline ribbons under-sample the profile and
+	// shimmer without MSAA; this is the Line2NodeMaterial coverage idiom.
+	const profile = float(1).sub(side.abs()).pow(1.5)
+	const lateral = analyticAA
+		? profile.mul(
+				smoothstep(
+					float(1).sub(side.fwidth().mul(1.5).max(0.001)),
+					float(1),
+					side.abs(),
+				).oneMinus(),
+			)
+		: profile
 	const shimmer = time.mul(0.7).add(aSeed).sin().mul(0.08).add(0.92)
 	const endFade = smoothstep(0.0, 0.04, t).mul(smoothstep(1.0, 0.96, t))
 	material.colorNode = aColor.mul(alpha.mul(lateral).mul(shimmer).mul(endFade)).mul(1.7)

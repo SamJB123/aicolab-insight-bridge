@@ -54,7 +54,11 @@ export interface Dust {
 	dispose(): void
 }
 
-export function createDust(data: DustData): Dust {
+export function createDust(
+	data: DustData,
+	/** Diagnostic multiplier on the glow quad extent (overdraw ∝ its square). */
+	glowScale = 1,
+): Dust {
 	const count = data.radii.length
 
 	// Packed per-instance scalars (radius, seed) — one vertex buffer, not
@@ -104,7 +108,10 @@ export function createDust(data: DustData): Dust {
 		.sin()
 		.mul(0.08)
 		.add(1)
-	material.scaleNode = aRadius.mul(GLOW_EXTENT).mul(twinkle).mul(ignite.mul(0.5).add(1))
+	material.scaleNode = aRadius
+		.mul(GLOW_EXTENT * glowScale)
+		.mul(twinkle)
+		.mul(ignite.mul(0.5).add(1))
 
 	// Anchor dimming (legacy formula): connected grains brighten by strength,
 	// unrelated ones fade to a whisper; no anchor → everyone at dust level.

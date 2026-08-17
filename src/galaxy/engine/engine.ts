@@ -47,7 +47,7 @@ import { bakeNebulaDetail, createNebula, type NebulaField } from './nebula.ts'
 import { readGalaxyPalette } from './palette.ts'
 import { createPlanetCluster, type PlanetCluster } from './planets.ts'
 import { createGalaxyPost } from './post.ts'
-import { resolveGalaxyQuality } from './quality.ts'
+import { type GalaxyQuality, resolveGalaxyQuality } from './quality.ts'
 import { createStarField } from './stars.ts'
 import { createWhiskers, type WhiskerLink } from './whiskers.ts'
 
@@ -310,7 +310,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					const r = new THREE.WebGPURenderer({
 						canvas,
 						antialias: quality.msaa,
-						logarithmicDepthBuffer: true,
+						logarithmicDepthBuffer: quality.logDepth,
 					})
 					r.setPixelRatio(touch ? quality.dprFloor : quality.dprCeiling)
 					r.setSize(host.clientWidth || 1, host.clientHeight || 1, false)
@@ -328,10 +328,12 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const palette = readGalaxyPalette(host)
 			const scene = new THREE.Scene()
 			const innerVoid = palette.voidColor.clone().multiplyScalar(2.4)
-			scene.backgroundNode = screenUV
-				.distance(0.5)
-				.remap(0, 0.65)
-				.mix(color(innerVoid), color(palette.voidColor))
+			if (quality.background) {
+				scene.backgroundNode = screenUV
+					.distance(0.5)
+					.remap(0, 0.65)
+					.mix(color(innerVoid), color(palette.voidColor))
+			}
 
 			const camera = new THREE.PerspectiveCamera(
 				46,
@@ -340,16 +342,18 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				9000,
 			)
 
-			const backdrop = buildSpaceBackdrop({
-				starRadius: 4000,
-				nebulaRadius: HOME_MAX_RADIUS * 1.35,
-				name: 'ib-galaxy:space',
-			})
-			scene.add(backdrop.group)
-			cleanups.push(() => {
-				scene.remove(backdrop.group)
-				backdrop.dispose()
-			})
+			if (quality.backdrop) {
+				const backdrop = buildSpaceBackdrop({
+					starRadius: 4000,
+					nebulaRadius: HOME_MAX_RADIUS * 1.35,
+					name: 'ib-galaxy:space',
+				})
+				scene.add(backdrop.group)
+				cleanups.push(() => {
+					scene.remove(backdrop.group)
+					backdrop.dispose()
+				})
+			}
 
 			// Stars (topics only).
 			const starPositions = new Float32Array(starNodes.length * 3)
@@ -372,6 +376,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					arms: starArms,
 				},
 				palette,
+				quality.glowScale,
 			)
 			scene.add(stars.mesh)
 			cleanups.push(() => {
@@ -390,11 +395,14 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				dustRadii[d] = layout.radii[node]
 				dustNodeOf[d] = node
 			})
-			const dust = createDust({
-				positions: dustPositions,
-				radii: dustRadii,
-				nodeOf: dustNodeOf,
-			})
+			const dust = createDust(
+				{
+					positions: dustPositions,
+					radii: dustRadii,
+					nodeOf: dustNodeOf,
+				},
+				quality.glowScale,
+			)
 			scene.add(dust.mesh)
 			cleanups.push(() => {
 				scene.remove(dust.mesh)
@@ -416,7 +424,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const asterismGroups: AsterismGroup[] = [...topicsByGroup.entries()].map(
 				([group, members]) => ({ group, members, arm: arms.armOf[group] }),
 			)
-			const asterisms = createAsterisms(asterismGroups, positions, arms)
+			const asterisms = createAsterisms(asterismGroups, positions, arms, quality.analyticAA)
 			scene.add(asterisms.mesh)
 			cleanups.push(() => {
 				scene.remove(asterisms.mesh)
@@ -440,7 +448,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					})
 				}
 			}
-			const whiskers = createWhiskers(whiskerLinks, positions)
+			const whiskers = createWhiskers(whiskerLinks, positions, quality.analyticAA)
 			scene.add(whiskers.mesh)
 			cleanups.push(() => {
 				scene.remove(whiskers.mesh)
@@ -686,14 +694,17 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			): void => {
 				disposePlanets()
 				if (members.length === 0) return
-				planets = createPlanetCluster({
-					sources: members,
-					positions,
-					radii: layout.radii,
-					sunOf: Int32Array.from(suns),
-					colors: facetColorsFor(lens),
-					glows: Float32Array.from(glows),
-				})
+				planets = createPlanetCluster(
+					{
+						sources: members,
+						positions,
+						radii: layout.radii,
+						sunOf: Int32Array.from(suns),
+						colors: facetColorsFor(lens),
+						glows: Float32Array.from(glows),
+					},
+					quality.analyticAA,
+				)
 				scene.add(planets.mesh)
 			}
 			const clearFleet = (): void => {
@@ -1044,8 +1055,39 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			}
 
 			// ── Post ────────────────────────────────────────────────────────
-			const post = createGalaxyPost(renderer, scene, camera, quality, fogScene)
-			cleanups.push(() => post.dispose())
+			// `quality.post === false` is the diagnostic raw-render path: no
+			// PostProcessing at all (and no fog compositing).
+			// Governor rungs shed fixed per-pixel work by REBUILDING the post
+			// chain at reduced quality — a one-off pipeline compile per
+			// transition. Mutating the live chain instead (pass RT samples,
+			// uniform-gated loops) left three in a degenerate state where
+			// frame cost ROSE ~2× (weak-adapter bench, 2026-08-17); rebuilds
+			// land the exact startup-equivalent state, verified: full 234ms →
+			// shed 1 (anamorphic off) 150ms → shed 2 (+ scene MSAA off) 77ms.
+			// The quarter-res nebula measured ~1% and never sheds.
+			const shedSteps: Array<(q: GalaxyQuality) => GalaxyQuality> = []
+			if (quality.anamorphic) shedSteps.push((q) => ({ ...q, anamorphic: false }))
+			if (quality.msaa) shedSteps.push((q) => ({ ...q, msaa: false }))
+			const shedQuality = (level: number): GalaxyQuality =>
+				shedSteps.slice(0, level).reduce((q, apply) => apply(q), quality)
+			let shedLevel = Math.min(quality.shedStart, shedSteps.length)
+			let post = quality.post
+				? createGalaxyPost(renderer, scene, camera, shedQuality(shedLevel), fogScene)
+				: undefined
+			cleanups.push(() => post?.dispose())
+			const applyShedLevel = (level: number): void => {
+				const clamped = Math.min(level, shedSteps.length)
+				if (disposed || !post || clamped === shedLevel) return
+				console.warn(`[ib-galaxy] governor shed level ${clamped}`)
+				shedLevel = clamped
+				const previous = post
+				const next = createGalaxyPost(renderer, scene, camera, shedQuality(clamped), fogScene)
+				next.uniforms.streak.value = previous.uniforms.streak.value
+				next.uniforms.bokeh.value = previous.uniforms.bokeh.value
+				next.uniforms.focusDistance.value = previous.uniforms.focusDistance.value
+				post = next
+				previous.dispose()
+			}
 
 			// ── Resize + adaptive DPR ───────────────────────────────────────
 			const resize = createTransactionalResize(
@@ -1064,13 +1106,6 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				{ applyPixelRatio: (value) => renderer.setPixelRatio(value) },
 			)
 			cleanups.push(() => resize.dispose())
-			// Effect rungs below the DPR floor, cheapest-looking sacrifice
-			// first (attribution measured on a weak adapter, 2026-08-17:
-			// anamorphic ≈35% of frame, scene MSAA ≈38%, compounding to 72%
-			// together; the quarter-res nebula measured ~1% and never sheds).
-			const shedRungs: Array<(on: boolean) => void> = []
-			if (quality.anamorphic) shedRungs.push((on) => post.setAnamorphic(on))
-			if (quality.msaa) shedRungs.push((on) => post.setSceneMsaa(on))
 			const adaptiveDpr = createAdaptiveDpr({
 				ceiling: quality.dprCeiling,
 				floor: quality.dprFloor,
@@ -1079,13 +1114,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				// are dropped, so this is safe for the mobile 1..1.5 envelope).
 				steps: [1.25, 1.5],
 				apply: (value) => resize.requestPixelRatio(value),
-				...(shedRungs.length > 0
-					? {
-							belowFloor: {
-								levels: shedRungs.length,
-								apply: (level) => shedRungs.forEach((rung, i) => rung(i >= level)),
-							},
-						}
+				...(shedSteps.length > 0 && quality.governor && quality.post
+					? { belowFloor: { levels: shedSteps.length, apply: applyShedLevel } }
 					: {}),
 			})
 
@@ -1424,6 +1454,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 
 			// ── Loop ────────────────────────────────────────────────────────
 			let ready = false
+			let readyAt = 0
+			const MONITOR_SETTLE_MS = 2000
 			let lastTime = performance.now()
 			let fleetFade = 0
 			const loop = (): void => {
@@ -1463,24 +1495,33 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					nebula.uniforms.fade.value = fogFade
 					nebula.mesh.visible = fogFade > 0.02
 				}
-				post.uniforms.bokeh.value = focusAnim.current * 1.5
-				post.uniforms.focusDistance.value = currentProjection?.framed
-					? camera.position.distanceTo(focusPoint)
-					: camera.position.length()
-				const streakTarget = (currentProjection?.selected ?? -1) >= 0 ? 1 : 0.3
-				post.uniforms.streak.value +=
-					(streakTarget - post.uniforms.streak.value) * Math.min(1, dt * 3)
+				if (post) {
+					post.uniforms.bokeh.value = focusAnim.current * 1.5
+					post.uniforms.focusDistance.value = currentProjection?.framed
+						? camera.position.distanceTo(focusPoint)
+						: camera.position.length()
+					const streakTarget = (currentProjection?.selected ?? -1) >= 0 ? 1 : 0.3
+					post.uniforms.streak.value +=
+						(streakTarget - post.uniforms.streak.value) * Math.min(1, dt * 3)
+				}
 
 				if (hoverEnabled && pointerDirty && activePointers.size === 0) {
 					pointerDirty = false
 					const index = pick(pointerNdcX, pointerNdcY)
 					core.setHovered(index >= 0 ? nodes[index].id : null)
 				}
-				post.pipeline.render()
-				adaptiveDpr.update()
+				if (post) post.pipeline.render()
+				else renderer.render(scene, camera)
+				// Feed the monitor only once the scene is ready AND settled:
+				// startup alternates compile stalls with catch-up bursts, which
+				// read as decline/incline flip-flops and PIN the monitor at a
+				// useless rung before real rendering has even begun (observed
+				// on the weak-adapter bench, 2026-08-17).
+				if (ready && performance.now() - readyAt > MONITOR_SETTLE_MS) adaptiveDpr.update()
 				labels.update(camera)
 				if (!ready) {
 					ready = true
+					readyAt = performance.now()
 					onReady()
 				}
 			}

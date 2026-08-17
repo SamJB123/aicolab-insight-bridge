@@ -59,7 +59,12 @@ export interface Whiskers {
 	dispose(): void
 }
 
-export function createWhiskers(links: WhiskerLink[], positions: Float32Array): Whiskers {
+export function createWhiskers(
+	links: WhiskerLink[],
+	positions: Float32Array,
+	/** A/B: analytic edge coverage in place of MSAA (see quality.analyticAA). */
+	analyticAA = false,
+): Whiskers {
 	const vertexCount = Math.max(1, links.length) * QUAD.length
 	const positionArr = new Float32Array(vertexCount * 3)
 	const endArr = new Float32Array(vertexCount * 3)
@@ -122,7 +127,18 @@ export function createWhiskers(links: WhiskerLink[], positions: Float32Array): W
 	const alpha = hoverMatch.mul(0.5).max(selectMatch.mul(0.95)).mul(aStrength.mul(0.65).add(0.35))
 
 	// Cool, thin, faintly alive — a different voice from the atlas lines.
-	const lateral = float(1).sub(side.abs()).pow(1.6)
+	// Analytic-AA coverage fade mirrors asterisms.ts (hairline whiskers are
+	// the worst under-samplers in the scene without MSAA).
+	const profile = float(1).sub(side.abs()).pow(1.6)
+	const lateral = analyticAA
+		? profile.mul(
+				smoothstep(
+					float(1).sub(side.fwidth().mul(1.5).max(0.001)),
+					float(1),
+					side.abs(),
+				).oneMinus(),
+			)
+		: profile
 	const flow = time.mul(-1.4).add(t.mul(14)).sin().mul(0.1).add(0.9)
 	const endFade = smoothstep(0.0, 0.05, t).mul(smoothstep(1.0, 0.9, t))
 	const tint = vec3(0.62, 0.78, 0.95)
