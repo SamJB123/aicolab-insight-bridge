@@ -399,12 +399,12 @@ export function GalaxyMap(props: GalaxyMapProps) {
 									{
 										id: 'topics' as const,
 										label: tierPlural(0) || 'Topics',
-										icon: <span aria-hidden="true">✦</span>,
+										icon: () => <span aria-hidden="true">✦</span>,
 									},
 									{
 										id: 'sources' as const,
 										label: tierPlural(-1) || 'Sources',
-										icon: <span aria-hidden="true">◍</span>,
+										icon: () => <span aria-hidden="true">◍</span>,
 									},
 								]}
 								activeId={core.mode()}
