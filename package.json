@@ -2,7 +2,7 @@
 	"name": "@aicolab/insight-bridge",
 	"description": "The layer every Insight Bridge corpus explorer shares: brand mark, editorial pages, MCP server helpers and the WebGPU Insight Galaxy",
 	"license": "UNLICENSED",
-	"version": "2.0.1",
+	"version": "2.1.0",
 	"type": "module",
 	"repository": {
 		"type": "git",
