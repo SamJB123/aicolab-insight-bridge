@@ -1,8 +1,19 @@
 {
 	"name": "@aicolab/insight-bridge",
-	"version": "0.0.0",
-	"private": true,
+	"version": "0.1.0",
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SamJB123/aicolab-insight-bridge.git"
+	},
+	"homepage": "https://github.com/SamJB123/aicolab-insight-bridge#readme",
+	"bugs": {
+		"url": "https://github.com/SamJB123/aicolab-insight-bridge/issues"
+	},
+	"publishConfig": {
+		"access": "restricted",
+		"registry": "https://registry.npmjs.org"
+	},
 	"exports": {
 		".": "./src/index.ts",
 		"./galaxy": "./src/galaxy/index.ts",
