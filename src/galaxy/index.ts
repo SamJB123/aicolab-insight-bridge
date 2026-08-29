@@ -20,6 +20,7 @@ export {
 	buildDocumentContent,
 	buildSourceContent,
 	buildTopicContent,
+	DEFAULT_CONTENT_VOCABULARY,
 	type AnalysisBlock,
 	type ContainerContentInput,
 	type ContentVocabulary,
