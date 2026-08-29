@@ -12,6 +12,7 @@
  */
 
 import { floatFrom, vec3From, vec4From } from '@aicolab/kolo/webgpu/tsl-helpers'
+import { at } from './at.ts'
 import {
 	cameraPosition,
 	cos,
@@ -75,26 +76,26 @@ export function createPlanetCluster(
 	const sunDirs = new Float32Array(count * 3)
 	const colors = new Float32Array(count * 3)
 	data.sources.forEach((node, i) => {
-		const x = data.positions[node * 3]
-		const y = data.positions[node * 3 + 1]
-		const z = data.positions[node * 3 + 2]
+		const x = at(data.positions, node * 3)
+		const y = at(data.positions, node * 3 + 1)
+		const z = at(data.positions, node * 3 + 2)
 		centers[i * 3] = x
 		centers[i * 3 + 1] = y
 		centers[i * 3 + 2] = z
-		traits[i * 4] = PLANET_BASE + data.radii[node] * PLANET_SCALE
+		traits[i * 4] = PLANET_BASE + at(data.radii, node) * PLANET_SCALE
 		traits[i * 4 + 1] = ((node * 0.7639320225) % 1) * 89
-		traits[i * 4 + 2] = data.glows[i]
-		const sun = data.sunOf[i]
-		const dx = data.positions[sun * 3] - x
-		const dy = data.positions[sun * 3 + 1] - y
-		const dz = data.positions[sun * 3 + 2] - z
+		traits[i * 4 + 2] = at(data.glows, i)
+		const sun = at(data.sunOf, i)
+		const dx = at(data.positions, sun * 3) - x
+		const dy = at(data.positions, sun * 3 + 1) - y
+		const dz = at(data.positions, sun * 3 + 2) - z
 		const len = Math.hypot(dx, dy, dz) || 1
 		sunDirs[i * 3] = dx / len
 		sunDirs[i * 3 + 1] = dy / len
 		sunDirs[i * 3 + 2] = dz / len
-		colors[i * 3] = data.colors[node * 3]
-		colors[i * 3 + 1] = data.colors[node * 3 + 1]
-		colors[i * 3 + 2] = data.colors[node * 3 + 2]
+		colors[i * 3] = at(data.colors, node * 3)
+		colors[i * 3 + 1] = at(data.colors, node * 3 + 1)
+		colors[i * 3 + 2] = at(data.colors, node * 3 + 2)
 	})
 
 	const aCenter = vec3From(instancedBufferAttribute(new THREE.InstancedBufferAttribute(centers, 3)))

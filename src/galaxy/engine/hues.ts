@@ -11,6 +11,7 @@
 import * as THREE from 'three/webgpu'
 import type { IBGalaxy, IBNodeId } from '../types.ts'
 import { primaryParents } from '../layout/cosmos.ts'
+import { at } from './at.ts'
 
 export interface ArmIdentity {
 	/** Node index → index into `hues` (and `ownerNodes`), or -1 (orphans). */
@@ -47,7 +48,7 @@ export function resolveArmIdentity(galaxy: IBGalaxy): ArmIdentity {
 				armOf[i] = arm
 				return
 			}
-			const parentId = parentOf.get(nodes[cursor].id)
+			const parentId = parentOf.get(at(nodes, cursor).id)
 			cursor = parentId !== undefined ? index.get(parentId) : undefined
 		}
 	})

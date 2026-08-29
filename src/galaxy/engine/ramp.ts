@@ -9,7 +9,10 @@ import { mix, smoothstep, uniform } from 'three/tsl'
 import type { Node } from 'three/webgpu'
 import type * as THREE from 'three/webgpu'
 
-export function heatRamp(t: Node<'float'>, ramp: readonly THREE.Color[]) {
+export function heatRamp(
+	t: Node<'float'>,
+	ramp: readonly [THREE.Color, THREE.Color, THREE.Color, THREE.Color, THREE.Color],
+) {
 	return mix(
 		mix(
 			mix(

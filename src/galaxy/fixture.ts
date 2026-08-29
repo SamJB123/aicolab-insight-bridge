@@ -10,6 +10,7 @@
  */
 
 import { mulberry32 } from '@aicolab/kolo/utils/seeded-random'
+import { at } from './engine/at.ts'
 import type { IBEdge, IBGalaxy, IBNode, IBNodeContent, IBTierMeta } from './types.ts'
 
 export const FIXTURE_MIX_ORDER = [
@@ -127,7 +128,7 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 		orphans = 2,
 	} = options
 	const rng = mulberry32(seed)
-	const pick = <T>(list: readonly T[]): T => list[Math.floor(rng() * list.length)]
+	const pick = <T>(list: readonly T[]): T => at(list, Math.floor(rng() * list.length))
 
 	const nodes: IBNode[] = []
 	const edges: IBEdge[] = []
@@ -183,7 +184,7 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 			const total = raw.reduce((sum, v) => sum + v, 0)
 			mix = {}
 			FIXTURE_MIX_ORDER.forEach((label, i) => {
-				const share = Math.round((raw[i] / total) * stances)
+				const share = Math.round((at(raw, i) / total) * stances)
 				if (share > 0 && mix) mix[label] = share
 			})
 		}
@@ -233,9 +234,10 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 	const groupWeight = new Array<number>(groups).fill(0)
 	const groupChildren = new Array<number>(groups).fill(0)
 	for (let k = 0; k < topics; k++) {
-		if (topicGroup[k] >= 0) {
-			groupWeight[topicGroup[k]] += topicWeights[k]
-			groupChildren[topicGroup[k]] += 1
+		const group = at(topicGroup, k)
+		if (group >= 0) {
+			groupWeight[group] = at(groupWeight, group) + at(topicWeights, k)
+			groupChildren[group] = at(groupChildren, group) + 1
 		}
 	}
 	const familyWeight = new Array<number>(families).fill(0)
@@ -243,26 +245,27 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 	for (const node of nodes) {
 		if (node.tier === 1) {
 			const k = groupIds.indexOf(node.id)
-			node.weight = Math.round(groupWeight[k] * 0.65) + 2
-			node.childCount = groupChildren[k]
-			if (groupFamily[k] >= 0) {
-				familyWeight[groupFamily[k]] += node.weight
-				familyChildren[groupFamily[k]] += 1
+			node.weight = Math.round(at(groupWeight, k) * 0.65) + 2
+			node.childCount = at(groupChildren, k)
+			const family = at(groupFamily, k)
+			if (family >= 0) {
+				familyWeight[family] = at(familyWeight, family) + node.weight
+				familyChildren[family] = at(familyChildren, family) + 1
 			}
 		}
 	}
 	for (const node of nodes) {
 		if (node.tier === 2) {
 			const k = familyIds.indexOf(node.id)
-			node.weight = Math.round(familyWeight[k] * 0.8) + 4
-			node.childCount = familyChildren[k]
+			node.weight = Math.round(at(familyWeight, k) * 0.8) + 4
+			node.childCount = at(familyChildren, k)
 		}
 	}
 
 	// Sources: skewed engagement (a few prolific contributors, a long tail of
 	// single-topic ones), each membership carrying BOTH layout signals — the
 	// 3-step grade and a continuous soft intensity varied around it.
-	const facetKeys = Object.keys(FIXTURE_FACETS)
+	const facetEntries = Object.entries(FIXTURE_FACETS)
 	for (let k = 0; k < sources; k++) {
 		const memberships = 1 + Math.floor(rng() ** 1.8 * 6)
 		const joined = new Set<number>()
@@ -282,7 +285,7 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 			}
 		}
 		const facets: Record<string, string> = {}
-		for (const key of facetKeys) facets[key] = pick(FIXTURE_FACETS[key])
+		for (const [key, values] of facetEntries) facets[key] = pick(values)
 		// A source's weight counts the TOPICS it engages (breadth — the tier
 		// meta names it); membership depth shapes the layout, not the size.
 		nodes.push({
@@ -321,7 +324,7 @@ export function buildFixtureGalaxy(options: FixtureGalaxyOptions = {}): IBGalaxy
 
 	return {
 		tiers,
-		sourceFacets: facetKeys.map((key) => ({ key, label: key })),
+		sourceFacets: facetEntries.map(([key]) => ({ key, label: key })),
 		nodes,
 		edges,
 		weightLabel: 'sources',
@@ -360,7 +363,7 @@ const ENTITY_LABELS = [
  */
 export function buildFixtureContent(node: IBNode): IBNodeContent {
 	const rng = mulberry32((typeof node.key === 'number' ? node.key : node.key.length) ^ 0x7e57ed)
-	const pick = <T>(list: readonly T[]): T => list[Math.floor(rng() * list.length)]
+	const pick = <T>(list: readonly T[]): T => at(list, Math.floor(rng() * list.length))
 	const subject = node.title.toLowerCase()
 	const pointCount = 2 + Math.floor(rng() * 3)
 	return {
@@ -395,9 +398,8 @@ export function buildFixtureContent(node: IBNode): IBNodeContent {
 				title: 'Perspectives',
 				rows: FACET_LABELS.slice(0, 3 + Math.floor(rng() * 3)).map((label) => ({
 					label,
-					badge: FIXTURE_MIX_ORDER[Math.floor(rng() * FIXTURE_MIX_ORDER.length)],
-					badgeColor:
-						FIXTURE_MIX_COLORS[FIXTURE_MIX_ORDER[Math.floor(rng() * FIXTURE_MIX_ORDER.length)]],
+					badge: pick(FIXTURE_MIX_ORDER),
+					badgeColor: FIXTURE_MIX_COLORS[pick(FIXTURE_MIX_ORDER)],
 					share: 0.2 + rng() * 0.8,
 					analysis: `How this cohort frames ${subject}, in one fixture sentence.`,
 				})),

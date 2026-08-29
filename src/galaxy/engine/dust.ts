@@ -25,6 +25,7 @@ import {
 	uv,
 } from 'three/tsl'
 import * as THREE from 'three/webgpu'
+import { at } from './at.ts'
 
 type UniFloat = THREE.UniformNode<'float', number>
 
@@ -67,7 +68,7 @@ export function createDust(
 	// runtime (facet switches, anchor dimming).
 	const traits = new Float32Array(count * 2)
 	for (let i = 0; i < count; i++) {
-		traits[i * 2] = data.radii[i]
+		traits[i * 2] = at(data.radii, i)
 		traits[i * 2 + 1] = (i * 0.7548776662) % 1
 	}
 

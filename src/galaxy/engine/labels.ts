@@ -26,6 +26,7 @@ import {
 import '@aicolab/kolo/rendering/wayfinding-overlay.css'
 import type * as THREE from 'three/webgpu'
 import type { IBGalaxy } from '../types.ts'
+import { at } from './at.ts'
 
 export interface GalaxyLabelsOptions {
 	/** Marker accent for a node under the given colour-by lens. The lens
@@ -70,7 +71,7 @@ export function createGalaxyLabels(
 		setLabels(nodes: number[], lens: string | undefined): void {
 			overlay.setTargets(
 				nodes.map((node): WayfindingTarget => {
-					const entry = galaxy.nodes[node]
+					const entry = at(galaxy.nodes, node)
 					// NO world-space lift (removed 2026-08-16, a CSS2D-era
 					// holdover): the pin's POLE does the elevating — its foot
 					// belongs exactly at the node.
@@ -82,9 +83,9 @@ export function createGalaxyLabels(
 						anatomy: 'pin',
 						faceMarkup: `<span class="kolo-wayfinding__fallback" aria-hidden="true">${TIER_FACE[entry.tier] ?? '✦'}</span>`,
 						world: {
-							x: positions[node * 3],
-							y: positions[node * 3 + 1],
-							z: positions[node * 3 + 2],
+							x: at(positions, node * 3),
+							y: at(positions, node * 3 + 1),
+							z: at(positions, node * 3 + 2),
 						},
 					}
 				}),

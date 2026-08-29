@@ -24,6 +24,7 @@ import {
 	vec3,
 } from 'three/tsl'
 import * as THREE from 'three/webgpu'
+import { at } from './at.ts'
 import type { ArmIdentity } from './hues.ts'
 
 type UniFloat = THREE.UniformNode<'float', number>
@@ -62,12 +63,12 @@ export interface Asterisms {
 /** Prim's MST over member positions — the asterism figure. */
 function spanningEdges(members: number[], positions: Float32Array): Array<[number, number]> {
 	if (members.length < 2) return []
-	const inTree = new Set<number>([members[0]])
+	const inTree = new Set<number>([at(members, 0)])
 	const edges: Array<[number, number]> = []
 	const dist2 = (a: number, b: number): number => {
-		const dx = positions[a * 3] - positions[b * 3]
-		const dy = positions[a * 3 + 1] - positions[b * 3 + 1]
-		const dz = positions[a * 3 + 2] - positions[b * 3 + 2]
+		const dx = at(positions, a * 3) - at(positions, b * 3)
+		const dy = at(positions, a * 3 + 1) - at(positions, b * 3 + 1)
+		const dz = at(positions, a * 3 + 2) - at(positions, b * 3 + 2)
 		return dx * dx + dy * dy + dz * dz
 	}
 	while (inTree.size < members.length) {
@@ -128,8 +129,8 @@ export function createAsterisms(
 		QUAD.forEach(([t, side], corner) => {
 			const v = e * QUAD.length + corner
 			for (let c = 0; c < 3; c++) {
-				positionArr[v * 3 + c] = positions[record.a * 3 + c]
-				endArr[v * 3 + c] = positions[record.b * 3 + c]
+				positionArr[v * 3 + c] = at(positions, record.a * 3 + c)
+				endArr[v * 3 + c] = at(positions, record.b * 3 + c)
 			}
 			tArr[v] = t
 			sideArr[v] = side

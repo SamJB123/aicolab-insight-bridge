@@ -40,6 +40,7 @@ import { DISC_RADIUS, primaryParents } from '../layout/cosmos.ts'
 import type { GalaxyNavCore } from '../nav-core.ts'
 import type { IBGalaxy, IBIntensityMode } from '../types.ts'
 import { createAsterisms, type AsterismGroup } from './asterisms.ts'
+import { at } from './at.ts'
 import { createDust } from './dust.ts'
 import { resolveArmIdentity } from './hues.ts'
 import { createGalaxyLabels } from './labels.ts'
@@ -173,9 +174,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			// layout's disc is XZ with y thickness → (x, y, z) → (x, z, −y).
 			const positions = new Float32Array(count * 3)
 			for (let i = 0; i < count; i++) {
-				positions[i * 3] = layout.positions[i * 3]
-				positions[i * 3 + 1] = layout.positions[i * 3 + 2]
-				positions[i * 3 + 2] = -layout.positions[i * 3 + 1]
+				positions[i * 3] = at(layout.positions, i * 3)
+				positions[i * 3 + 1] = at(layout.positions, i * 3 + 2)
+				positions[i * 3 + 2] = -at(layout.positions, i * 3 + 1)
 			}
 
 			// ── Membership structure ────────────────────────────────────────
@@ -199,7 +200,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (node.tier !== 0) return
 				const parentId = parentOf.get(node.id)
 				const parent = parentId !== undefined ? idx(parentId) : undefined
-				if (parent === undefined || nodes[parent].tier !== 1) return
+				if (parent === undefined || at(nodes, parent).tier !== 1) return
 				const list = topicsByGroup.get(parent)
 				if (list) list.push(i)
 				else topicsByGroup.set(parent, [i])
@@ -209,7 +210,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (node.tier !== 1) return
 				const parentId = parentOf.get(node.id)
 				const parent = parentId !== undefined ? idx(parentId) : undefined
-				if (parent === undefined || nodes[parent].tier !== 2) return
+				if (parent === undefined || at(nodes, parent).tier !== 2) return
 				const list = groupsByFamily.get(parent)
 				if (list) list.push(i)
 				else groupsByFamily.set(parent, [i])
@@ -245,11 +246,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const child = idx(edge.child)
 				const parent = idx(edge.parent)
 				if (child === undefined || parent === undefined) continue
-				if (nodes[child].tier !== -1 || nodes[parent].tier !== 0) continue
+				if (at(nodes, child).tier !== -1 || at(nodes, parent).tier !== 0) continue
+				const graded = edge.membershipType ? GRADE_INTENSITY[edge.membershipType] : undefined
 				const intensity =
-					edge.membershipType && GRADE_INTENSITY[edge.membershipType] !== undefined
-						? GRADE_INTENSITY[edge.membershipType]
-						: Math.max(1, (edge.similarity ?? 0.1) * 10)
+					graded !== undefined ? graded : Math.max(1, (edge.similarity ?? 0.1) * 10)
 				const link: SourceLink = {
 					source: child,
 					topic: parent,
@@ -268,7 +268,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (node.tier !== -1) return
 				const parentId = parentOf.get(node.id)
 				const parent = parentId !== undefined ? idx(parentId) : undefined
-				if (parent !== undefined && nodes[parent].tier === 0) primaryTopicOf[i] = parent
+				if (parent !== undefined && at(nodes, parent).tier === 0) primaryTopicOf[i] = parent
 			})
 
 			const arms = resolveArmIdentity(galaxy)
@@ -285,7 +285,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					const parsed = new Map<string, THREE.Color>()
 					for (const [value, hex] of palette) parsed.set(value, new THREE.Color(hex))
 					for (const node of dustNodes) {
-						const value = nodes[node].facets?.[facetKey]
+						const value = at(nodes, node).facets?.[facetKey]
 						const tint = value !== undefined ? parsed.get(value) : undefined
 						if (!tint) continue
 						colors[node * 3] = tint.r
@@ -361,12 +361,12 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const starTemps = new Float32Array(starNodes.length)
 			const starArms = new Float32Array(starNodes.length)
 			starNodes.forEach((node, s) => {
-				starPositions[s * 3] = positions[node * 3]
-				starPositions[s * 3 + 1] = positions[node * 3 + 1]
-				starPositions[s * 3 + 2] = positions[node * 3 + 2]
-				starRadii[s] = layout.radii[node]
-				starTemps[s] = nodes[node].intensity ?? 0.3
-				starArms[s] = arms.armOf[node]
+				starPositions[s * 3] = at(positions, node * 3)
+				starPositions[s * 3 + 1] = at(positions, node * 3 + 1)
+				starPositions[s * 3 + 2] = at(positions, node * 3 + 2)
+				starRadii[s] = at(layout.radii, node)
+				starTemps[s] = at(nodes, node).intensity ?? 0.3
+				starArms[s] = at(arms.armOf, node)
 			})
 			const stars = createStarField(
 				{
@@ -389,10 +389,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const dustRadii = new Float32Array(dustNodes.length)
 			const dustNodeOf = new Int32Array(dustNodes.length)
 			dustNodes.forEach((node, d) => {
-				dustPositions[d * 3] = positions[node * 3]
-				dustPositions[d * 3 + 1] = positions[node * 3 + 1]
-				dustPositions[d * 3 + 2] = positions[node * 3 + 2]
-				dustRadii[d] = layout.radii[node]
+				dustPositions[d * 3] = at(positions, node * 3)
+				dustPositions[d * 3 + 1] = at(positions, node * 3 + 1)
+				dustPositions[d * 3 + 2] = at(positions, node * 3 + 2)
+				dustRadii[d] = at(layout.radii, node)
 				dustNodeOf[d] = node
 			})
 			const dust = createDust(
@@ -412,9 +412,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const nodeColors = facetColorsFor(lens)
 				const instanceColors = new Float32Array(dustNodes.length * 3)
 				dustNodes.forEach((node, d) => {
-					instanceColors[d * 3] = nodeColors[node * 3]
-					instanceColors[d * 3 + 1] = nodeColors[node * 3 + 1]
-					instanceColors[d * 3 + 2] = nodeColors[node * 3 + 2]
+					instanceColors[d * 3] = at(nodeColors, node * 3)
+					instanceColors[d * 3 + 1] = at(nodeColors, node * 3 + 1)
+					instanceColors[d * 3 + 2] = at(nodeColors, node * 3 + 2)
 				})
 				dust.setColors(instanceColors)
 			}
@@ -422,7 +422,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 
 			// Asterisms (pure-reveal constellations).
 			const asterismGroups: AsterismGroup[] = [...topicsByGroup.entries()].map(
-				([group, members]) => ({ group, members, arm: arms.armOf[group] }),
+				([group, members]) => ({ group, members, arm: at(arms.armOf, group) }),
 			)
 			const asterisms = createAsterisms(asterismGroups, positions, arms, quality.analyticAA)
 			scene.add(asterisms.mesh)
@@ -472,10 +472,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					starNodes.forEach((node) => {
 						if (arms.armOf[node] === arm) {
 							members.push(node)
-							weights.push(layout.radii[node])
+							weights.push(at(layout.radii, node))
 						}
 					})
-					return { hue: arms.hues[arm], members, weights }
+					return { hue: at(arms.hues, arm), members, weights }
 				})
 				nebula = createNebula({
 					fields,
@@ -501,17 +501,21 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					// so pins and grains always agree; everything else rides the
 					// arm hue the nebulae resolved. The lens arrives as a
 					// PARAMETER (from the projection's compute) — no ambient read.
-					if (nodes[node].tier === -1) {
+					if (at(nodes, node).tier === -1) {
 						const colors = facetColorsFor(lens)
-						accentScratch.setRGB(colors[node * 3], colors[node * 3 + 1], colors[node * 3 + 2])
+						accentScratch.setRGB(
+							at(colors, node * 3),
+							at(colors, node * 3 + 1),
+							at(colors, node * 3 + 2),
+						)
 						return `#${accentScratch.getHexString()}`
 					}
-					const arm = arms.armOf[node]
+					const arm = at(arms.armOf, node)
 					const hue = arm >= 0 ? arms.hues[arm] : undefined
 					return hue ? `#${hue.getHexString()}` : '#8fa4c9'
 				},
-				onSelect: (node) => core.openNode(nodes[node].id),
-				onHover: (node) => core.setHovered(node >= 0 ? nodes[node].id : null),
+				onSelect: (node) => core.openNode(at(nodes, node).id),
+				onHover: (node) => core.setHovered(node >= 0 ? at(nodes, node).id : null),
 			})
 			cleanups.push(() => labels.dispose())
 			/** A topic's contributing sources, matching what planetifies. */
@@ -618,20 +622,20 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const anchorOn = (node: number): void => {
 				starHighlights.fill(0)
 				dustHighlights.fill(0)
-				const tier = nodes[node].tier
+				const tier = at(nodes, node).tier
 				if (tier === 0) {
-					starHighlights[starIndexOf[node]] = 1
+					starHighlights[at(starIndexOf, node)] = 1
 					const links = membershipsOfTopic.get(node) ?? []
 					const max = Math.max(1, ...links.map((l) => l.intensity))
 					for (const link of links) {
-						dustHighlights[dustIndexOf[link.source]] = Math.sqrt(link.intensity / max)
+						dustHighlights[at(dustIndexOf, link.source)] = Math.sqrt(link.intensity / max)
 					}
 				} else if (tier === -1) {
-					dustHighlights[dustIndexOf[node]] = 1
+					dustHighlights[at(dustIndexOf, node)] = 1
 					const links = membershipsOfSource.get(node) ?? []
 					const max = Math.max(1, ...links.map((l) => l.intensity))
 					for (const link of links) {
-						starHighlights[starIndexOf[link.topic]] = Math.sqrt(link.intensity / max)
+						starHighlights[at(starIndexOf, link.topic)] = Math.sqrt(link.intensity / max)
 					}
 				} else {
 					// Group/family anchor: member topics fully lit, their sources
@@ -639,14 +643,17 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					const members =
 						tier === 1
 							? (topicsByGroup.get(node) ?? [])
-							: starNodes.filter((topic) => arms.ownerNodes[arms.armOf[topic]] === node)
+							: starNodes.filter((topic) => arms.ownerNodes[at(arms.armOf, topic)] === node)
 					for (const topic of members) {
-						starHighlights[starIndexOf[topic]] = 1
+						starHighlights[at(starIndexOf, topic)] = 1
 						const links = membershipsOfTopic.get(topic) ?? []
 						const max = Math.max(1, ...links.map((l) => l.intensity))
 						for (const link of links) {
-							const at = dustIndexOf[link.source]
-							dustHighlights[at] = Math.max(dustHighlights[at], Math.sqrt(link.intensity / max))
+							const slot = at(dustIndexOf, link.source)
+							dustHighlights[slot] = Math.max(
+								at(dustHighlights, slot),
+								Math.sqrt(link.intensity / max),
+							)
 						}
 					}
 				}
@@ -660,8 +667,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				starHighlights.fill(0.55)
 				dustHighlights.fill(0)
 				for (const node of dustNodes) {
-					if (nodes[node].facets?.[facet] === value) {
-						dustHighlights[dustIndexOf[node]] = 1
+					if (at(nodes, node).facets?.[facet] === value) {
+						dustHighlights[at(dustIndexOf, node)] = 1
 					}
 				}
 				applyAnchor()
@@ -732,7 +739,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const buildSourcePlanets = (source: number, lens: string | undefined): void => {
 				fleet = { kind: 'source', key: source }
 				const links = membershipsOfSource.get(source) ?? []
-				const sun = primaryTopicOf[source] >= 0 ? primaryTopicOf[source] : (links[0]?.topic ?? -1)
+				const primary = at(primaryTopicOf, source)
+				const sun = primary >= 0 ? primary : (links[0]?.topic ?? -1)
 				if (sun < 0) {
 					disposePlanets()
 					return
@@ -746,9 +754,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			}
 			// ── Framing (pure pose computation; the projection flies them) ──
 			const groupOfTopic = (topic: number): number => {
-				const groupId = parentOf.get(nodes[topic].id)
+				const groupId = parentOf.get(at(nodes, topic).id)
 				const group = groupId !== undefined ? idx(groupId) : undefined
-				return group !== undefined && nodes[group].tier === 1 ? group : -1
+				return group !== undefined && at(nodes, group).tier === 1 ? group : -1
 			}
 			const reachFrom = (cx: number, cy: number, cz: number, members: number[]): number => {
 				let reach = 6
@@ -756,18 +764,18 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					reach = Math.max(
 						reach,
 						Math.hypot(
-							positions[member * 3] - cx,
-							positions[member * 3 + 1] - cy,
-							positions[member * 3 + 2] - cz,
+							at(positions, member * 3) - cx,
+							at(positions, member * 3 + 1) - cy,
+							at(positions, member * 3 + 2) - cz,
 						),
 					)
 				}
 				return reach
 			}
 			const groundFrame = (center: number, distance: number): CameraPose => {
-				const wx = positions[center * 3]
-				const wy = positions[center * 3 + 1]
-				const wz = positions[center * 3 + 2]
+				const wx = at(positions, center * 3)
+				const wy = at(positions, center * 3 + 1)
+				const wz = at(positions, center * 3 + 2)
 				// Every framed view faces GALACTIC NORTH — the overview's own
 				// orientation — so moving between levels or across the disc
 				// never rotates the compass (settled 2026-08-16, superseding
@@ -788,9 +796,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			}
 			const frameGroup = (group: number): CameraPose => {
 				const reach = reachFrom(
-					positions[group * 3],
-					positions[group * 3 + 1],
-					positions[group * 3 + 2],
+					at(positions, group * 3),
+					at(positions, group * 3 + 1),
+					at(positions, group * 3 + 2),
 					topicsByGroup.get(group) ?? [],
 				)
 				return groundFrame(group, Math.max(30, fitDistance(reach, 2.2)))
@@ -800,9 +808,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			 * 2026-08-16 — the one place a rotation survived). */
 			const frameFamily = (family: number): CameraPose => {
 				const reach = reachFrom(
-					positions[family * 3],
-					positions[family * 3 + 1],
-					positions[family * 3 + 2],
+					at(positions, family * 3),
+					at(positions, family * 3 + 1),
+					at(positions, family * 3 + 2),
 					groupsByFamily.get(family) ?? [],
 				)
 				return groundFrame(family, Math.max(30, fitDistance(reach, 2.2)))
@@ -812,9 +820,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			 * and routinely cropped the contributor swarm). */
 			const frameTopic = (topic: number): CameraPose => {
 				const reach = reachFrom(
-					positions[topic * 3],
-					positions[topic * 3 + 1],
-					positions[topic * 3 + 2],
+					at(positions, topic * 3),
+					at(positions, topic * 3 + 1),
+					at(positions, topic * 3 + 2),
 					contributorsOf(topic),
 				)
 				return groundFrame(topic, Math.max(30, fitDistance(reach, FIT_CONTAIN)))
@@ -828,9 +836,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				const members = engagementsOf(source)
 				if (contextTopic >= 0) members.push(contextTopic)
 				const reach = reachFrom(
-					positions[source * 3],
-					positions[source * 3 + 1],
-					positions[source * 3 + 2],
+					at(positions, source * 3),
+					at(positions, source * 3 + 1),
+					at(positions, source * 3 + 2),
 					members,
 				)
 				return groundFrame(source, Math.max(30, fitDistance(reach, FIT_CONTAIN)))
@@ -919,7 +927,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					// rule: opened via a topic, that topic rides the trail).
 					const tail = trail.at(-1)
 					const tailNode = tail?.kind === 'node' ? idx(tail.id) : undefined
-					const contextTopic = tailNode !== undefined && nodes[tailNode].tier === 0 ? tailNode : -1
+					const contextTopic =
+						tailNode !== undefined && at(nodes, tailNode).tier === 0 ? tailNode : -1
 					return {
 						key,
 						lens,
@@ -965,7 +974,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 						...restingProjection(
 							key,
 							lens,
-							dustNodes.filter((node) => nodes[node].facets?.[level.facet] === level.value),
+							dustNodes.filter((node) => at(nodes, node).facets?.[level.facet] === level.value),
 						),
 						anchor: { kind: 'spotlight', facet: level.facet, value: level.value },
 					}
@@ -1014,8 +1023,8 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					prev.labels.length !== next.labels.length ||
 					prev.labels.some((node, at) => node !== next.labels[at])
 				if (labelsChanged) labels.setLabels(next.labels, next.lens)
-				stars.uniforms.selected.value = next.selected >= 0 ? starIndexOf[next.selected] : -1
-				dust.uniforms.selected.value = next.selected >= 0 ? dustIndexOf[next.selected] : -1
+				stars.uniforms.selected.value = next.selected >= 0 ? at(starIndexOf, next.selected) : -1
+				dust.uniforms.selected.value = next.selected >= 0 ? at(dustIndexOf, next.selected) : -1
 				reapplyAnchor()
 				framedGroup = next.framedGroup
 				if (next.framed && !prev?.framed) focusAnim.current = 0
@@ -1033,9 +1042,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				}
 				if (next.frameCenter >= 0) {
 					focusPoint.set(
-						positions[next.frameCenter * 3],
-						positions[next.frameCenter * 3 + 1],
-						positions[next.frameCenter * 3 + 2],
+						at(positions, next.frameCenter * 3),
+						at(positions, next.frameCenter * 3 + 1),
+						at(positions, next.frameCenter * 3 + 2),
 					)
 				}
 				if (prev?.key !== next.key) {
@@ -1131,14 +1140,19 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				let best = -1
 				let bestT = Number.POSITIVE_INFINITY
 				for (let i = 0; i < count; i++) {
-					const tier = nodes[i].tier
+					const tier = at(nodes, i).tier
 					if (tier !== 0 && tier !== -1) continue
-					toNode.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]).sub(rayOrigin)
+					toNode
+						.set(at(positions, i * 3), at(positions, i * 3 + 1), at(positions, i * 3 + 2))
+						.sub(rayOrigin)
 					const t = toNode.dot(rayDir)
 					if (t <= 0 || t >= bestT) continue
 					const missSq = toNode.lengthSq() - t * t
 					const px = tier === 0 ? 8 : 6
-					const threshold = Math.max(layout.radii[i] * (tier === 0 ? 1.6 : 2.4), px * pxScale * t)
+					const threshold = Math.max(
+						at(layout.radii, i) * (tier === 0 ? 1.6 : 2.4),
+						px * pxScale * t,
+					)
 					if (missSq < threshold * threshold) {
 						best = i
 						bestT = t
@@ -1182,17 +1196,17 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const starBoosts = new Float32Array(starNodes.length)
 			let boostsActive = false
 			const applyHoverVisual = (index: number): void => {
-				const tier = index >= 0 ? nodes[index].tier : -9
-				stars.uniforms.hovered.value = tier === 0 ? starIndexOf[index] : -1
-				dust.uniforms.hovered.value = tier === -1 ? dustIndexOf[index] : -1
+				const tier = index >= 0 ? at(nodes, index).tier : -9
+				stars.uniforms.hovered.value = tier === 0 ? at(starIndexOf, index) : -1
+				dust.uniforms.hovered.value = tier === -1 ? at(dustIndexOf, index) : -1
 				// Constellation preview belongs to TOPICS (and hovered groups) —
 				// a source previews its own memberships, never a constellation.
 				let preview = -1
 				if (tier === 1) preview = index
 				else if (tier === 0) {
-					const groupId = parentOf.get(nodes[index].id)
+					const groupId = parentOf.get(at(nodes, index).id)
 					const group = groupId !== undefined ? idx(groupId) : undefined
-					if (group !== undefined && nodes[group].tier === 1) preview = group
+					if (group !== undefined && at(nodes, group).tier === 1) preview = group
 				}
 				asterisms.uniforms.hoverGroup.value = preview
 				whiskers.uniforms.hoverSource.value = tier === -1 ? index : -1
@@ -1201,7 +1215,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					const links = membershipsOfSource.get(index) ?? []
 					const max = Math.max(1, ...links.map((l) => l.intensity))
 					for (const link of links) {
-						starBoosts[starIndexOf[link.topic]] = Math.sqrt(link.intensity / max) * 0.55
+						starBoosts[at(starIndexOf, link.topic)] = Math.sqrt(link.intensity / max) * 0.55
 					}
 					stars.setBoosts(starBoosts)
 					boostsActive = true
@@ -1260,7 +1274,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
 				if (activePointers.size === 1) gestureConsumed = false
 				if (activePointers.size === 2) {
-					const [a, b] = [...activePointers.values()]
+					const pointers = [...activePointers.values()]
+					const a = at(pointers, 0)
+					const b = at(pointers, 1)
 					pinchDistance = Math.hypot(a.x - b.x, a.y - b.y)
 					pinchAngle = Math.atan2(b.y - a.y, b.x - a.x)
 					pinchCentroidY = (a.y + b.y) / 2
@@ -1283,7 +1299,9 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 						// pinch zooms, TWISTING the two fingers rotates the bearing
 						// (content follows the twist), dragging both fingers
 						// up/down tilts the pitch.
-						const [a, b] = [...activePointers.values()]
+						const pointers = [...activePointers.values()]
+						const a = at(pointers, 0)
+						const b = at(pointers, 1)
 						const distance = Math.hypot(a.x - b.x, a.y - b.y)
 						const angle = Math.atan2(b.y - a.y, b.x - a.x)
 						const centroidY = (a.y + b.y) / 2
@@ -1351,7 +1369,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (index < 0) return
 				// Every scene choice is the SAME core action drill rows use —
 				// the equal-citizen rule; the projection derives the rest.
-				core.openNode(nodes[index].id)
+				core.openNode(at(nodes, index).id)
 			}
 			const onPointerLeave = (): void => {
 				pointerDirty = false
@@ -1508,7 +1526,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (hoverEnabled && pointerDirty && activePointers.size === 0) {
 					pointerDirty = false
 					const index = pick(pointerNdcX, pointerNdcY)
-					core.setHovered(index >= 0 ? nodes[index].id : null)
+					core.setHovered(index >= 0 ? at(nodes, index).id : null)
 				}
 				if (post) post.pipeline.render()
 				else renderer.render(scene, camera)

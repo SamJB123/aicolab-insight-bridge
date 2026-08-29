@@ -33,6 +33,7 @@ import type {
 	IBPoint,
 	IBQuote,
 } from '../types.ts'
+import { at } from '../engine/at.ts'
 import { DEFAULT_GALAXY_SORT, GalaxySortControl, sortRows } from './sort-control.tsx'
 
 function MixBar(props: { galaxy: IBGalaxy; node: IBNode }) {
@@ -516,9 +517,9 @@ export function GalaxyInspectorNode(props: {
 			if (edge.parent !== props.node.id) continue
 			const child = byId.get(edge.child)
 			if (child?.tier !== -1) continue
-			const at =
+			const slot =
 				edge.membershipType === 'exemplar' ? 0 : edge.membershipType === 'high_value' ? 1 : 2
-			tiers[at].rows.push(child)
+			at(tiers, slot).rows.push(child)
 		}
 		for (const tier of tiers) tier.rows.sort((a, b) => a.title.localeCompare(b.title))
 		const filled = tiers.filter((tier) => tier.rows.length > 0)

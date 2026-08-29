@@ -29,6 +29,7 @@ import {
 	vec3,
 } from 'three/tsl'
 import * as THREE from 'three/webgpu'
+import { at } from './at.ts'
 import type { GalaxyPalette } from './palette.ts'
 import { heatRamp } from './ramp.ts'
 
@@ -83,10 +84,10 @@ export function createStarField(
 	// highlight keeps its own attribute: the engine rewrites it at runtime.
 	const traits = new Float32Array(count * 4)
 	for (let i = 0; i < count; i++) {
-		traits[i * 4] = data.radii[i]
-		traits[i * 4 + 1] = data.temperatures[i]
+		traits[i * 4] = at(data.radii, i)
+		traits[i * 4 + 1] = at(data.temperatures, i)
 		traits[i * 4 + 2] = (i * 0.61803398875) % 1
-		traits[i * 4 + 3] = data.arms[i]
+		traits[i * 4 + 3] = at(data.arms, i)
 	}
 
 	const highlightAttr = new THREE.InstancedBufferAttribute(new Float32Array(count).fill(0), 1)

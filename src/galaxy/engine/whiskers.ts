@@ -27,6 +27,7 @@ import {
 	vec3,
 } from 'three/tsl'
 import * as THREE from 'three/webgpu'
+import { at } from './at.ts'
 
 type UniFloat = THREE.UniformNode<'float', number>
 
@@ -76,8 +77,8 @@ export function createWhiskers(
 		QUAD.forEach(([t, side], corner) => {
 			const v = e * QUAD.length + corner
 			for (let c = 0; c < 3; c++) {
-				positionArr[v * 3 + c] = positions[link.source * 3 + c]
-				endArr[v * 3 + c] = positions[link.topic * 3 + c]
+				positionArr[v * 3 + c] = at(positions, link.source * 3 + c)
+				endArr[v * 3 + c] = at(positions, link.topic * 3 + c)
 			}
 			tArr[v] = t
 			sideArr[v] = side

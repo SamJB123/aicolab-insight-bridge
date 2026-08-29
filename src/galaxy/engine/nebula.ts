@@ -31,6 +31,7 @@ import {
 } from 'three/tsl'
 import * as THREE from 'three/webgpu'
 import type { Node } from 'three/webgpu'
+import { at } from './at.ts'
 import { ditheredRaymarchBox } from './raymarch.ts'
 
 export interface NebulaField {
@@ -128,9 +129,10 @@ export function createNebula(options: NebulaOptions): Nebula {
 	const sigmaPx = (SPLAT_SIGMA / (2 * extent)) * FIELD_SIZE
 	const reach = Math.ceil(sigmaPx * 3)
 	fields.forEach((field, arm) => {
+		const accum = at(armAccum, arm)
 		field.members.forEach((member, m) => {
-			const px = toPixel(positions[member * 3])
-			const py = toPixel(positions[member * 3 + 1]) // world: disc is XY
+			const px = toPixel(at(positions, member * 3))
+			const py = toPixel(at(positions, member * 3 + 1)) // world: disc is XY
 			const weight = 0.35 + (field.weights[m] ?? 1) * 0.5
 			const x0 = Math.max(0, Math.floor(px - reach))
 			const x1 = Math.min(FIELD_SIZE - 1, Math.ceil(px + reach))
@@ -143,12 +145,12 @@ export function createNebula(options: NebulaOptions): Nebula {
 					const g = Math.exp(-(dx * dx + dy * dy) / (2 * sigmaPx * sigmaPx)) * weight
 					if (g < 0.002) continue
 					const texel = y * FIELD_SIZE + x
-					const at = texel * 4
-					data[at] += field.hue.r * g
-					data[at + 1] += field.hue.g * g
-					data[at + 2] += field.hue.b * g
-					data[at + 3] += g
-					armAccum[arm][texel] += g
+					const slot = texel * 4
+					data[slot] = at(data, slot) + field.hue.r * g
+					data[slot + 1] = at(data, slot + 1) + field.hue.g * g
+					data[slot + 2] = at(data, slot + 2) + field.hue.b * g
+					data[slot + 3] = at(data, slot + 3) + g
+					accum[texel] = at(accum, texel) + g
 				}
 			}
 		})
@@ -157,9 +159,10 @@ export function createNebula(options: NebulaOptions): Nebula {
 	const armData = new Float32Array(FIELD_SIZE * FIELD_SIZE).fill(-2)
 	for (let texel = 0; texel < FIELD_SIZE * FIELD_SIZE; texel++) {
 		let best = 0
-		for (let arm = 0; arm < armAccum.length; arm++) {
-			if (armAccum[arm][texel] > best) {
-				best = armAccum[arm][texel]
+		for (const [arm, accum] of armAccum.entries()) {
+			const density = at(accum, texel)
+			if (density > best) {
+				best = density
 				armData[texel] = arm
 			}
 		}

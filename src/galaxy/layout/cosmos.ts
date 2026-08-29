@@ -51,6 +51,7 @@ import {
 	type SimulationLinkDatum,
 	type SimulationNodeDatum,
 } from 'd3-force'
+import { at } from '../engine/at.ts'
 import type { IBGalaxy, IBIntensityMode, IBNodeId, IBTier } from '../types.ts'
 
 export interface GalaxyLayout {
@@ -166,7 +167,7 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 			id: node.id,
 			node: i,
 			tier: node.tier,
-			collide: node.tier === 0 ? radii[i] * 2.2 : radii[i] * 1.5 + 0.35,
+			collide: node.tier === 0 ? at(radii, i) * 2.2 : at(radii, i) * 1.5 + 0.35,
 			totalIntensity: 0,
 		})
 	})
@@ -196,7 +197,7 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 		const childIdx = index.get(edge.child)
 		const parentIdx = index.get(edge.parent)
 		if (childIdx === undefined || parentIdx === undefined) continue
-		if (nodes[childIdx].tier !== -1 || nodes[parentIdx].tier !== 0) continue
+		if (at(nodes, childIdx).tier !== -1 || at(nodes, parentIdx).tier !== 0) continue
 		const source = simIndexOf.get(childIdx)
 		const topic = simIndexOf.get(parentIdx)
 		if (source === undefined || topic === undefined) continue
@@ -237,8 +238,10 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 		}
 		for (let a = 0; a < list.length; a++) {
 			for (let b = a + 1; b < list.length; b++) {
-				const key = pairKey(list[a].at, list[b].at)
-				pairs.set(key, (pairs.get(key) ?? 0) + Math.sqrt(list[a].intensity * list[b].intensity))
+				const first = at(list, a)
+				const second = at(list, b)
+				const key = pairKey(first.at, second.at)
+				pairs.set(key, (pairs.get(key) ?? 0) + Math.sqrt(first.intensity * second.intensity))
 			}
 		}
 	}
@@ -272,7 +275,7 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 		const childIdx = index.get(edge.child)
 		const parentIdx = index.get(edge.parent)
 		if (childIdx === undefined || parentIdx === undefined) continue
-		if (nodes[childIdx].tier !== 0 || nodes[parentIdx].tier !== 1) continue
+		if (at(nodes, childIdx).tier !== 0 || at(nodes, parentIdx).tier !== 1) continue
 		if (!edge.isPrimary) continue
 		const sim = simIndexOf.get(childIdx)
 		if (sim === undefined) continue
@@ -283,7 +286,7 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 	for (const members of topicsByGroup.values()) {
 		for (let a = 0; a < members.length; a++) {
 			for (let b = a + 1; b < members.length; b++) {
-				const key = pairKey(members[a], members[b])
+				const key = pairKey(at(members, a), at(members, b))
 				topicPair.set(key, (topicPair.get(key) ?? 0) + SAME_GROUP_AFFINITY)
 			}
 		}
@@ -304,8 +307,8 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 				discRadius * 2 - discRadius * 2 * (Math.sqrt(Math.max(entry.intensity, 0)) / sqrtMax)
 			const strength = Math.max(0.003, (entry.intensity / maxIntensity) ** 3)
 			links.push({ source: entry.a, target: entry.b, rest, strength })
-			simNodes[entry.a].totalIntensity += entry.intensity
-			simNodes[entry.b].totalIntensity += entry.intensity
+			at(simNodes, entry.a).totalIntensity += entry.intensity
+			at(simNodes, entry.b).totalIntensity += entry.intensity
 		}
 	}
 	addClass(memberships.map((m) => ({ a: m.source, b: m.topic, intensity: m.intensity })))
@@ -382,10 +385,10 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 		let z = 0
 		let total = 0
 		for (const member of memberIdxs) {
-			const w = Math.max(1, nodes[member].weight)
-			x += positions[member * 3] * w
-			y += positions[member * 3 + 1] * w
-			z += positions[member * 3 + 2] * w
+			const w = Math.max(1, at(nodes, member).weight)
+			x += at(positions, member * 3) * w
+			y += at(positions, member * 3 + 1) * w
+			z += at(positions, member * 3 + 2) * w
 			total += w
 		}
 		if (total === 0) return [0, 0, 0]
