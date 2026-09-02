@@ -104,7 +104,8 @@ export function GalaxyDrill(props: {
 			)
 		}
 		if (current.kind === 'root') {
-			const rootTier = hasFamilies() ? 2 : 1
+			// families › groups › topics: a single-level corpus lists its topics.
+			const rootTier = hasFamilies() ? 2 : props.galaxy.nodes.some((node) => node.tier === 1) ? 1 : 0
 			return ordered(props.galaxy.nodes.filter((node) => node.tier === rootTier))
 		}
 		return []

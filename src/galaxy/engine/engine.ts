@@ -215,12 +215,14 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (list) list.push(i)
 				else groupsByFamily.set(parent, [i])
 			})
-			// The overview's labelled tier: families where they exist, else groups.
+			// The overview's labelled tier: families where they exist, else groups,
+			// else the topics themselves (a single-level corpus — no hierarchy was
+			// built — still gets its wayfinding pins).
 			const topTierNodes: number[] = []
 			{
-				const hasFamilies = nodes.some((node) => node.tier === 2)
+				const labelTier = nodes.some((node) => node.tier === 2) ? 2 : nodes.some((node) => node.tier === 1) ? 1 : 0
 				nodes.forEach((node, i) => {
-					if (node.tier === (hasFamilies ? 2 : 1)) topTierNodes.push(i)
+					if (node.tier === labelTier) topTierNodes.push(i)
 				})
 			}
 			// Source memberships: node-indexed adjacency with grade intensities.

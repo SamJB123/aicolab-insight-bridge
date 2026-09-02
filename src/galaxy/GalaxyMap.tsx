@@ -83,6 +83,11 @@ export interface GalaxyMapProps {
 	posterSrc?: string
 	/** Lazy slot on the gate panel: the host's link into its 2D explorer. */
 	gateAction?: () => JSX.Element
+	/** Optional host "home": the way back OUT of the galaxy when it is one
+	 * view inside a larger workspace (a run's results, say). Rendered as the
+	 * sidebar's brand row on desktop and as the first radial action on mobile.
+	 * Hosts that mount the galaxy as their own top-level route omit it. */
+	home?: { label: string; onSelect: () => void }
 	class?: string
 	/** Extra host chrome over the stage, rendered only when WebGPU is live. */
 	children?: JSX.Element
@@ -206,7 +211,9 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	// The radial fan — the left-bar convention's mobile actions (settled
 	// 2026-08-16: search, fly home, colour-by).
 	const radialItems = createMemo((): RadialMenuItem[] => {
+		const home = props.home
 		const items: RadialMenuItem[] = [
+			...(home ? [{ id: 'home', label: home.label, icon: <span aria-hidden="true">←</span>, onSelect: () => home.onSelect() }] : []),
 			{
 				id: 'search',
 				label: 'Search',
@@ -270,7 +277,16 @@ export function GalaxyMap(props: GalaxyMapProps) {
 					<WorkspaceShell
 						class="ib-galaxy-workspace"
 						navigation={
-							<WorkspaceNavigation label={`${props.title} navigation`}>
+							<WorkspaceNavigation
+								label={`${props.title} navigation`}
+								brand={
+									props.home ? (
+										<button type="button" class="ib-galaxy-home" onClick={() => props.home?.onSelect()}>
+											<span aria-hidden="true">←</span> {props.home.label}
+										</button>
+									) : undefined
+								}
+							>
 								<GalaxyMenu
 									galaxy={galaxy}
 									mode={core.mode()}

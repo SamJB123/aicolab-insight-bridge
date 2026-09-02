@@ -471,6 +471,34 @@
 			gap: 0.4rem;
 		}
 
+		/* The host's way back out of the galaxy (GalaxyMapProps.home): the
+		 * sidebar's brand row. Absent for hosts that mount the galaxy top-level. */
+		.ib-galaxy-home {
+			all: unset;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			gap: 0.45rem;
+			width: 100%;
+			padding: 0.35rem 0.4rem;
+			border-radius: var(--r-sm, 6px);
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-xs);
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			color: var(--color-base-content-muted);
+		}
+
+		.ib-galaxy-home:hover {
+			color: var(--color-base-content);
+			background: var(--color-base-200);
+		}
+
+		.ib-galaxy-home:focus-visible {
+			outline: 2px solid var(--color-ring);
+			outline-offset: 2px;
+		}
+
 		.ib-galaxy-related-chip {
 			all: unset;
 			cursor: pointer;

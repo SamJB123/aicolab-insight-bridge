@@ -28,7 +28,9 @@ export function resolveArmIdentity(galaxy: IBGalaxy): ArmIdentity {
 	const index = new Map<IBNodeId, number>()
 	nodes.forEach((node, i) => index.set(node.id, i))
 	const parentOf = primaryParents(galaxy)
-	const ownerTier = nodes.some((n) => n.tier === 2) ? 2 : 1
+	// Arms are owned by the highest topic tier PRESENT: families, else groups,
+	// else the topics themselves (a single-level corpus still gets its hues).
+	const ownerTier = nodes.some((n) => n.tier === 2) ? 2 : nodes.some((n) => n.tier === 1) ? 1 : 0
 
 	const ownerNodes: number[] = []
 	const armIndexByNode = new Map<number, number>()
