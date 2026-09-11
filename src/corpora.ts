@@ -28,9 +28,9 @@ export const CORPORA: Corpus[] = [
 		slug: 'second-chair',
 		name: 'Second Chair',
 		blurb:
-			'AI and the legal profession: scholarship, industry evidence, primary legal materials and practitioner interviews, 1953–2026.',
+			'AI and the legal profession: scholarship, industry evidence, primary legal materials and practitioner interviews, 1949–2026.',
 		url: 'https://insightbridge-secondchair.aicolab.org',
-		scale: '600 sources · 106 topics',
+		scale: '1,501 sources · 369 topics',
 	},
 	{
 		slug: 'one-basin',

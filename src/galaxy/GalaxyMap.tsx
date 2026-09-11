@@ -27,6 +27,7 @@ import {
 	CommandPalette,
 	type CommandPaletteItem,
 	CommandPaletteTrigger,
+	openCommandPalette,
 	RadialMenu,
 	type RadialMenuItem,
 	ResponsiveInspector,
@@ -219,7 +220,7 @@ export function GalaxyMap(props: GalaxyMapProps) {
 				label: 'Search',
 				icon: <span aria-hidden="true">⌕</span>,
 				onSelect: () => {
-					document.getElementById(paletteId)?.showPopover()
+					openCommandPalette(paletteId)
 				},
 			},
 			{

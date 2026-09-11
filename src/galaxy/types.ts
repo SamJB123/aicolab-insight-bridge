@@ -16,12 +16,10 @@
  * keyed by `key`.
  */
 
-/** -1 = source/contributor · 0 = leaf topic · 1 = mid group
- * (theme/supercluster) · 2 = top family. Sources joined the sky in the
- * cosmos-v2 rework (2026-08-14): they render as facet-coloured dust, fully
- * present in the force layout; groups and families no longer have bodies at
- * all (constellation line-work and nebula fog respectively). */
-export type IBTier = -1 | 0 | 1 | 2
+/** Integer hierarchy depth: -1 = source/contributor, 0 = leaf topic,
+ * positive tiers = successive container generations, increasing toward roots.
+ * Container names come from IBTierMeta; their number is not capped. */
+export type IBTier = number
 
 /** Namespaced so ids can't collide across tiers:
  * `s:acme-inst` | `t:106` | `g1:14` | `g2:3`. */

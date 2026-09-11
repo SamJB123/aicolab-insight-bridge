@@ -48,7 +48,6 @@ export function GalaxyDrill(props: {
 		}
 		return counts
 	})
-	const hasFamilies = createMemo(() => props.galaxy.nodes.some((node) => node.tier === 2))
 	const tierPlural = (tier: number): string =>
 		props.galaxy.tiers.find((entry) => entry.tier === tier)?.labelPlural ?? ''
 	const tierSingular = (tier: number): string =>
@@ -99,13 +98,13 @@ export function GalaxyDrill(props: {
 			const anchor = current.anchor
 			return ordered(
 				props.galaxy.nodes.filter(
-					(node) => node.tier === anchor.tier - 1 && props.core.parentOf(node.id)?.id === anchor.id,
+					(node) => props.core.parentOf(node.id)?.id === anchor.id,
 				),
 			)
 		}
 		if (current.kind === 'root') {
 			// families › groups › topics: a single-level corpus lists its topics.
-			const rootTier = hasFamilies() ? 2 : props.galaxy.nodes.some((node) => node.tier === 1) ? 1 : 0
+			const rootTier = props.galaxy.nodes.reduce((highest, node) => Math.max(highest, node.tier), 0)
 			return ordered(props.galaxy.nodes.filter((node) => node.tier === rootTier))
 		}
 		return []
@@ -146,12 +145,10 @@ export function GalaxyDrill(props: {
 		const needle = query().trim().toLowerCase()
 		if (needle.length < 2) return null
 		const ancestry = (node: IBNode): string => {
-			const chain: string[] = []
-			let cursor: IBNode | undefined = node
-			for (let hop = 0; hop < 3 && cursor; hop++) {
-				cursor = props.core.parentOf(cursor.id)
-				if (cursor) chain.unshift(cursor.title)
-			}
+			const chain = props.core.containerLineage(node).flatMap((step) => {
+				const parent = step.kind === 'node' ? props.core.nodeOf(step.id) : undefined
+				return parent ? [parent.title] : []
+			})
 			return chain.join(' › ')
 		}
 		return props.galaxy.nodes

@@ -118,6 +118,24 @@
 			border-radius: var(--r-pill);
 			background: var(--color-overlay-surface);
 			border: 1px solid var(--color-overlay-border);
+			/* The stage is dark in BOTH themes, so the trail speaks the overlay
+			   voice: the atom's knobs carry the link/separator/focus inks, and
+			   its role-based current + hover inks (deliberately not knobs) are
+			   re-voiced here (fixed 2026-09-03: light theme inked them dark). */
+			--ui-breadcrumb-link-ink: var(--color-overlay-content-muted);
+			--ui-breadcrumb-separator-ink: var(--color-overlay-content-muted);
+			--ui-breadcrumb-focus-ring: var(--color-overlay-content);
+		}
+		.ib-galaxy-breadcrumb .ui-breadcrumb-here {
+			color: var(--color-overlay-content);
+		}
+		.ib-galaxy-breadcrumb .ui-breadcrumb-here:not([aria-current]) {
+			color: var(--color-overlay-content-muted);
+		}
+		@media (hover: hover) {
+			.ib-galaxy-breadcrumb .ui-breadcrumb-link:hover {
+				color: var(--color-overlay-content);
+			}
 		}
 
 		/* Corpus titles run long — each crumb truncates rather than wrapping
@@ -408,6 +426,28 @@
 			flex-direction: column;
 			gap: 0.55rem;
 			font-size: var(--t-sm);
+		}
+
+		/* The section picker (2026-09-03): readings with more than two sections
+		   are switched by a SelectControl instead of stacking; sticky so the
+		   reader can change section from anywhere in a long one. */
+		.ib-galaxy-reader-tabs {
+			position: sticky;
+			top: 0;
+			z-index: 2;
+			padding-block: 0.25rem 0.5rem;
+			background: var(--color-base-100);
+			/* The select inherits its font; the reading runs at --t-sm, and its
+			   rows use the medium radius and a compact height, so the picker
+			   takes the same scale through the atom's knobs (2026-09-04). */
+			font-size: var(--t-sm);
+			--ui-select-min-height: 2rem;
+			--ui-select-pad-block: 0.3rem;
+			--ui-select-pad-inline: 0.65rem;
+			--ui-select-radius: var(--r-xs);
+		}
+		.ib-galaxy-reader-tabs .ui-select-control {
+			inline-size: 100%;
 		}
 
 		.ib-galaxy-points {

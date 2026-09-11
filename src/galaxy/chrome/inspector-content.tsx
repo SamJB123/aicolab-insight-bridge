@@ -20,6 +20,7 @@ import {
 	RichList,
 	RichListItem,
 	Rule,
+	SelectControl,
 } from '@aicolab/ui-solid'
 import { createMemo, createSignal, Errored, For, Loading, Show } from 'solid-js'
 import type {
@@ -410,6 +411,76 @@ function JumpChips(props: {
 // census lives in the left menu, and the "hottest topics" section and
 // standalone facet legend were retired outright.
 
+/** Readings with more sections than this switch them with a section picker
+ * instead of stacking them (settled 2026-09-03): a source with stances, key
+ * points, recommendations, question answers and documents was a very long
+ * scroll. Lede and stats stay above the picker; the first section opens.
+ * The picker is a SelectControl, not a tab strip: seven sections with the
+ * pipeline's full titles do not fit a narrow panel side by side. */
+const STACKED_SECTIONS_MAX = 2
+
+/** The sections of one reading — stacked when few, picked when many. The
+ * chosen section is remembered against the sections array itself, so a new
+ * reading starts on its first section without any reactive write. */
+function ReaderSections(props: {
+	sections: IBContentSection[]
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+	onOpenDocument?: (row: IBDocumentRow) => void
+}) {
+	const [picked, setPicked] = createSignal<{ of: IBContentSection[]; id: string } | null>(null)
+	const activeId = createMemo(() => {
+		const pick = picked()
+		return pick && pick.of === props.sections ? pick.id : '0'
+	})
+	const active = createMemo(() => props.sections[Number(activeId())] ?? props.sections[0])
+	return (
+		<Show
+			when={props.sections.length > STACKED_SECTIONS_MAX}
+			fallback={
+				<For each={props.sections}>
+					{(section) => (
+						<section class="ib-galaxy-reader-section">
+							<Rule label={section.title} />
+							<SectionBody
+								section={section}
+								onVisit={props.onVisit}
+								onHoverNode={props.onHoverNode}
+								onOpenDocument={props.onOpenDocument}
+							/>
+						</section>
+					)}
+				</For>
+			}
+		>
+			<div class="ib-galaxy-reader-tabs">
+				<SelectControl
+					aria-label="Reading section"
+					value={activeId()}
+					onChange={(event) => setPicked({ of: props.sections, id: event.currentTarget.value })}
+				>
+					<For each={props.sections}>{(section, at) => <option value={String(at())}>{section.title}</option>}</For>
+				</SelectControl>
+			</div>
+			{/* KEYED: SectionBody reads its section once at creation (it branches
+			    on `kind` in the component body), so switching tabs must create a
+			    fresh body rather than update the old one's props. */}
+			<Show when={active()} keyed>
+				{(section) => (
+					<section class="ib-galaxy-reader-section" aria-label={section.title}>
+						<SectionBody
+							section={section}
+							onVisit={props.onVisit}
+							onHoverNode={props.onHoverNode}
+							onOpenDocument={props.onOpenDocument}
+						/>
+					</section>
+				)}
+			</Show>
+		</Show>
+	)
+}
+
 /** The reading body shared by the NODE reader and the DOCUMENT reader:
  * lede, stat chips, sections and related chips under the async boundary. */
 function ReaderBody(props: {
@@ -448,19 +519,12 @@ function ReaderBody(props: {
 											</For>
 										</div>
 									</Show>
-									<For each={content().sections}>
-										{(section) => (
-											<section class="ib-galaxy-reader-section">
-												<Rule label={section.title} />
-												<SectionBody
-													section={section}
-													onVisit={props.onVisit}
-													onHoverNode={props.onHoverNode}
-													onOpenDocument={props.onOpenDocument}
-												/>
-											</section>
-										)}
-									</For>
+									<ReaderSections
+										sections={content().sections}
+										onVisit={props.onVisit}
+										onHoverNode={props.onHoverNode}
+										onOpenDocument={props.onOpenDocument}
+									/>
 									<Show when={(content().related?.length ?? 0) > 0}>
 										<section class="ib-galaxy-reader-section">
 											<Rule label="Related" />

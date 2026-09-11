@@ -152,7 +152,7 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 		tierMaxWeight.set(node.tier, Math.max(tierMaxWeight.get(node.tier) ?? 1, node.weight))
 	}
 	nodes.forEach((node, i) => {
-		const [lo, hi] = RADIUS_BANDS[node.tier]
+		const [lo, hi] = RADIUS_BANDS[node.tier] ?? [2.4, 3.8]
 		const max = tierMaxWeight.get(node.tier) ?? 1
 		radii[i] = lo + (hi - lo) * Math.sqrt(Math.max(0, node.weight) / max)
 	})
@@ -397,36 +397,23 @@ export function bakeGalaxyLayout(galaxy: IBGalaxy, options: CosmosBakeOptions = 
 	const parentOf = primaryParents(galaxy)
 	const membersOf = new Map<IBNodeId, number[]>()
 	nodes.forEach((node, i) => {
-		if (node.tier !== 0) return
+		if (node.tier < 0) return
 		const parent = parentOf.get(node.id)
 		if (parent === undefined) return
 		const list = membersOf.get(parent)
 		if (list) list.push(i)
 		else membersOf.set(parent, [i])
 	})
-	nodes.forEach((node, i) => {
-		if (node.tier !== 1) return
+	// Children must be positioned before their parents, regardless of input order.
+	const anchors = nodes.map((node, i) => ({ node, i }))
+		.filter(({ node }) => node.tier > 0)
+		.sort((a, b) => a.node.tier - b.node.tier)
+	for (const { node, i } of anchors) {
 		const [x, y, z] = centroidOf(membersOf.get(node.id) ?? [])
 		positions[i * 3] = x
 		positions[i * 3 + 1] = y
 		positions[i * 3 + 2] = z
-	})
-	const groupsOf = new Map<IBNodeId, number[]>()
-	nodes.forEach((node, i) => {
-		if (node.tier !== 1) return
-		const parent = parentOf.get(node.id)
-		if (parent === undefined) return
-		const list = groupsOf.get(parent)
-		if (list) list.push(i)
-		else groupsOf.set(parent, [i])
-	})
-	nodes.forEach((node, i) => {
-		if (node.tier !== 2) return
-		const [x, y, z] = centroidOf(groupsOf.get(node.id) ?? [])
-		positions[i * 3] = x
-		positions[i * 3 + 1] = y
-		positions[i * 3 + 2] = z
-	})
+	}
 
 	return { positions, radii, index, nicheThreshold }
 }

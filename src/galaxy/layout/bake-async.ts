@@ -17,7 +17,7 @@ import type { BakeRequest, BakeResponse } from './bake-worker.ts'
 import { bakeGalaxyLayout, type CosmosBakeOptions, type GalaxyLayout } from './cosmos.ts'
 
 /** Bump when bakeGalaxyLayout's algorithm or defaults change. */
-const LAYOUT_CACHE_VERSION = 1
+const LAYOUT_CACHE_VERSION = 2
 const DB_NAME = 'ib-galaxy-layout'
 const STORE = 'layouts'
 /** Lazy prune keeps the store from growing without bound across corpora. */

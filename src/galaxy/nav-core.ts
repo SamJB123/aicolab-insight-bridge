@@ -166,7 +166,9 @@ export class GalaxyNavCore {
 	containerLineage(node: IBNode): NavStep[] {
 		const chain: NavStep[] = []
 		let cursor: IBNode | undefined = this.parentOf(node.id)
-		for (let hop = 0; hop < 3 && cursor; hop++) {
+		const seen = new Set<IBNodeId>([node.id])
+		while (cursor && !seen.has(cursor.id)) {
+			seen.add(cursor.id)
 			if (cursor.tier >= 1) chain.unshift({ kind: 'node', id: cursor.id })
 			cursor = this.parentOf(cursor.id)
 		}

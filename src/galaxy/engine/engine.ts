@@ -205,22 +205,38 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				if (list) list.push(i)
 				else topicsByGroup.set(parent, [i])
 			})
-			const groupsByFamily = new Map<number, number[]>()
+			const childrenByContainer = new Map<number, number[]>()
 			nodes.forEach((node, i) => {
-				if (node.tier !== 1) return
+				if (node.tier < 0) return
 				const parentId = parentOf.get(node.id)
 				const parent = parentId !== undefined ? idx(parentId) : undefined
-				if (parent === undefined || at(nodes, parent).tier !== 2) return
-				const list = groupsByFamily.get(parent)
+				if (parent === undefined || at(nodes, parent).tier <= node.tier) return
+				const list = childrenByContainer.get(parent)
 				if (list) list.push(i)
-				else groupsByFamily.set(parent, [i])
+				else childrenByContainer.set(parent, [i])
 			})
+			// Every container owns all primary descendant topics, including middle
+			// generations that are neither the first group nor the root arm.
+			const descendantTopics = new Map<number, number[]>()
+			for (const topic of starNodes) {
+				let parentId = parentOf.get(at(nodes, topic).id)
+				const seen = new Set<string>()
+				while (parentId !== undefined && !seen.has(parentId)) {
+					seen.add(parentId)
+					const parent = idx(parentId)
+					if (parent === undefined) break
+					const list = descendantTopics.get(parent)
+					if (list) list.push(topic)
+					else descendantTopics.set(parent, [topic])
+					parentId = parentOf.get(parentId)
+				}
+			}
 			// The overview's labelled tier: families where they exist, else groups,
 			// else the topics themselves (a single-level corpus — no hierarchy was
 			// built — still gets its wayfinding pins).
 			const topTierNodes: number[] = []
 			{
-				const labelTier = nodes.some((node) => node.tier === 2) ? 2 : nodes.some((node) => node.tier === 1) ? 1 : 0
+				const labelTier = nodes.reduce((highest, node) => Math.max(highest, node.tier), 0)
 				nodes.forEach((node, i) => {
 					if (node.tier === labelTier) topTierNodes.push(i)
 				})
@@ -642,10 +658,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 				} else {
 					// Group/family anchor: member topics fully lit, their sources
 					// by membership strength.
-					const members =
-						tier === 1
-							? (topicsByGroup.get(node) ?? [])
-							: starNodes.filter((topic) => arms.ownerNodes[at(arms.armOf, topic)] === node)
+					const members = descendantTopics.get(node) ?? []
 					for (const topic of members) {
 						starHighlights[at(starIndexOf, topic)] = 1
 						const links = membershipsOfTopic.get(topic) ?? []
@@ -813,7 +826,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					at(positions, family * 3),
 					at(positions, family * 3 + 1),
 					at(positions, family * 3 + 2),
-					groupsByFamily.get(family) ?? [],
+					descendantTopics.get(family) ?? [],
 				)
 				return groundFrame(family, Math.max(30, fitDistance(reach, 2.2)))
 			}
@@ -965,7 +978,7 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 					}
 					// Family: oblique overview of its territory (no focus mode).
 					return {
-						...restingProjection(key, lens, groupsByFamily.get(index) ?? []),
+						...restingProjection(key, lens, childrenByContainer.get(index) ?? []),
 						anchor: { kind: 'node', index },
 						frameCenter: index,
 						pose: frameFamily(index),
@@ -1258,6 +1271,10 @@ export function mountGalaxyEngine(options: GalaxyEngineOptions): GalaxyEngineHan
 			const gestureSurface = (target: EventTarget | null): boolean => {
 				if (target === canvas) return true
 				if (!(target instanceof Element)) return false
+				// Top-layer UI (the command palette dialog, any popover) is never
+				// a gesture surface: a wheel over its list scrolls the list, not
+				// the sky (fixed 2026-09-03).
+				if (target.closest('dialog, [popover]')) return false
 				if (target.closest('.kolo-wayfinding')) return true
 				return (
 					target.closest('button, [role=button], a, input, select, textarea, [contenteditable]') ===
