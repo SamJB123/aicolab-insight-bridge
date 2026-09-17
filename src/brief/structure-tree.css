@@ -1,0 +1,181 @@
+/* The structure tree — paint from the host's ui-solid tokens, so the same
+ * component wears each app's theme. The CONTAINER's width picks the form:
+ * under 46rem the SVG is replaced by the indented outline, which is why
+ * :scope carries `container-type: inline-size`.
+ *
+ * Self-layered like reader.css and galaxy-map.css: re-declaring the layer
+ * order is a no-op when ui-solid's sheet loaded first and pins these rules
+ * correctly when it didn't; every rule sits in ui.organisms, below any
+ * unlayered app CSS, so a host can always override the tree from its own
+ * stylesheet. Rides along as a side-effect import from structure-tree.tsx. */
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
+
+@layer ui.organisms {
+	@scope (.ib-structure-tree) {
+		:scope {
+			container-type: inline-size;
+			margin-top: 1.2rem;
+		}
+		.ib-st-svg {
+			display: block;
+			width: 100%;
+			height: auto;
+			font-family: var(--font-sans, system-ui, sans-serif);
+		}
+		.ib-st-outline {
+			display: none;
+		}
+		@container (width < 46rem) {
+			.ib-st-svg {
+				display: none;
+			}
+			.ib-st-outline {
+				display: block;
+			}
+		}
+		.ib-st-link {
+			fill: none;
+			stroke: var(--color-border-strong, var(--color-border));
+			stroke-width: 1;
+			transition:
+				stroke 0.15s,
+				opacity 0.15s;
+		}
+		.ib-st-link-first {
+			stroke-width: 1.6;
+		}
+		.ib-st-node circle {
+			fill: var(--color-base-200);
+			stroke: var(--color-base-content-muted);
+			stroke-width: 1.4;
+			transition:
+				fill 0.15s,
+				stroke 0.15s;
+		}
+		.ib-st-root circle {
+			fill: var(--color-primary);
+			stroke: var(--color-primary);
+		}
+		.ib-st-first circle {
+			stroke: var(--color-primary);
+		}
+		.ib-st-node {
+			cursor: pointer;
+			outline: none;
+		}
+		/* The labels are prose, not chart furniture — the data font belongs only
+		   on the counts (.ib-st-n) and the column heads (.ib-st-head). */
+		.ib-st-t {
+			font-family: var(--font-sans, system-ui, sans-serif);
+			font-size: 11.5px;
+			fill: var(--color-base-content);
+			dominant-baseline: middle;
+		}
+		.ib-st-t-first {
+			font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
+			font-size: 13px;
+			font-weight: 600;
+			/* A halo in the page colour keeps the label legible where links cross it. */
+			paint-order: stroke fill;
+			stroke: var(--color-base-200);
+			stroke-width: 5px;
+			stroke-linejoin: round;
+		}
+		.ib-st-t-root {
+			font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
+			font-size: 13px;
+			font-weight: 600;
+		}
+		.ib-st-t-root-sub {
+			fill: var(--color-base-content-muted);
+			font-size: 11px;
+		}
+		.ib-st-n {
+			fill: var(--color-base-content-faint);
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 10px;
+		}
+		.ib-st-head {
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 9.5px;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			fill: var(--color-base-content-faint);
+			dominant-baseline: hanging;
+		}
+		.ib-st-branch {
+			transition: opacity 0.15s;
+		}
+		.ib-st-branch.is-dim {
+			opacity: 0.35;
+		}
+		.ib-st-branch.is-hot .ib-st-link {
+			stroke: var(--color-primary);
+		}
+		.ib-st-branch.is-hot .ib-st-node circle {
+			stroke: var(--color-primary);
+		}
+		.ib-st-node:hover circle,
+		.ib-st-node:focus-visible circle {
+			fill: var(--color-primary);
+			stroke: var(--color-primary);
+		}
+		.ib-st-node:hover .ib-st-t,
+		.ib-st-node:focus-visible .ib-st-t {
+			fill: var(--color-primary);
+		}
+		.ib-st-outline,
+		.ib-st-outline ol {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+		.ib-st-outline > li {
+			margin: 0.6rem 0;
+		}
+		.ib-st-outline ol {
+			margin: 0.25rem 0 0 0.9rem;
+			padding-left: 0.8rem;
+			border-left: 1px solid var(--color-border-strong, var(--color-border));
+		}
+		.ib-st-o-root {
+			font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
+			font-weight: 600;
+		}
+		.ib-st-o-first,
+		.ib-st-o-second {
+			appearance: none;
+			border: 0;
+			background: none;
+			padding: 0.15rem 0;
+			font: inherit;
+			color: var(--color-base-content);
+			text-align: left;
+			cursor: pointer;
+			line-height: 1.3;
+		}
+		.ib-st-o-first {
+			font-family: var(--font-display, var(--font-sans, system-ui, sans-serif));
+			font-weight: 600;
+		}
+		.ib-st-o-second {
+			font-size: 0.9rem;
+		}
+		.ib-st-o-first:hover,
+		.ib-st-o-second:hover {
+			color: var(--color-primary);
+		}
+		.ib-st-o-count {
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 10.5px;
+			color: var(--color-base-content-faint);
+		}
+	}
+}

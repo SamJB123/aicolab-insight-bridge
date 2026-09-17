@@ -215,7 +215,7 @@ export function GalaxyDrill(props: {
 										{(row) => (
 											<RichListItem
 												title={row.value}
-												description={`${row.count} ${tierPlural(-1).toLowerCase()}`}
+												description={`${row.count} ${(row.count === 1 ? tierSingular(-1) : tierPlural(-1)).toLowerCase()}`}
 												leading={
 													<span
 														class="ib-galaxy-facet-swatch"

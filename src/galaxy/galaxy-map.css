@@ -327,25 +327,6 @@
 			justify-content: flex-start;
 		}
 
-		.ib-galaxy-nodes-head {
-			display: flex;
-			justify-content: flex-start;
-			margin-block-end: 0.45rem;
-		}
-
-		/* Accordion summaries that pair a label with a stance badge. */
-		.ib-galaxy-acc-summary {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.5rem;
-			flex-wrap: wrap;
-			min-inline-size: 0;
-		}
-
-		.ib-galaxy-acc-label {
-			min-inline-size: 0;
-		}
-
 		/* Reverse hover sync: scene pointer hover tints the matching row with
 		 * the SAME voice as the row's own :hover (ink adapters + surface), so
 		 * panel and sky always agree about what's under the pointer. */
@@ -356,159 +337,13 @@
 			color: var(--ui-ink-selected);
 		}
 
-		/* ── Inspector content (base surface, not overlay) ──────────────── */
-		.ib-galaxy-node-stats {
-			margin: 0;
-			font-family: var(--font-data);
-			font-size: var(--t-xs);
-			color: var(--color-base-content-muted);
-		}
-
+		/* ── Inspector content: the reading itself is the shared reader
+		   (../reader/reader.css); only the galaxy-owned chrome remains. ── */
 		.ib-galaxy-overview-note {
 			margin: 0;
 			font-size: var(--t-xs);
 			font-style: italic;
 			color: var(--color-base-content-faint);
-		}
-
-		.ib-galaxy-mix {
-			display: flex;
-			block-size: 0.45rem;
-			margin-block-start: 0.5rem;
-			border-radius: var(--r-pill);
-			overflow: hidden;
-		}
-
-		.ib-galaxy-node-flags {
-			display: flex;
-			gap: 0.35rem;
-			margin-block-start: 0.5rem;
-			flex-wrap: wrap;
-		}
-
-		.ib-galaxy-flag {
-			padding: 0.1rem 0.45rem;
-			border-radius: var(--r-pill);
-			border: 1px solid var(--color-border);
-			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
-			font-size: var(--t-2xs);
-			color: var(--color-base-content-muted);
-		}
-
-		.ib-galaxy-flag-hot {
-			border-color: color-mix(in oklab, var(--color-error, #b04a3a) 60%, transparent);
-			color: var(--color-base-content);
-		}
-
-		/* Wifi-signal membership glyph (2026-08-16) — trailing slot of the
-		   topic-superclusters rows; strength inks the arcs. */
-		.ib-galaxy-signal {
-			inline-size: 1.15rem;
-			block-size: 1.15rem;
-			flex: none;
-			color: var(--color-base-content-muted, currentColor);
-		}
-
-		.ib-galaxy-reader-lede {
-			margin: 0;
-			font-size: var(--t-sm);
-			color: var(--color-base-content);
-		}
-
-		.ib-galaxy-reader-stats {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 0.4rem;
-		}
-
-		.ib-galaxy-reader-section {
-			display: flex;
-			flex-direction: column;
-			gap: 0.55rem;
-			font-size: var(--t-sm);
-		}
-
-		/* The section picker (2026-09-03): readings with more than two sections
-		   are switched by a SelectControl instead of stacking; sticky so the
-		   reader can change section from anywhere in a long one. */
-		.ib-galaxy-reader-tabs {
-			position: sticky;
-			top: 0;
-			z-index: 2;
-			padding-block: 0.25rem 0.5rem;
-			background: var(--color-base-100);
-			/* The select inherits its font; the reading runs at --t-sm, and its
-			   rows use the medium radius and a compact height, so the picker
-			   takes the same scale through the atom's knobs (2026-09-04). */
-			font-size: var(--t-sm);
-			--ui-select-min-height: 2rem;
-			--ui-select-pad-block: 0.3rem;
-			--ui-select-pad-inline: 0.65rem;
-			--ui-select-radius: var(--r-xs);
-		}
-		.ib-galaxy-reader-tabs .ui-select-control {
-			inline-size: 100%;
-		}
-
-		.ib-galaxy-points {
-			display: flex;
-			flex-direction: column;
-			gap: 0.7rem;
-		}
-
-		.ib-galaxy-point p {
-			margin: 0;
-		}
-
-		.ib-galaxy-point blockquote {
-			margin: 0.4rem 0 0;
-			padding-inline-start: 0.75rem;
-			border-inline-start: 2px solid var(--color-primary);
-			color: var(--color-base-content-muted);
-			font-style: italic;
-		}
-
-		.ib-galaxy-point cite {
-			display: block;
-			margin-block-start: 0.2rem;
-			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
-			font-style: normal;
-			font-size: var(--t-2xs);
-			letter-spacing: 0.06em;
-			color: var(--color-base-content-faint);
-		}
-
-		.ib-galaxy-facet-trailing,
-		.ib-galaxy-entity-trailing {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.45rem;
-			min-inline-size: 6.5rem;
-			justify-content: flex-end;
-			font-family: var(--font-data);
-			font-size: var(--t-2xs);
-		}
-
-		.ib-galaxy-facet-trailing .ui-meter,
-		.ib-galaxy-entity-trailing .ui-meter {
-			inline-size: 3rem;
-		}
-
-		.ib-galaxy-badge {
-			padding: 0.1rem 0.5rem;
-			border-radius: var(--r-pill);
-			background: var(--color-base-300);
-			color: var(--color-base-content);
-			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
-			font-size: var(--t-2xs);
-			letter-spacing: 0.04em;
-			white-space: nowrap;
-		}
-
-		.ib-galaxy-reader-related {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 0.4rem;
 		}
 
 		/* The host's way back out of the galaxy (GalaxyMapProps.home): the
@@ -539,6 +374,7 @@
 			outline-offset: 2px;
 		}
 
+		/* The gate panel's action chip (hosts pass a Link with this class). */
 		.ib-galaxy-related-chip {
 			all: unset;
 			cursor: pointer;
@@ -557,32 +393,6 @@
 		.ib-galaxy-related-chip:focus-visible {
 			outline: 2px solid var(--color-ring);
 			outline-offset: 2px;
-		}
-
-		.ib-galaxy-show-all {
-			all: unset;
-			cursor: pointer;
-			display: block;
-			padding: 0.35rem 0.25rem;
-			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
-			font-size: var(--t-2xs);
-			letter-spacing: 0.04em;
-			color: var(--color-base-content-muted);
-		}
-
-		.ib-galaxy-show-all:hover {
-			color: var(--color-base-content);
-		}
-
-		.ib-galaxy-show-all:focus-visible {
-			outline: 2px solid var(--color-ring);
-			outline-offset: 2px;
-		}
-
-		.ib-galaxy-reader-pending,
-		.ib-galaxy-reader-error {
-			margin: 0;
-			color: var(--color-base-content-muted);
 		}
 
 		/* ── Mobile bottom bar's centre action (Search) ─────────────────── */

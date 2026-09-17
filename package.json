@@ -18,8 +18,11 @@
 	},
 	"exports": {
 		".": "./src/index.ts",
+		"./brief": "./src/brief/index.ts",
 		"./galaxy": "./src/galaxy/index.ts",
+		"./reader": "./src/reader/index.ts",
 		"./server": "./src/server/index.ts",
+		"./sources": "./src/sources/index.ts",
 		"./styles.css": "./src/styles.css",
 		"./package.json": "./package.json"
 	},
@@ -32,6 +35,7 @@
 		"@aicolab/ui-solid": "workspace:^",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@solidjs/web": "catalog:",
+		"drizzle-orm": "catalog:",
 		"@tanstack/solid-router": "catalog:",
 		"@tanstack/solid-start": "catalog:",
 		"solid-js": "catalog:",

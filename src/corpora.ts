@@ -33,6 +33,22 @@ export const CORPORA: Corpus[] = [
 		scale: '1,501 sources · 369 topics',
 	},
 	{
+		slug: 'first-resort',
+		name: 'First Resort',
+		blurb:
+			'The public submissions and hearing evidence to the Joint Standing Committee on Foreign Affairs, Defence and Trade’s 2026 inquiry into the role of Australia’s international development program in preventing conflict.',
+		url: 'https://insightbridge-firstresort.aicolab.org',
+		scale: '88 submitters · 7 topics',
+	},
+	{
+		slug: 'long-form',
+		name: 'Long Form',
+		blurb:
+			'The transcripts of The Joe Walker Podcast: 133 long-form conversations with economists, scientists, historians, policymakers and other thinkers, 2018–2026, read by period.',
+		url: 'https://insightbridge-longform.aicolab.org',
+		scale: '133 episodes · 68 topics',
+	},
+	{
 		slug: 'one-basin',
 		name: 'One Basin',
 		blurb:

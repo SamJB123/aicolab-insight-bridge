@@ -204,9 +204,19 @@ export interface IBNodeContent {
 	lede?: string
 	/** Headline figures as label/value chips. */
 	stats?: Array<{ label: string; value: string }>
+	/** Flags the content itself carries (a single-sector topic, a document
+	 * the pipeline could not analyse) — the header's own flags come from the
+	 * node. */
+	flags?: IBFlag[]
 	sections: IBContentSection[]
+	/** A topic's contributors grouped by grade. The galaxy computes these
+	 * from its graph; a host without a graph (an app's detail sheet)
+	 * supplies them here. */
+	contributors?: Array<{ label: string; rows: Array<{ id: IBNodeId; label: string; detail?: string }> }>
 	/** Cross-links — choosing one flies the camera there. */
 	related?: Array<{ id: IBNodeId; label: string }>
+	/** Outbound links — the original document on its publisher's site. */
+	links?: Array<{ label: string; href: string }>
 }
 
 /* The GalaxyCommand/GalaxyEvents wire was DELETED by the headless-core

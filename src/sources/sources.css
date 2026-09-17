@@ -1,0 +1,250 @@
+/* The source record — paint from the host's ui-solid tokens, so the same page
+ * wears each app's theme.
+ *
+ * Self-layered like brief.css, reader.css and galaxy-map.css: re-declaring the
+ * layer order is a no-op when ui-solid's sheet loaded first and pins these
+ * rules correctly when it didn't. Every rule sits in ui.organisms, below any
+ * unlayered app CSS, so a host can always override the record from its own
+ * stylesheet. Scoped to .ib-sources, and every selector is a class — no bare
+ * element rules that could reach into a host's own figures.
+ *
+ * A row's INSIDE is the host's: this styles the button that wraps it and
+ * leaves the chrome the `row` render prop draws alone.
+ *
+ * Rides along as a side-effect import from sources-page.tsx. */
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
+
+@layer ui.organisms {
+	@scope (.ib-sources) {
+		:scope {
+			max-width: 1220px;
+			margin: 0 auto;
+			padding: 0 1.25rem 4rem;
+		}
+
+		/* ── the head ─────────────────────────────────────────────────── */
+		.ib-src-head {
+			padding: 2rem 0 1.2rem;
+		}
+		.ib-src-eyebrow {
+			margin: 0;
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 11px;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			color: var(--color-base-content-faint);
+		}
+		.ib-src-title {
+			font-family: var(--font-display, inherit);
+			font-size: clamp(1.8rem, 4vw, 2.8rem);
+			font-weight: 600;
+			line-height: 1.06;
+			margin: 0.5rem 0 0.7rem;
+			max-width: 24ch;
+			text-wrap: balance;
+			color: var(--color-base-content);
+		}
+		.ib-src-stand {
+			max-width: 70ch;
+			margin: 0;
+			line-height: 1.55;
+			color: var(--color-base-content-muted);
+			text-wrap: pretty;
+		}
+
+		/* ── browse and filter ────────────────────────────────────────── */
+		.ib-src-browse {
+			padding-top: 1.4rem;
+		}
+		.ib-src-h2 {
+			font-family: var(--font-display, inherit);
+			font-size: 1.05rem;
+			font-weight: 600;
+			margin: 0 0 0.35rem;
+			color: var(--color-base-content);
+		}
+		.ib-src-note {
+			max-width: 78ch;
+			margin: 0 0 0.9rem;
+			font-size: 0.88rem;
+			line-height: 1.5;
+			color: var(--color-base-content-muted);
+		}
+		.ib-src-filters {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.5rem 0.6rem;
+		}
+		.ib-src-input {
+			font: inherit;
+			font-size: 0.86rem;
+			padding: 0.34rem 0.6rem;
+			border: 1px solid var(--color-border-strong);
+			border-radius: 8px;
+			background: var(--color-base-100);
+			color: var(--color-base-content);
+			field-sizing: content;
+			max-inline-size: 26ch;
+		}
+		.ib-src-search {
+			min-inline-size: 18ch;
+		}
+		.ib-src-clear {
+			appearance: none;
+			border: 1px solid var(--color-border-strong);
+			border-radius: 999px;
+			background: none;
+			padding: 0.3rem 0.85rem;
+			font: inherit;
+			font-size: 0.82rem;
+			color: var(--color-primary);
+			cursor: pointer;
+		}
+		.ib-src-clear:hover {
+			border-color: var(--color-primary);
+		}
+
+		/* ── the counts line ──────────────────────────────────────────── */
+		.ib-src-counts {
+			margin: 0.7rem 0 0.2rem;
+			font-size: 0.86rem;
+			color: var(--color-base-content-muted);
+		}
+		.ib-src-counts-n {
+			color: var(--color-base-content);
+		}
+
+		/* ── the pager ────────────────────────────────────────────────── */
+		.ib-src-pager {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0.3rem;
+			margin: 0.8rem 0;
+		}
+		.ib-src-pager-b {
+			appearance: none;
+			min-inline-size: 2.2rem;
+			padding: 0.3rem 0.6rem;
+			border: 1px solid var(--color-border);
+			border-radius: 8px;
+			background: var(--color-base-100);
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 12px;
+			color: var(--color-base-content-muted);
+			cursor: pointer;
+		}
+		.ib-src-pager-b:hover:not(:disabled) {
+			border-color: var(--color-primary);
+			color: var(--color-primary);
+		}
+		.ib-src-pager-b:disabled {
+			opacity: 0.45;
+			cursor: default;
+		}
+		.ib-src-pager-b.ib-src-on {
+			border-color: var(--color-primary);
+			color: var(--color-primary-content, #fff);
+			background: var(--color-primary);
+		}
+		.ib-src-pager-gap {
+			padding: 0 0.2rem;
+			color: var(--color-base-content-faint);
+		}
+
+		/* ── the list ─────────────────────────────────────────────────── */
+		.ib-src-list {
+			display: grid;
+			gap: 1.4rem;
+			margin-top: 0.6rem;
+		}
+		.ib-src-group-head {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: baseline;
+			justify-content: space-between;
+			gap: 0.4rem 1rem;
+			padding-bottom: 0.4rem;
+			border-bottom: 1px solid var(--color-border);
+		}
+		.ib-src-group-name {
+			font-family: var(--font-display, inherit);
+			font-weight: 600;
+			font-size: 0.98rem;
+			color: var(--color-base-content);
+		}
+		.ib-src-group-n {
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 11px;
+			color: var(--color-base-content-faint);
+		}
+		.ib-src-rows {
+			display: grid;
+		}
+		/* The row is a two-column grid: what it IS on the left, what it holds on
+		 * the right. The chrome inside each side is the host's (the `row` render
+		 * prop), but the three parts every corpus needs — a name, a line under
+		 * it, a strip of chips — are laid out here so no app has to define them
+		 * and every record reads the same. */
+		.ib-src-row {
+			appearance: none;
+			display: grid;
+			grid-template-columns: minmax(240px, 1fr) minmax(220px, 1.1fr);
+			gap: 0.8rem;
+			align-items: center;
+			inline-size: 100%;
+			text-align: left;
+			font: inherit;
+			color: inherit;
+			cursor: pointer;
+			background: none;
+			border: 0;
+			border-bottom: 1px solid var(--color-border);
+			padding: 0.65rem 0.6rem;
+			transition: background 0.12s;
+		}
+		.ib-src-row:hover,
+		.ib-src-row:focus-visible {
+			background: color-mix(in oklab, var(--color-primary) 7%, transparent);
+		}
+		@media (width < 760px) {
+			.ib-src-row {
+				grid-template-columns: 1fr;
+				gap: 0.4rem;
+			}
+		}
+		.ib-src-name {
+			font-size: 13.5px;
+			line-height: 1.35;
+			color: var(--color-base-content);
+		}
+		.ib-src-sub {
+			display: block;
+			font-family: var(--font-data, ui-monospace, monospace);
+			font-size: 10px;
+			color: var(--color-base-content-faint);
+			margin-top: 0.15rem;
+			word-break: break-word;
+		}
+		.ib-src-meta {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			justify-content: flex-end;
+			gap: 0.4rem;
+		}
+		@media (width < 760px) {
+			.ib-src-meta {
+				justify-content: flex-start;
+			}
+		}
+	}
+}

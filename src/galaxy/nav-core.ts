@@ -230,7 +230,14 @@ export class GalaxyNavCore {
 		}
 		if (reading) return { kind: 'reading', node: reading, trail: state.trail }
 		const tail = state.trail.at(-1)
-		if (tail === undefined) return this.mode() === 'sources' ? { kind: 'facets' } : { kind: 'root' }
+		if (tail === undefined) {
+			if (this.mode() !== 'sources') return { kind: 'root' }
+			// A corpus with ONE source facet has nothing to choose between: the
+			// sources mode opens straight onto that facet's values (settled
+			// 2026-09-14), and the facet-picker level never shows.
+			const sole = this.soleFacet()
+			return sole === undefined ? { kind: 'facets' } : { kind: 'values', facet: sole }
+		}
 		if (tail.kind === 'facet') return { kind: 'values', facet: tail.facet }
 		if (tail.kind === 'value') return { kind: 'cohort', facet: tail.facet, value: tail.value }
 		const anchor = this.#nodes.get(tail.id)
@@ -251,8 +258,16 @@ export class GalaxyNavCore {
 			return { label: this.stepLabel(tail) }
 		}
 		if (tail === undefined) return null
+		// The sole facet's values ARE the sources root: nothing sits above them.
+		if (tail.kind === 'facet' && state.trail.length === 1 && this.soleFacet() === tail.facet) return null
 		const beneath = state.trail.at(-2)
 		return beneath === undefined ? 'root' : { label: this.stepLabel(beneath) }
+	}
+
+	/** The one source facet's key when the corpus declares exactly one; undefined otherwise. */
+	soleFacet(): string | undefined {
+		const facets = this.galaxy.sourceFacets ?? []
+		return facets.length === 1 ? facets[0]?.key : undefined
 	}
 
 	/* ── Actions — the ONLY way navigation state changes ────────────────── */

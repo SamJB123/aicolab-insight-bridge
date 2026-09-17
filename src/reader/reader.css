@@ -1,0 +1,325 @@
+/* The Reading — one reader for the galaxy rail AND an app's detail sheet.
+ * Paint comes from the host's ui-solid tokens (surfaces, ink, --font-display
+ * for the title through InspectorHeader, --font-data for cites and chips),
+ * so the same component wears each app's theme. The CONTAINER's width is the
+ * only thing that changes the layout (settled 2026-09-14): under ~36rem it
+ * reads as the galaxy rail always has; wider, the lede and the stats sit
+ * side by side, the measure opens and the type steps up. Sections never go
+ * multi-column.
+ *
+ * Self-layered like galaxy-map.css: re-declaring the layer order is a no-op
+ * when ui-solid's sheet loaded first and pins these rules correctly when it
+ * didn't; every rule sits in ui.organisms, below any unlayered app CSS.
+ * Rides along as a side-effect import from reader.tsx. */
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
+
+@layer ui.organisms {
+	@scope (.ib-reader) {
+		:scope {
+			container-type: inline-size;
+			display: flex;
+			flex-direction: column;
+			gap: 0.8rem;
+			min-inline-size: 0;
+			font-size: var(--t-sm);
+		}
+
+		/* Pipeline text keeps its paragraph breaks (the lens analyses carry
+		   blank-line paragraphs); single newlines fold into the line. */
+		.ib-reader-lede,
+		.ib-reader-point p,
+		.ib-reader-point blockquote {
+			white-space: pre-line;
+		}
+
+		.ib-reader-up {
+			all: unset;
+			/* `all: unset` resets flex too — re-declare layout after it. */
+			display: block;
+			flex: none;
+			cursor: pointer;
+			padding: 0.15rem 0.25rem;
+			border-radius: var(--r-xs);
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-xs);
+			line-height: 1.4;
+			color: var(--color-base-content-muted);
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.ib-reader-up:hover {
+			color: var(--color-base-content);
+		}
+		.ib-reader-up:focus-visible {
+			outline: 2px solid var(--color-ring);
+			outline-offset: 2px;
+		}
+
+		.ib-reader-detail {
+			margin: 0;
+			font-family: var(--font-data);
+			font-size: var(--t-xs);
+			color: var(--color-base-content-muted);
+		}
+
+		.ib-reader-mix {
+			display: flex;
+			block-size: 0.45rem;
+			margin-block-start: 0.5rem;
+			border-radius: var(--r-pill);
+			overflow: hidden;
+		}
+
+		.ib-reader-flags {
+			display: flex;
+			gap: 0.35rem;
+			margin-block-start: 0.5rem;
+			flex-wrap: wrap;
+		}
+		.ib-reader-flag {
+			padding: 0.1rem 0.45rem;
+			border-radius: var(--r-pill);
+			border: 1px solid var(--color-border);
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-2xs);
+			color: var(--color-base-content-muted);
+		}
+		.ib-reader-flag-hot {
+			border-color: color-mix(in oklab, var(--color-error, #b04a3a) 60%, transparent);
+			color: var(--color-base-content);
+		}
+
+		/* Lede and stats: one column when narrow, side by side when wide. */
+		.ib-reader-head {
+			display: flex;
+			flex-direction: column;
+			gap: 0.6rem;
+		}
+		.ib-reader-lede {
+			margin: 0;
+			color: var(--color-base-content);
+			text-wrap: pretty;
+		}
+		.ib-reader-stats {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			align-content: flex-start;
+		}
+
+		.ib-reader-section {
+			display: flex;
+			flex-direction: column;
+			gap: 0.55rem;
+		}
+
+		/* The section picker: readings with more than two sections are
+		   switched by a SelectControl instead of stacking; sticky so the
+		   reader can change section from anywhere in a long one. */
+		.ib-reader-tabs {
+			position: sticky;
+			top: 0;
+			z-index: 2;
+			padding-block: 0.25rem 0.5rem;
+			background: var(--color-base-100);
+			--ui-select-min-height: 2rem;
+			--ui-select-pad-block: 0.3rem;
+			--ui-select-pad-inline: 0.65rem;
+			--ui-select-radius: var(--r-xs);
+		}
+		.ib-reader-tabs .ui-select-control {
+			inline-size: 100%;
+		}
+
+		.ib-reader-nodes-head {
+			display: flex;
+			justify-content: flex-start;
+			margin-block-end: 0.45rem;
+		}
+
+		/* Accordion summaries that pair a label with a stance badge and a share. */
+		.ib-reader-acc-summary {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			flex-wrap: wrap;
+			min-inline-size: 0;
+		}
+		.ib-reader-acc-label {
+			min-inline-size: 0;
+		}
+		.ib-reader-acc-share {
+			display: inline-flex;
+			align-items: center;
+		}
+		.ib-reader-acc-share .ui-meter {
+			inline-size: 3rem;
+		}
+
+		.ib-reader-point p {
+			margin: 0;
+		}
+		.ib-reader-point blockquote {
+			margin: 0.4rem 0 0;
+			padding-inline-start: 0.75rem;
+			border-inline-start: 2px solid var(--color-primary);
+			color: var(--color-base-content-muted);
+			font-style: italic;
+		}
+		.ib-reader-point cite {
+			display: block;
+			margin-block-start: 0.2rem;
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-style: normal;
+			font-size: var(--t-2xs);
+			letter-spacing: 0.06em;
+			color: var(--color-base-content-faint);
+		}
+		.ib-reader-point .ib-reader-chip {
+			margin-block-start: 0.5rem;
+		}
+
+		.ib-reader-trailing {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.45rem;
+			min-inline-size: 6.5rem;
+			justify-content: flex-end;
+			font-family: var(--font-data);
+			font-size: var(--t-2xs);
+		}
+		.ib-reader-trailing .ui-meter {
+			inline-size: 3rem;
+		}
+
+		.ib-reader-signal {
+			inline-size: 1.15rem;
+			block-size: 1.15rem;
+			flex: none;
+			color: var(--color-base-content-muted, currentColor);
+		}
+
+		.ib-reader-badge {
+			padding: 0.1rem 0.5rem;
+			border-radius: var(--r-pill);
+			background: var(--color-base-300);
+			color: var(--color-base-content);
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-2xs);
+			letter-spacing: 0.04em;
+			white-space: nowrap;
+		}
+
+		.ib-reader-related,
+		.ib-reader-links {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.4rem;
+		}
+
+		.ib-reader-chip {
+			all: unset;
+			cursor: pointer;
+			display: inline-block;
+			padding: 0.2rem 0.65rem;
+			border-radius: var(--r-pill);
+			border: 1px solid var(--color-border);
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-xs);
+			color: var(--color-base-content);
+		}
+		.ib-reader-chip:hover {
+			border-color: var(--color-primary);
+		}
+		.ib-reader-chip:focus-visible {
+			outline: 2px solid var(--color-ring);
+			outline-offset: 2px;
+		}
+
+		.ib-reader-show-all {
+			all: unset;
+			cursor: pointer;
+			display: block;
+			padding: 0.35rem 0.25rem;
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-size: var(--t-2xs);
+			letter-spacing: 0.04em;
+			color: var(--color-base-content-muted);
+		}
+		.ib-reader-show-all:hover {
+			color: var(--color-base-content);
+		}
+		.ib-reader-show-all:focus-visible {
+			outline: 2px solid var(--color-ring);
+			outline-offset: 2px;
+		}
+
+		.ib-reader-pending,
+		.ib-reader-error {
+			margin: 0;
+			color: var(--color-base-content-muted);
+		}
+
+		/* ── The wide reading (an app's sheet) ──────────────────────────── */
+		@container (min-width: 36rem) {
+			:scope {
+				gap: 1.1rem;
+				font-size: 1rem;
+			}
+			/* The rail's compact header grows into a page-sized title. */
+			.ui-inspector-title {
+				font-family: var(--font-display);
+				font-size: clamp(1.35rem, 2.4cqi + 0.6rem, 1.9rem);
+				font-weight: 600;
+				line-height: 1.15;
+				letter-spacing: -0.005em;
+				text-wrap: balance;
+				-webkit-line-clamp: unset;
+				display: block;
+			}
+			.ib-reader-head {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
+				gap: 0.8rem 2rem;
+				align-items: start;
+			}
+			.ib-reader-lede {
+				max-inline-size: 70ch;
+				font-size: 1.02rem;
+				line-height: 1.55;
+			}
+			.ib-reader-stats {
+				justify-content: flex-end;
+			}
+			.ib-reader-badge {
+				font-size: var(--t-xs);
+				padding: 0.2rem 0.65rem;
+			}
+			.ib-reader-section {
+				gap: 0.7rem;
+			}
+			.ib-reader-point {
+				max-inline-size: 78ch;
+				line-height: 1.55;
+			}
+			.ib-reader-point blockquote {
+				margin-block-start: 0.6rem;
+				padding-inline-start: 1rem;
+			}
+			.ib-reader-tabs {
+				max-inline-size: 26rem;
+			}
+			.ib-reader-detail {
+				font-size: var(--t-sm);
+			}
+		}
+	}
+}
