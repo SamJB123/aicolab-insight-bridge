@@ -19,10 +19,13 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./brief": "./src/brief/index.ts",
+		"./brief/data": "./src/brief/data.ts",
 		"./galaxy": "./src/galaxy/index.ts",
 		"./reader": "./src/reader/index.ts",
 		"./server": "./src/server/index.ts",
 		"./sources": "./src/sources/index.ts",
+		"./sources/data": "./src/sources/data.ts",
+		"./sources/types": "./src/sources/types.ts",
 		"./styles.css": "./src/styles.css",
 		"./package.json": "./package.json"
 	},

@@ -15,7 +15,7 @@
  * clear of D1's ~100 bound-parameter cap.
  */
 import { eq, inArray, ne } from 'drizzle-orm'
-import type { DrizzleD1Database } from 'drizzle-orm/d1'
+import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import {
 	clusterEntityPerspective,
 	clusterKeyPerspective,
@@ -45,7 +45,18 @@ import type {
 	ReadingPoint,
 } from './types.ts'
 
-export type BriefDb = DrizzleD1Database<Record<string, never>>
+/**
+ * Either SQLite drizzle speaks here.
+ *
+ * `DrizzleD1Database` is `SQLiteAsyncDatabase<'async', D1RunResult>` — what a
+ * standalone app reads. `DrizzleSqliteDODatabase` is
+ * `SQLiteAsyncDatabase<'sync', DurableSQLiteRunResult>` — what the pipeline
+ * zone reads for a run, straight from the Durable Object's own storage. Both
+ * extend the same class, and its select builder extends `QueryPromise`
+ * whatever the result kind, so every query below reads the same and `await`
+ * resolves a sync result as readily as an async one.
+ */
+export type BriefDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
 /** The pipeline's position vocabulary, supportive first. */
 export const POSITIONS = [

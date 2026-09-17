@@ -8,7 +8,7 @@
  * sort key. Batched clear of D1's ~100 bound-parameter cap.
  */
 import { and, eq, inArray, like, or } from 'drizzle-orm'
-import type { DrizzleD1Database } from 'drizzle-orm/d1'
+import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import { document, entity, facetAssignment, facet as facetTable } from '../brief/schema.ts'
 import type {
 	SourceDocument,
@@ -21,7 +21,9 @@ import type {
 	SourcesSearch,
 } from './types.ts'
 
-export type SourcesDb = DrizzleD1Database<Record<string, never>>
+/** Either SQLite drizzle speaks: D1 (`'async'`) or a Durable Object's own
+ *  storage (`'sync'`). See the note on `BriefDb`. */
+export type SourcesDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
 const CHUNK = 80
 const DEFAULT_PAGE_SIZE = 40

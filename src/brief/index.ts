@@ -8,6 +8,10 @@
  * its corpus without pulling in the reader's sheet or the WebGPU engine.
  *
  *   import { StructureTree } from '@aicolab/insight-bridge/brief'
+ *
+ * A server that only RUNS the queries — a Durable Object holding a run's
+ * store, say — takes `@aicolab/insight-bridge/brief/data` instead, which
+ * reaches drizzle and nothing heavier, so no reading UI lands in its bundle.
  */
 
 export { BriefPage } from './brief-page.tsx'

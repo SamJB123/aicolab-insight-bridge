@@ -7,6 +7,10 @@
  * contract, the counts, the pager — is the same everywhere.
  *
  *   import { sourcesData, SourcesPage } from '@aicolab/insight-bridge/sources'
+ *
+ * A server that only RUNS the query takes `@aicolab/insight-bridge/sources/data`
+ * (and `/sources/types` for the shapes), which reach drizzle and nothing
+ * heavier, so no page lands in its bundle.
  */
 export { sourcesData, type SourcesDb, sourcesSearchValidator } from './data.ts'
 export { SourcesPage } from './sources-page.tsx'
