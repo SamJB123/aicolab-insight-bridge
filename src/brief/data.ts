@@ -30,7 +30,7 @@ import {
 	superclusterEdge,
 	topicCluster,
 	topicStar,
-} from '../schema/index.ts'
+} from '@aicolab/insight-bridge-contracts/schema'
 import type {
 	BriefContributor,
 	BriefData,

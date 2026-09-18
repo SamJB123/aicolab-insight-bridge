@@ -25,7 +25,6 @@
 		"./galaxy/layout": "./src/galaxy/layout/cosmos.ts",
 		"./galaxy/types": "./src/galaxy/types.ts",
 		"./reader": "./src/reader/index.ts",
-		"./schema": "./src/schema/index.ts",
 		"./server": "./src/server/index.ts",
 		"./site": "./src/site/index.ts",
 		"./site.css": "./src/site/site.css",
