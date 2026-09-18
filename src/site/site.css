@@ -250,6 +250,24 @@
 		font-size: 0.95rem;
 		text-wrap: pretty;
 	}
+	/* A link inside running text, and the button that has to look like one.
+	   Both precedent sites define this identically; the generated sites and the
+	   shared reader both emit it, so it belongs with the frame. */
+	.dw-inline-link {
+		appearance: none;
+		background: none;
+		border: 0;
+		padding: 0;
+		font: inherit;
+		text-align: inherit;
+		color: var(--color-primary);
+		cursor: pointer;
+		text-decoration: none;
+	}
+	.dw-inline-link:hover {
+		color: var(--color-primary-2, var(--color-primary));
+		text-decoration: underline;
+	}
 	.fig {
 		background: var(--color-base-100);
 		border: 1px solid var(--color-border);
@@ -464,6 +482,129 @@
 	}
 	.door:hover .door-t {
 		color: var(--color-primary);
+	}
+
+	/* ── the method page ─────────────────────────────────────────────────────
+	   Prose at a readable measure, the pipeline as a numbered spine, definition
+	   pairs for a position scale or a glossary, and a chip row of the run's own
+	   figures. Lifted from First Resort's method page, where the same four shapes
+	   carry an account of how a corpus was read. */
+	.measure {
+		max-width: 72ch;
+	}
+	.measure p {
+		color: var(--color-base-content-muted);
+		line-height: 1.62;
+		font-size: 1rem;
+		margin: 0 0 1rem;
+		text-wrap: pretty;
+	}
+	.measure p :is(b, strong) {
+		color: var(--color-base-content);
+		font-weight: 600;
+	}
+	.measure em {
+		color: var(--color-base-content);
+	}
+	.pipeline {
+		list-style: none;
+		margin: 0.4rem 0 0;
+		padding: 0;
+		counter-reset: stage;
+		display: flex;
+		flex-direction: column;
+	}
+	.pipeline-stage {
+		counter-increment: stage;
+		position: relative;
+		padding: 0.9rem 0 0.9rem 3.4rem;
+		border-left: 1px solid var(--color-border-strong);
+		margin-left: 1.05rem;
+	}
+	.pipeline-stage::before {
+		content: counter(stage, decimal-leading-zero);
+		position: absolute;
+		left: -1.05rem;
+		top: 0.9rem;
+		width: 2.1rem;
+		height: 2.1rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-base-100);
+		border: 1px solid var(--color-primary);
+		border-radius: 50%;
+		font-family: var(--font-data);
+		font-size: 11px;
+		color: var(--color-primary);
+	}
+	.pipeline-stage:last-child {
+		border-left-color: transparent;
+	}
+	.pipeline-t {
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+		color: var(--color-base-content);
+	}
+	.pipeline-b {
+		font-size: 0.92rem;
+		color: var(--color-base-content-muted);
+		line-height: 1.55;
+		max-width: 62ch;
+		margin: 0.3rem 0 0;
+		text-wrap: pretty;
+	}
+
+	/* Term/meaning pairs: a stance label and what it means, a glossary entry, a
+	   model and the job it did. The term column holds a long label without
+	   wrapping to one word per line, and folds away entirely on a phone. */
+	.defs {
+		display: grid;
+		grid-template-columns: minmax(8rem, 15rem) 1fr;
+		gap: 0.55rem 1.3rem;
+		max-width: 78ch;
+		align-items: baseline;
+	}
+	.def-t {
+		font-family: var(--font-data);
+		font-size: 12.5px;
+		letter-spacing: 0.02em;
+		color: var(--color-base-content);
+		text-wrap: balance;
+	}
+	.def-b {
+		font-size: 0.92rem;
+		line-height: 1.55;
+		color: var(--color-base-content-muted);
+		text-wrap: pretty;
+	}
+	.def-b em {
+		color: var(--color-base-content-faint);
+		font-style: normal;
+	}
+	@media (max-width: 620px) {
+		.defs {
+			grid-template-columns: 1fr;
+			gap: 0.15rem 0;
+		}
+		.def-b {
+			margin-bottom: 0.7rem;
+		}
+	}
+
+	.chips {
+		margin-top: 1.4rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.chip-s {
+		font-family: var(--font-data);
+		font-size: 11px;
+		border: 1px solid var(--color-border-strong);
+		border-radius: 3px;
+		padding: 3px 9px;
+		color: var(--color-base-content-muted);
 	}
 
 	/* ── the galaxy's dark shell ──────────────────────────────────────────────
