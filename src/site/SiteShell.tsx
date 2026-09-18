@@ -20,7 +20,7 @@
  */
 import { ThemeToggle } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { Show } from 'solid-js'
+import { children } from 'solid-js'
 
 export interface SiteShellProps {
 	/**
@@ -60,6 +60,13 @@ export interface SiteShellProps {
  * brings, rules and tokens alike, stops at this element.
  */
 export function SiteShell(props: SiteShellProps) {
+	// Resolve lazy JSX slots in the same order on server and client. Reading them
+	// directly in the template interleaves their hydration IDs with ThemeToggle
+	// differently between the two compilers, leaving the server DOM unbound.
+	const brand = children(() => props.brand)
+	const sections = children(() => props.sections)
+	const menu = children(() => props.menu)
+	const content = children(() => props.children)
 	return (
 		<div class={`ib-site ui-theme${props.class ? ` ${props.class}` : ''}`}>
 			<a class="skip" href="#main">
@@ -67,15 +74,15 @@ export function SiteShell(props: SiteShellProps) {
 			</a>
 			<header class="mast">
 				<div class="mast-in">
-					<div class="mast-id">{props.brand}</div>
+					<div class="mast-id">{brand()}</div>
 					<nav class="mast-nav" aria-label="Sections">
-						{props.sections}
+						{sections()}
 					</nav>
 					<ThemeToggle class="mast-theme" storageKey={props.themeStorageKey} />
-					<Show when={props.menu}>{props.menu}</Show>
+					{menu()}
 				</div>
 			</header>
-			<main id="main">{props.children}</main>
+			<main id="main">{content()}</main>
 		</div>
 	)
 }
