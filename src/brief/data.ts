@@ -14,7 +14,7 @@
  * reads joined in TypeScript, which is both cheaper than id-list queries and
  * clear of D1's ~100 bound-parameter cap.
  */
-import { eq, inArray, ne } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import {
 	clusterEntityPerspective,
@@ -30,6 +30,7 @@ import {
 	topicCluster,
 	topicStar,
 } from './schema.ts'
+import { atBuild, corpusShape, liveTopics } from './shape.ts'
 import type {
 	BriefContributor,
 	BriefData,
@@ -175,6 +176,11 @@ type TreeNode = {
 }
 
 export async function briefData(db: BriefDb, config: BriefConfig): Promise<BriefData> {
+	// Which shape of corpus this is, asked once and scoped with below. An app's
+	// prepared database was already reduced to one clustering upstream; a pipeline
+	// run's own store keeps every build, and reading it unscoped counts them all.
+	// See shape.ts for the precondition this enforces.
+	const shape = await corpusShape(db)
 	const keys = await analysedFacets(db)
 	const scale = config.positions ?? DEFAULT_SCALE
 	const supportive = new Set(scale.supportive ?? [])
@@ -198,10 +204,32 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 					.from(facetTable)
 					.where(inArray(facetTable.facet, keys))
 			: Promise.resolve([]),
-		db.select().from(topicCluster).where(ne(topicCluster.junkStatus, 'confirmed')),
-		db.select().from(supercluster),
-		db.select().from(superclusterEdge),
-		db.select().from(entityTopicClusterMembership),
+		db
+			.select()
+			.from(topicCluster)
+			.where(and(ne(topicCluster.junkStatus, 'confirmed'), liveTopics(shape))),
+		db.select().from(supercluster).where(atBuild(shape, 'supercluster')),
+		// Edges have no build of their own; they belong to the build their PARENT
+		// node belongs to, so they are reached through it (the same join the zone's
+		// own hierarchy read uses).
+		db
+			.select({
+				childSuperclusterId: superclusterEdge.childSuperclusterId,
+				parentSuperclusterId: superclusterEdge.parentSuperclusterId,
+				similarity: superclusterEdge.similarity,
+				membershipType: superclusterEdge.membershipType,
+				isPrimary: superclusterEdge.isPrimary,
+			})
+			.from(superclusterEdge)
+			.innerJoin(
+				supercluster,
+				eq(superclusterEdge.parentSuperclusterId, supercluster.superclusterId),
+			)
+			.where(atBuild(shape, 'supercluster')),
+		db
+			.select()
+			.from(entityTopicClusterMembership)
+			.where(atBuild(shape, 'entity_topic_cluster_membership')),
 		db
 			.select({
 				topicClusterId: clusterEntityPerspective.topicClusterId,
@@ -223,7 +251,10 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 		db
 			.select({ id: entity.id, entityId: entity.entityId, entityName: entity.entityName })
 			.from(entity),
-		db.select().from(topicStar),
+		// The constellation is the reading layer's own artefact, baked per corpus —
+		// a pipeline run has one only once its bake step has run. Absent is normal,
+		// not an error: the pages draw without a sky.
+		shape.stars ? db.select().from(topicStar) : Promise.resolve([]),
 	])
 
 	const nounBy = new Map(facetMeta.map((f) => [f.facet, f.noun]))

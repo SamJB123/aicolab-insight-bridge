@@ -11,6 +11,12 @@
  * build an `IBGalaxy` from their landscape queries (a ~20-line adapter), and
  * wire `onSelect` into their existing drawers. `probeWebGpu` is re-exported
  * for hosts that want to gate navigation items, not just the stage.
+ *
+ * A caller that only wants the LAYOUT — the star bake, which runs server-side
+ * with no renderer — takes `@aicolab/insight-bridge/galaxy/layout` (and
+ * `/galaxy/types` for the shape). `cosmos.ts` is pure math, so that entry
+ * reaches d3-force and nothing heavier, and a worker baking a run's
+ * constellation never pulls three.js into its bundle.
  */
 
 export { probeWebGpu } from '@aicolab/kolo/webgpu/backend-guard'

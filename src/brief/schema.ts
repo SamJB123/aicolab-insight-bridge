@@ -26,7 +26,21 @@
  * may carry more (build ids, provenance, the analysis tables) without
  * mattering here.
  */
+import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+
+/**
+ * Either SQLite drizzle speaks over these tables.
+ *
+ * `DrizzleD1Database` is `SQLiteAsyncDatabase<'async', D1RunResult>` — what a
+ * standalone app reads. `DrizzleSqliteDODatabase` is
+ * `SQLiteAsyncDatabase<'sync', DurableSQLiteRunResult>` — what the pipeline zone
+ * reads for a run, straight from the Durable Object's own storage. Both extend
+ * the same class, and its select builder extends `QueryPromise` whatever the
+ * result kind, so every query in this layer reads the same and `await` resolves
+ * a sync result as readily as an async one.
+ */
+export type CorpusDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
 /** A contributor to the corpus. Everything else about it is a facet. */
 export const entity = sqliteTable('entity', {
