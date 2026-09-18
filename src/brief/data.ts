@@ -14,7 +14,7 @@
  * reads joined in TypeScript, which is both cheaper than id-list queries and
  * clear of D1's ~100 bound-parameter cap.
  */
-import { and, eq, inArray, ne } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
 import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import {
 	clusterEntityPerspective,
@@ -25,12 +25,12 @@ import {
 	entityTopicClusterMembership,
 	facetAssignment,
 	facet as facetTable,
+	runCurrentBuild,
 	supercluster,
 	superclusterEdge,
 	topicCluster,
 	topicStar,
-} from './schema.ts'
-import { atBuild, corpusShape, liveTopics } from './shape.ts'
+} from '../schema/index.ts'
 import type {
 	BriefContributor,
 	BriefData,
@@ -58,6 +58,26 @@ import type {
  * resolves a sync result as readily as an async one.
  */
 export type BriefDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
+
+/**
+ * The build every reader sees: the one `run_current_build` names, resolved once
+ * at the top of a read and scoped with below. A corpus keeps every clustering
+ * it ever made (topics keep their identity across them), and reading the
+ * memberships of all of them at once would count a contributor placed by two
+ * builds as two contributors — so nothing here reads a build-carrying table
+ * without this predicate. It is the current-version-pointer pattern Iceberg and
+ * Delta use: resolve, then scope every read.
+ *
+ * A corpus that has clustered but not committed names no build. It is scoped to
+ * a build id no row can carry (the pipeline zone's own convention), so it reads
+ * as empty — which is the truth about it, and not the same thing as reading
+ * everything and reporting inflated numbers.
+ */
+export const NO_BUILD = -1
+export async function currentBuildId(db: BriefDb): Promise<number> {
+	const rows = await db.select({ buildId: runCurrentBuild.buildId }).from(runCurrentBuild).limit(1)
+	return rows[0]?.buildId ?? NO_BUILD
+}
 
 /** The pipeline's position vocabulary, supportive first. */
 export const POSITIONS = [
@@ -176,11 +196,7 @@ type TreeNode = {
 }
 
 export async function briefData(db: BriefDb, config: BriefConfig): Promise<BriefData> {
-	// Which shape of corpus this is, asked once and scoped with below. An app's
-	// prepared database was already reduced to one clustering upstream; a pipeline
-	// run's own store keeps every build, and reading it unscoped counts them all.
-	// See shape.ts for the precondition this enforces.
-	const shape = await corpusShape(db)
+	const build = await currentBuildId(db)
 	const keys = await analysedFacets(db)
 	const scale = config.positions ?? DEFAULT_SCALE
 	const supportive = new Set(scale.supportive ?? [])
@@ -204,11 +220,26 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 					.from(facetTable)
 					.where(inArray(facetTable.facet, keys))
 			: Promise.resolve([]),
+		// Live topics only: a rebuild never deletes a topic, it stamps
+		// `retired_build_id` on the ones it dropped, so identity survives re-clustering.
 		db
-			.select()
+			.select({
+				topicClusterId: topicCluster.topicClusterId,
+				title: topicCluster.title,
+				description: topicCluster.description,
+			})
 			.from(topicCluster)
-			.where(and(ne(topicCluster.junkStatus, 'confirmed'), liveTopics(shape))),
-		db.select().from(supercluster).where(atBuild(shape, 'supercluster')),
+			.where(and(ne(topicCluster.junkStatus, 'confirmed'), isNull(topicCluster.retiredBuildId))),
+		db
+			.select({
+				superclusterId: supercluster.superclusterId,
+				generation: supercluster.generation,
+				title: supercluster.title,
+				description: supercluster.description,
+				topicClusterId: supercluster.topicClusterId,
+			})
+			.from(supercluster)
+			.where(eq(supercluster.buildId, build)),
 		// Edges have no build of their own; they belong to the build their PARENT
 		// node belongs to, so they are reached through it (the same join the zone's
 		// own hierarchy read uses).
@@ -225,11 +256,15 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 				supercluster,
 				eq(superclusterEdge.parentSuperclusterId, supercluster.superclusterId),
 			)
-			.where(atBuild(shape, 'supercluster')),
+			.where(eq(supercluster.buildId, build)),
 		db
-			.select()
+			.select({
+				topicClusterId: entityTopicClusterMembership.topicClusterId,
+				entityUuid: entityTopicClusterMembership.entityUuid,
+				membershipType: entityTopicClusterMembership.membershipType,
+			})
 			.from(entityTopicClusterMembership)
-			.where(atBuild(shape, 'entity_topic_cluster_membership')),
+			.where(eq(entityTopicClusterMembership.buildId, build)),
 		db
 			.select({
 				topicClusterId: clusterEntityPerspective.topicClusterId,
@@ -251,10 +286,11 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 		db
 			.select({ id: entity.id, entityId: entity.entityId, entityName: entity.entityName })
 			.from(entity),
-		// The constellation is the reading layer's own artefact, baked per corpus —
-		// a pipeline run has one only once its bake step has run. Absent is normal,
-		// not an error: the pages draw without a sky.
-		shape.stars ? db.select().from(topicStar) : Promise.resolve([]),
+		// The constellation, baked per build by the corpus's own star bake. Empty
+		// until the bake has run, and the pages draw without a sky until then.
+		db
+			.select({ topicClusterId: topicStar.topicClusterId, x: topicStar.x, y: topicStar.y, r: topicStar.r })
+			.from(topicStar),
 	])
 
 	const nounBy = new Map(facetMeta.map((f) => [f.facet, f.noun]))

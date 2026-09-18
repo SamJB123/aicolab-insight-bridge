@@ -25,6 +25,7 @@
 		"./galaxy/layout": "./src/galaxy/layout/cosmos.ts",
 		"./galaxy/types": "./src/galaxy/types.ts",
 		"./reader": "./src/reader/index.ts",
+		"./schema": "./src/schema/index.ts",
 		"./server": "./src/server/index.ts",
 		"./site": "./src/site/index.ts",
 		"./site.css": "./src/site/site.css",
@@ -39,6 +40,7 @@
 		"test": "vitest run"
 	},
 	"peerDependencies": {
+		"@aicolab/insight-bridge-contracts": "workspace:^",
 		"@aicolab/kolo": "workspace:^",
 		"@aicolab/ui-solid": "workspace:^",
 		"@modelcontextprotocol/sdk": "catalog:",
@@ -47,13 +49,15 @@
 		"@tanstack/solid-router": "catalog:",
 		"@tanstack/solid-start": "catalog:",
 		"solid-js": "catalog:",
-		"three": "catalog:"
+		"three": "catalog:",
+		"zod": "catalog:"
 	},
 	"dependencies": {
 		"@aicolab/better-auth": "workspace:^",
 		"d3-force": "catalog:"
 	},
 	"devDependencies": {
+		"@aicolab/insight-bridge-contracts": "workspace:^",
 		"@aicolab/kolo": "workspace:^",
 		"@aicolab/tsconfig": "workspace:^",
 		"@aicolab/ui-solid": "workspace:^",
@@ -66,6 +70,7 @@
 		"solid-js": "catalog:",
 		"three": "catalog:",
 		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"zod": "catalog:"
 	}
 }

@@ -9,7 +9,7 @@
  */
 import { and, eq, inArray, like, or } from 'drizzle-orm'
 import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
-import { document, entity, facetAssignment, facet as facetTable } from '../brief/schema.ts'
+import { document, entity, facetAssignment, facet as facetTable } from '../schema/index.ts'
 import type {
 	SourceDocument,
 	SourceFacet,

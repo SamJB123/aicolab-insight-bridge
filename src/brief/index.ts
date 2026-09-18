@@ -21,6 +21,8 @@ export {
 	type BriefDb,
 	briefData,
 	chapterReading,
+	currentBuildId,
+	NO_BUILD,
 	type FacetHint,
 	generationLabel,
 	POSITIONS,
@@ -36,7 +38,6 @@ export {
 	PositionLegend,
 	ReachBars,
 } from './figures.tsx'
-export * as briefSchema from './schema.ts'
 export {
 	StructureTree,
 	type StructureTreeGeneration,
