@@ -41,6 +41,14 @@ export const CORPORA: Corpus[] = [
 		scale: '88 submitters · 7 topics',
 	},
 	{
+		slug: 'training-data',
+		name: 'Training Data',
+		blurb:
+			'What Australia told Parliament about AI: the 170 public submissions to the Joint Select Committee on Artificial Intelligence’s 2026 inquiry, read whole and placed against the committee’s 14 terms of reference.',
+		url: 'https://insightbridge-trainingdata.aicolab.org',
+		scale: '170 submitters · 23 topics',
+	},
+	{
 		slug: 'long-form',
 		name: 'Long Form',
 		blurb:
