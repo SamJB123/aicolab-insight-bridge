@@ -27,6 +27,7 @@ Peers: `solid-js`, `@solidjs/web` (Solid v2), `@tanstack/solid-router`,
 | `@aicolab/insight-bridge` | `PoweredByInsightBridge`, `InsightBridgeAbout`, `InsightBridgeReading`, the `CORPORA` registry. Light enough for a header. |
 | `./galaxy` | `GalaxyMap` and its contracts (`IBGalaxy`, `IBNodeContent`), fixture builders, layout. Reaches three.js/kolo behind a dynamic import. |
 | `./server` | `handleMcpRequest`, `resolveViewer` — server-only; never re-exported from the root |
+| `./reading-url` | TanStack search validation and URL bridges for detail drawers, Brief chapters and Galaxy navigation |
 | `./styles.css` | The package's stylesheet |
 
 ## Quick start
@@ -88,3 +89,27 @@ manifest.
 ## License
 
 Proprietary. Published to npm with restricted access; all rights reserved.
+
+## Shareable reading state
+
+Hosts opt in to `./reading-url`: use `readingSearch` as the root route's
+`validateSearch`, and validate Topics' optional `expanded` array with
+`expandedSearch`. In the Topics component, spread
+`useReadingNavigation().brief` into the reactive `BriefSurface`; in the Galaxy
+component, spread `useReadingNavigation().galaxy` onto `GalaxyMap`.
+
+For a drawer, create one `createReadingUrlBridge(restore)` alongside its store.
+Map its `detail` (`t:`, `g:`, `s:`), optional `document`, and `section` back to
+the app's selection in `restore`, without emitting a change. Forward drawer
+actions to the bridge's `change` method, including explicit `undefined` values
+when closing or clearing a level. Mount `<bridge.Sync />` alongside the drawer
+inside the same TanStack `<ClientOnly>` boundary. Watchful State also uses
+`f:` and `b:` for its legacy family and body selections. The older Galaxies
+use numeric `g1:` and `g2:` IDs for their group levels; the validator accepts
+these too.
+
+Updates replace the current history entry, preserve other search parameters
+and hashes, and keep the current scroll position. A copied URL restores the
+reading after hydration. Page loaders should depend only on their own filters
+(e.g. the output of `sourcesSearchValidator`), so opening a drawer does not
+reload the source list.
