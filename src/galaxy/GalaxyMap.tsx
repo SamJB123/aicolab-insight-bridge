@@ -59,6 +59,11 @@ import type { IBGalaxy, IBIntensityMode, IBNode, IBNodeContent, IBTier } from '.
 import './galaxy-map.css'
 
 export interface GalaxyMapProps {
+	/** Optional host URL state; no dependency on a particular router. */
+	navigation?: { nodeId?: string; documentId?: string }
+	onNavigationChange?: (state: { nodeId?: string; documentId?: string }) => void
+	section?: string
+	onSectionChange?: (section: string) => void
 	galaxy: IBGalaxy
 	/** The corpus's display name — labels the stage, breadcrumb and gate. */
 	title: string
@@ -129,6 +134,39 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	// (intensity re-bakes keep trails, lens and remembered poses) AND
 	// across host prop churn; every closure below may capture it freely.
 	const core = new GalaxyNavCore(galaxy)
+	const navigation = () => {
+		const level = core.level()
+		return {
+			nodeId: core.reading()?.id ?? (level.kind === 'children' ? level.anchor.id : undefined),
+			documentId: core.document()?.documentId,
+		}
+	}
+	createEffect(
+		() => props.navigation,
+		(next) => untrack(() => {
+			if (!next || JSON.stringify(next) === JSON.stringify(navigation())) return
+			if (!next.nodeId) {
+				core.reset()
+				return
+			}
+			if (!core.nodeOf(next.nodeId)) return
+			if (navigation().nodeId !== next.nodeId) {
+    core.openNode(next.nodeId, next.documentId ? { documentId: next.documentId, label: 'Document' } : null)
+    return
+   }
+			if (next.documentId && core.document()?.documentId !== next.documentId)
+				core.openDocument({ documentId: next.documentId, label: 'Document' })
+			else if (!next.documentId && core.document()) core.upOneLevel()
+		}),
+	)
+ createEffect(
+  () => navigation(),
+  (next, previous) => untrack(() => {
+   if (!previous) return
+   if (JSON.stringify(next) !== JSON.stringify(props.navigation)) props.onNavigationChange?.(next)
+  }),
+ )
+
 	const occlusionHandler = (px: number) => core.setViewportInset(px)
 	const configuration = createMemo(
 		(): GalaxyConfiguration => ({
@@ -214,7 +252,16 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	const radialItems = createMemo((): RadialMenuItem[] => {
 		const home = props.home
 		const items: RadialMenuItem[] = [
-			...(home ? [{ id: 'home', label: home.label, icon: <span aria-hidden="true">←</span>, onSelect: () => home.onSelect() }] : []),
+			...(home
+				? [
+						{
+							id: 'home',
+							label: home.label,
+							icon: <span aria-hidden="true">←</span>,
+							onSelect: () => home.onSelect(),
+						},
+					]
+				: []),
 			{
 				id: 'search',
 				label: 'Search',
@@ -282,7 +329,11 @@ export function GalaxyMap(props: GalaxyMapProps) {
 								label={`${props.title} navigation`}
 								brand={
 									props.home ? (
-										<button type="button" class="ib-galaxy-home" onClick={() => props.home?.onSelect()}>
+										<button
+											type="button"
+											class="ib-galaxy-home"
+											onClick={() => props.home?.onSelect()}
+										>
 											<span aria-hidden="true">←</span> {props.home.label}
 										</button>
 									) : undefined
@@ -375,6 +426,8 @@ export function GalaxyMap(props: GalaxyMapProps) {
 											when={core.document()}
 											fallback={
 												<GalaxyInspectorNode
+													section={props.section}
+													onSectionChange={props.onSectionChange}
 													galaxy={galaxy}
 													node={node()}
 													content={readerContent}
@@ -395,6 +448,8 @@ export function GalaxyMap(props: GalaxyMapProps) {
 										>
 											{(doc) => (
 												<GalaxyInspectorDocument
+													section={props.section}
+													onSectionChange={props.onSectionChange}
 													title={doc().label}
 													eyebrow={props.documentLabel ?? 'Document'}
 													content={documentContent}

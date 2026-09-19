@@ -10,6 +10,9 @@ import { createContext, useContext } from 'solid-js'
 import type { BriefVocabulary, ChapterReading } from './types.ts'
 
 export interface BriefSurface {
+	/** Optional URL-owned folded chapters. Omit to keep local state. */
+	expandedChapters?: string[]
+	onExpandedChaptersChange?: (keys: string[]) => void
 	vocabulary: BriefVocabulary
 	/** The position vocabulary in canonical order, supportive first. */
 	positions: string[]

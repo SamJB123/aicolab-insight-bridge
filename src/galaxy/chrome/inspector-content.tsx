@@ -13,6 +13,8 @@ import { at } from '../engine/at.ts'
 import type { IBDocumentRow, IBGalaxy, IBNode, IBNodeContent, IBNodeId } from '../types.ts'
 
 export function GalaxyInspectorNode(props: {
+	section?: string
+	onSectionChange?: (section: string) => void
 	galaxy: IBGalaxy
 	node: IBNode
 	/** An async computation's read (a memo over the host's loadContent):
@@ -28,7 +30,9 @@ export function GalaxyInspectorNode(props: {
 	 * section's rows are actionable exactly then. */
 	onOpenDocument?: (row: IBDocumentRow) => void
 }) {
-	const tierMeta = createMemo(() => props.galaxy.tiers.find((tier) => tier.tier === props.node.tier))
+	const tierMeta = createMemo(() =>
+		props.galaxy.tiers.find((tier) => tier.tier === props.node.tier),
+	)
 	/** A TOPIC's member sources, grouped by membership grade (settled
 	 * 2026-08-16): the grade semantics — exemplar progenitors, high-value
 	 * contributors, related members — become readable in prose land too.
@@ -45,7 +49,8 @@ export function GalaxyInspectorNode(props: {
 			if (edge.parent !== props.node.id) continue
 			const child = byId.get(edge.child)
 			if (child?.tier !== -1) continue
-			const slot = edge.membershipType === 'exemplar' ? 0 : edge.membershipType === 'high_value' ? 1 : 2
+			const slot =
+				edge.membershipType === 'exemplar' ? 0 : edge.membershipType === 'high_value' ? 1 : 2
 			at(tiers, slot).rows.push({ id: child.id, label: child.title })
 		}
 		for (const tier of tiers) tier.rows.sort((a, b) => a.label.localeCompare(b.label))
@@ -54,6 +59,8 @@ export function GalaxyInspectorNode(props: {
 	})
 	return (
 		<Reading
+			section={props.section}
+			onSectionChange={props.onSectionChange}
 			eyebrow={tierMeta()?.label ?? ''}
 			title={props.node.title}
 			detail={`${props.node.weight} ${tierMeta()?.weightLabel ?? props.galaxy.weightLabel}${props.node.intensityLabel !== undefined ? ` · ${props.node.intensityLabel}` : ''}`}
@@ -79,6 +86,8 @@ export function GalaxyInspectorNode(props: {
  * documents section and left via the named up-control (the breadcrumb
  * gains a document crumb host-side). */
 export function GalaxyInspectorDocument(props: {
+	section?: string
+	onSectionChange?: (section: string) => void
 	title: string
 	/** The corpus's document noun — 'Report', 'Submission', 'Document'. */
 	eyebrow: string
@@ -91,6 +100,8 @@ export function GalaxyInspectorDocument(props: {
 }) {
 	return (
 		<Reading
+			section={props.section}
+			onSectionChange={props.onSectionChange}
 			eyebrow={props.eyebrow}
 			title={props.title}
 			content={props.content}

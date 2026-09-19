@@ -283,7 +283,7 @@ export class GalaxyNavCore {
 	 * Containers re-root the topics trail; topics read within their lineage;
 	 * SOURCES keep the trail they were opened over (a current topic reading
 	 * is pushed onto the trail so "up" restores it — equal-citizen rule). */
-	openNode(id: IBNodeId): void {
+	openNode(id: IBNodeId, document: NavDocument | null = null): void {
 		const node = this.#nodes.get(id)
 		if (!node) return
 		if (node.tier >= 1) {
@@ -309,7 +309,7 @@ export class GalaxyNavCore {
 			current && current.tier === 0
 				? [...state.trail, { kind: 'node' as const, id: current.id }]
 				: state.trail
-		this.#setState({ trail, reading: node.id, document: null })
+		this.#setState({ trail, reading: node.id, document })
 	}
 
 	/** One level up — destination is whatever `upDestination()` names. */

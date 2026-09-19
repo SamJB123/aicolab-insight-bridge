@@ -44,7 +44,15 @@ export interface ReadingView {
 /** One document of a multi-document source, read on its own. */
 export type DetailLevel = { kind: 'document'; documentId: string; label: string }
 
+export interface DetailSheetState<S> {
+	selection: S | null
+	level: DetailLevel | null
+	section?: string
+}
+
 export interface DetailSheetConfig<S> {
+	/** Optional host URL integration; emitted only for user actions. */
+	onChange?: (state: DetailSheetState<S>) => void
 	/** The app's readings. `level` is set when a documents row was chosen. */
 	load: (selection: S, level: DetailLevel | null) => Promise<ReadingView | null>
 	/** A reading's row action carries a node id; turn it into a selection. */
@@ -63,6 +71,9 @@ export interface DetailSheetConfig<S> {
 }
 
 export interface DetailSheet<S> {
+	state: () => DetailSheetState<S>
+	/** Restore host navigation without emitting another navigation. */
+	restore: (state: DetailSheetState<S>) => void
 	openDrawer: (selection: S) => void
 	closeDrawer: () => void
 	/** Cite a source by its key. Throws if no `sourceSelection` was configured. */
@@ -77,17 +88,35 @@ export interface DetailSheet<S> {
 export function createDetailSheet<S>(config: DetailSheetConfig<S>): DetailSheet<S> {
 	const [selection, setSelection] = createSignal<S | null>(null)
 	const [level, setLevel] = createSignal<DetailLevel | null>(null)
+	const [section, setSection] = createSignal<string | undefined>()
 	let opener: HTMLElement | null = null
+	const state = () => ({ selection: selection(), level: level(), section: section() })
+	const restore = (next: DetailSheetState<S>) => {
+		if (JSON.stringify(state()) === JSON.stringify(next)) return
+		if (JSON.stringify(selection()) !== JSON.stringify(next.selection))
+			setSelection(() => next.selection)
+		if (level()?.documentId !== next.level?.documentId) setLevel(next.level)
+		setSection(next.section)
+	}
+	const changeLevel = (next: DetailLevel | null) => {
+		setLevel(next)
+		setSection(undefined)
+		config.onChange?.({ selection: selection(), level: next, section: undefined })
+	}
 
 	const openDrawer = (s: S) => {
 		const active = document.activeElement
 		opener = active instanceof HTMLElement ? active : null
 		setLevel(null)
+		setSection(undefined)
 		setSelection(() => s)
+		config.onChange?.({ selection: s, level: null, section: undefined })
 	}
 	const closeDrawer = () => {
 		setSelection(null)
 		setLevel(null)
+		setSection(undefined)
+		config.onChange?.({ selection: null, level: null, section: undefined })
 		opener?.focus?.()
 		opener = null
 	}
@@ -162,10 +191,19 @@ export function createDetailSheet<S>(config: DetailSheetConfig<S>): DetailSheet<
 										content={() => v().content}
 										onVisit={visit}
 										onOpenDocument={(row) =>
-											setLevel({ kind: 'document', documentId: row.documentId, label: row.label })
+											changeLevel({
+												kind: 'document',
+												documentId: row.documentId,
+												label: row.label,
+											})
 										}
 										upLabel={v().upLabel}
-										onUp={() => setLevel(null)}
+										onUp={() => changeLevel(null)}
+										section={section()}
+										onSectionChange={(value) => {
+											setSection(value)
+											config.onChange?.({ selection: selection(), level: level(), section: value })
+										}}
 										visitLabel={
 											config.visitLabel ? (row) => config.visitLabel?.(row.id) ?? '' : undefined
 										}
@@ -179,5 +217,15 @@ export function createDetailSheet<S>(config: DetailSheetConfig<S>): DetailSheet<
 		)
 	}
 
-	return { openDrawer, closeDrawer, openSource, selection, DetailDrawer, Cite, PositionChip }
+	return {
+		openDrawer,
+		closeDrawer,
+		openSource,
+		selection,
+		state,
+		restore,
+		DetailDrawer,
+		Cite,
+		PositionChip,
+	}
 }

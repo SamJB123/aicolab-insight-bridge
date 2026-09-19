@@ -51,6 +51,9 @@ import { DEFAULT_READING_SORT, ReadingSortControl, sortRows } from './sort-contr
 import './reader.css'
 
 export interface ReadingProps {
+ /** Optional host-owned section title for shareable readings. */
+ section?: string
+ onSectionChange?: (section: string) => void
 	/** Tier or kind name above the title — 'Topic', 'Submitter', 'Family'. */
 	eyebrow?: string
 	title: string
@@ -376,6 +379,8 @@ const STACKED_SECTIONS_MAX = 2
  * chosen section is remembered against the sections array itself, so a new
  * reading starts on its first section without any reactive write. */
 function ReaderSections(props: {
+ section?: string
+ onSectionChange?: (section: string) => void
 	sections: IBContentSection[]
 	onVisit: (id: IBNodeId) => void
 	onHoverNode?: (id: IBNodeId | null) => void
@@ -384,7 +389,11 @@ function ReaderSections(props: {
 }) {
 	const [picked, setPicked] = createSignal<{ of: IBContentSection[]; id: string } | null>(null)
 	const activeId = createMemo(() => {
-		const pick = picked()
+		if (props.onSectionChange) {
+   const at = props.sections.findIndex(section => section.title === props.section)
+   return String(Math.max(0, at))
+  }
+  const pick = picked()
 		return pick && pick.of === props.sections ? pick.id : '0'
 	})
 	const active = createMemo(() => props.sections[Number(activeId())] ?? props.sections[0])
@@ -403,7 +412,11 @@ function ReaderSections(props: {
 			}
 		>
 			<div class="ib-reader-tabs">
-				<SelectControl aria-label="Reading section" value={activeId()} onChange={(event) => setPicked({ of: props.sections, id: event.currentTarget.value })}>
+				<SelectControl aria-label="Reading section" value={activeId()} onChange={(event) => {
+     setPicked({ of: props.sections, id: event.currentTarget.value })
+     const section = props.sections[Number(event.currentTarget.value)]
+     if (section) props.onSectionChange?.(section.title)
+    }}>
 					<For each={props.sections}>{(section, at) => <option value={String(at())}>{section.title}</option>}</For>
 				</SelectControl>
 			</div>
@@ -501,7 +514,7 @@ export function Reading(props: ReadingProps) {
 												</div>
 											</Show>
 										</div>
-										<ReaderSections sections={content().sections} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={visitLabel()} />
+										<ReaderSections section={props.section} onSectionChange={props.onSectionChange} sections={content().sections} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={visitLabel()} />
 										<Show when={props.contributors ?? content().contributors}>{(groups) => <Contributors groups={groups()} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />}</Show>
 										<Show when={(content().related?.length ?? 0) > 0}>
 											<section class="ib-reader-section">

@@ -48,7 +48,19 @@ function BriefBody(props: { d: BriefData }) {
 	// component body both warns and reads once.
 	const d = () => props.d
 	const hover = createHover()
-	const [expandAll, setExpandAll] = createSignal(false)
+	const [localExpandAll, setLocalExpandAll] = createSignal(false)
+	const chapterKeys = () =>
+		d().flat
+			? d().topicOrder.map((id) => `t-${id}`)
+			: Object.keys(d().themes).map((id) => `t-${id}`)
+	const expandAll = () =>
+		s.onExpandedChaptersChange
+			? chapterKeys().every((key) => s.expandedChapters?.includes(key))
+			: localExpandAll()
+	const setExpandAll = () => {
+		if (s.onExpandedChaptersChange) s.onExpandedChaptersChange(expandAll() ? [] : chapterKeys())
+		else setLocalExpandAll((value) => !value)
+	}
 	const single = () => d().singleGeneration
 	const themeCount = () => Object.keys(d().themes).length
 	/** With no tree, or one generation, the whole sky sits above the chapters. */
@@ -69,7 +81,9 @@ function BriefBody(props: { d: BriefData }) {
 			navLabel={navLabel()}
 			maxWidth="92rem"
 			sideWidth="15rem"
-			stickyTop="var(--mast-h)"
+			// The host's main pane already starts below its masthead. Sticky
+			// offsets are relative to that pane, not the browser viewport.
+			stickyTop="0px"
 		>
 			<header class="ib-bp-head">
 				<h1 class="ib-bp-title">{s.vocabulary.title}</h1>
@@ -129,7 +143,7 @@ function BriefBody(props: { d: BriefData }) {
 					<button
 						type="button"
 						class="ib-bp-btn"
-						onClick={() => setExpandAll((v) => !v)}
+						onClick={setExpandAll}
 						aria-pressed={expandAll() ? 'true' : 'false'}
 					>
 						{expandAll() ? `Fold every ${unit()}` : `Unfold every ${unit()}`}
@@ -234,14 +248,31 @@ function ChapterLink(props: { href: string; num: number; node: BriefNode; themes
 
 /** A folded reading, with the summary line every chapter shares. The children
  *  are a JSX getter, so nothing inside is built until the fold is open. */
-function Fold(props: { label: string; note: string; expandAll: boolean; children?: JSX.Element }) {
+function Fold(props: {
+	chapterKey: string
+	label: string
+	note: string
+	expandAll: boolean
+	children?: JSX.Element
+}) {
 	const [opened, setOpened] = createSignal(false)
-	const isOpen = () => props.expandAll || opened()
+	const s = useBriefSurface()
+	const isOpen = () =>
+		s.onExpandedChaptersChange
+			? !!s.expandedChapters?.includes(props.chapterKey)
+			: props.expandAll || opened()
 	return (
 		<details
 			class="ib-bp-read"
 			open={isOpen() || undefined}
-			onToggle={(e) => e.currentTarget.open && setOpened(true)}
+			onToggle={(e) => {
+				const open = e.currentTarget.open
+				if (s.onExpandedChaptersChange) {
+					if (open === isOpen()) return
+					const keys = (s.expandedChapters ?? []).filter((key) => key !== props.chapterKey)
+					s.onExpandedChaptersChange(open ? [...keys, props.chapterKey] : keys)
+				} else if (open) setOpened(true)
+			}}
 		>
 			<summary class="ib-bp-read-s">
 				<span class="ib-bp-read-t">{props.label}</span>
@@ -279,6 +310,7 @@ function TopicChapter(props: {
 					<p class="ib-bp-desc">{c().description}</p>
 					<FactsStrip d={props.d} node={c()} />
 					<Fold
+						chapterKey={`t-${props.id}`}
 						label="Read the topic"
 						note={`key points and quotes · who says what · ${s.vocabulary.sources} that push back`}
 						expandAll={props.expandAll}
@@ -347,6 +379,7 @@ function ThemeChapter(props: {
 				<TopicList d={props.d} ids={props.t.topicIds} hover={props.hover} headings />
 			</section>
 			<Fold
+				chapterKey={`t-${props.t.id}`}
 				label="Read the theme"
 				note={`key points and quotes · who says what · ${s.vocabulary.sources} that push back`}
 				expandAll={props.expandAll}
@@ -483,6 +516,7 @@ function ThemeSection(props: {
 				</div>
 			</Show>
 			<Fold
+				chapterKey={`t-${props.t.id}`}
 				label="Read the theme"
 				note={`${plural(props.t.topics, 'topic')} · key points and quotes · who says what · ${s.vocabulary.sources} that push back`}
 				expandAll={props.expandAll}
