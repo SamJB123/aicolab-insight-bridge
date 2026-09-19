@@ -164,6 +164,15 @@ export interface BriefConfig {
 	 * declares it, and every "agrees" and "pushes back" figure follows.
 	 */
 	positions?: PositionScale
+	/**
+	 * The database holds ONE build and says nothing about builds: no
+	 * `run_current_build` row, no `build_id` on memberships or superclusters,
+	 * no `retired_build_id` on topics. An app prepared that way (its prepare
+	 * step kept the committed build only) declares it here, and the Brief reads
+	 * the tables whole. Left unset, the Brief resolves the committed build and
+	 * scopes every build-carrying read to it.
+	 */
+	singleBuild?: boolean
 }
 
 const pct = (n: number, d: number) => Math.round((100 * n) / (d || 1))
@@ -196,7 +205,8 @@ type TreeNode = {
 }
 
 export async function briefData(db: BriefDb, config: BriefConfig): Promise<BriefData> {
-	const build = await currentBuildId(db)
+	const single = config.singleBuild === true
+	const build = single ? NO_BUILD : await currentBuildId(db)
 	const keys = await analysedFacets(db)
 	const scale = config.positions ?? DEFAULT_SCALE
 	const supportive = new Set(scale.supportive ?? [])
@@ -229,7 +239,7 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 				description: topicCluster.description,
 			})
 			.from(topicCluster)
-			.where(and(ne(topicCluster.junkStatus, 'confirmed'), isNull(topicCluster.retiredBuildId))),
+			.where(single ? ne(topicCluster.junkStatus, 'confirmed') : and(ne(topicCluster.junkStatus, 'confirmed'), isNull(topicCluster.retiredBuildId))),
 		db
 			.select({
 				superclusterId: supercluster.superclusterId,
@@ -239,7 +249,7 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 				topicClusterId: supercluster.topicClusterId,
 			})
 			.from(supercluster)
-			.where(eq(supercluster.buildId, build)),
+			.where(single ? undefined : eq(supercluster.buildId, build)),
 		// Edges have no build of their own; they belong to the build their PARENT
 		// node belongs to, so they are reached through it (the same join the zone's
 		// own hierarchy read uses).
@@ -256,7 +266,7 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 				supercluster,
 				eq(superclusterEdge.parentSuperclusterId, supercluster.superclusterId),
 			)
-			.where(eq(supercluster.buildId, build)),
+			.where(single ? undefined : eq(supercluster.buildId, build)),
 		db
 			.select({
 				topicClusterId: entityTopicClusterMembership.topicClusterId,
@@ -264,7 +274,7 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 				membershipType: entityTopicClusterMembership.membershipType,
 			})
 			.from(entityTopicClusterMembership)
-			.where(eq(entityTopicClusterMembership.buildId, build)),
+			.where(single ? undefined : eq(entityTopicClusterMembership.buildId, build)),
 		db
 			.select({
 				topicClusterId: clusterEntityPerspective.topicClusterId,
