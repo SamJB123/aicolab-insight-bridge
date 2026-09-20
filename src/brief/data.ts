@@ -14,21 +14,20 @@
  * reads joined in TypeScript, which is both cheaper than id-list queries and
  * clear of D1's ~100 bound-parameter cap.
  */
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import {
 	clusterEntityPerspective,
 	clusterKeyPerspective,
 	clusterKeyPoint,
 	clusterKeyPointQuote,
+	currentEntityMembership,
+	currentSupercluster,
+	currentSuperclusterEdge,
+	currentTopic,
 	entity,
-	entityTopicClusterMembership,
 	facetAssignment,
 	facet as facetTable,
-	runCurrentBuild,
-	supercluster,
-	superclusterEdge,
-	topicCluster,
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
 import type {
@@ -59,25 +58,15 @@ import type {
  */
 export type BriefDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
-/**
- * The build every reader sees: the one `run_current_build` names, resolved once
- * at the top of a read and scoped with below. A corpus keeps every clustering
- * it ever made (topics keep their identity across them), and reading the
- * memberships of all of them at once would count a contributor placed by two
- * builds as two contributors — so nothing here reads a build-carrying table
- * without this predicate. It is the current-version-pointer pattern Iceberg and
- * Delta use: resolve, then scope every read.
- *
- * A corpus that has clustered but not committed names no build. It is scoped to
- * a build id no row can carry (the pipeline zone's own convention), so it reads
- * as empty — which is the truth about it, and not the same thing as reading
- * everything and reporting inflated numbers.
+/*
+ * WHICH BUILD, WHICH TOPICS. A corpus keeps every clustering it ever made, and
+ * a reviewer may confirm topics as junk. Which rows a reader should see is
+ * answered by the database, once: the `current_*` views of the canonical
+ * schema (contracts schema/views.ts) hold the committed build's live,
+ * substantive rows, and everything below reads those views. Nothing here
+ * names a build, and a corpus that has clustered but not committed reads as
+ * empty, which is the truth about it.
  */
-export const NO_BUILD = -1
-export async function currentBuildId(db: BriefDb): Promise<number> {
-	const rows = await db.select({ buildId: runCurrentBuild.buildId }).from(runCurrentBuild).limit(1)
-	return rows[0]?.buildId ?? NO_BUILD
-}
 
 /** The pipeline's position vocabulary, supportive first. */
 export const POSITIONS = [
@@ -164,15 +153,6 @@ export interface BriefConfig {
 	 * declares it, and every "agrees" and "pushes back" figure follows.
 	 */
 	positions?: PositionScale
-	/**
-	 * The database holds ONE build and says nothing about builds: no
-	 * `run_current_build` row, no `build_id` on memberships or superclusters,
-	 * no `retired_build_id` on topics. An app prepared that way (its prepare
-	 * step kept the committed build only) declares it here, and the Brief reads
-	 * the tables whole. Left unset, the Brief resolves the committed build and
-	 * scopes every build-carrying read to it.
-	 */
-	singleBuild?: boolean
 }
 
 const pct = (n: number, d: number) => Math.round((100 * n) / (d || 1))
@@ -205,8 +185,6 @@ type TreeNode = {
 }
 
 export async function briefData(db: BriefDb, config: BriefConfig): Promise<BriefData> {
-	const single = config.singleBuild === true
-	const build = single ? NO_BUILD : await currentBuildId(db)
 	const keys = await analysedFacets(db)
 	const scale = config.positions ?? DEFAULT_SCALE
 	const supportive = new Set(scale.supportive ?? [])
@@ -230,51 +208,39 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 					.from(facetTable)
 					.where(inArray(facetTable.facet, keys))
 			: Promise.resolve([]),
-		// Live topics only: a rebuild never deletes a topic, it stamps
-		// `retired_build_id` on the ones it dropped, so identity survives re-clustering.
+		// The committed build's live, substantive topics — the view decides.
 		db
 			.select({
-				topicClusterId: topicCluster.topicClusterId,
-				title: topicCluster.title,
-				description: topicCluster.description,
+				topicClusterId: currentTopic.topicClusterId,
+				title: currentTopic.title,
+				description: currentTopic.description,
 			})
-			.from(topicCluster)
-			.where(single ? ne(topicCluster.junkStatus, 'confirmed') : and(ne(topicCluster.junkStatus, 'confirmed'), isNull(topicCluster.retiredBuildId))),
+			.from(currentTopic),
 		db
 			.select({
-				superclusterId: supercluster.superclusterId,
-				generation: supercluster.generation,
-				title: supercluster.title,
-				description: supercluster.description,
-				topicClusterId: supercluster.topicClusterId,
+				superclusterId: currentSupercluster.superclusterId,
+				generation: currentSupercluster.generation,
+				title: currentSupercluster.title,
+				description: currentSupercluster.description,
+				topicClusterId: currentSupercluster.topicClusterId,
 			})
-			.from(supercluster)
-			.where(single ? undefined : eq(supercluster.buildId, build)),
-		// Edges have no build of their own; they belong to the build their PARENT
-		// node belongs to, so they are reached through it (the same join the zone's
-		// own hierarchy read uses).
+			.from(currentSupercluster),
 		db
 			.select({
-				childSuperclusterId: superclusterEdge.childSuperclusterId,
-				parentSuperclusterId: superclusterEdge.parentSuperclusterId,
-				similarity: superclusterEdge.similarity,
-				membershipType: superclusterEdge.membershipType,
-				isPrimary: superclusterEdge.isPrimary,
+				childSuperclusterId: currentSuperclusterEdge.childSuperclusterId,
+				parentSuperclusterId: currentSuperclusterEdge.parentSuperclusterId,
+				similarity: currentSuperclusterEdge.similarity,
+				membershipType: currentSuperclusterEdge.membershipType,
+				isPrimary: currentSuperclusterEdge.isPrimary,
 			})
-			.from(superclusterEdge)
-			.innerJoin(
-				supercluster,
-				eq(superclusterEdge.parentSuperclusterId, supercluster.superclusterId),
-			)
-			.where(single ? undefined : eq(supercluster.buildId, build)),
+			.from(currentSuperclusterEdge),
 		db
 			.select({
-				topicClusterId: entityTopicClusterMembership.topicClusterId,
-				entityUuid: entityTopicClusterMembership.entityUuid,
-				membershipType: entityTopicClusterMembership.membershipType,
+				topicClusterId: currentEntityMembership.topicClusterId,
+				entityUuid: currentEntityMembership.entityUuid,
+				membershipType: currentEntityMembership.membershipType,
 			})
-			.from(entityTopicClusterMembership)
-			.where(single ? undefined : eq(entityTopicClusterMembership.buildId, build)),
+			.from(currentEntityMembership),
 		db
 			.select({
 				topicClusterId: clusterEntityPerspective.topicClusterId,

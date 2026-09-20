@@ -21,8 +21,6 @@ export {
 	type BriefDb,
 	briefData,
 	chapterReading,
-	currentBuildId,
-	NO_BUILD,
 	type FacetHint,
 	generationLabel,
 	POSITIONS,
