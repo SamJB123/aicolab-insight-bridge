@@ -42,7 +42,7 @@ import aiColabIcon from './ai-colab-icon.svg?url'
 /**
  * The AI CoLab mark.
  *
- * `ai-colab-icon.svg` is a byte-for-byte copy of `workers/landing/public/icon.svg`
+ * `ai-colab-icon.svg` is a byte-for-byte copy of `platform/landing/public/icon.svg`
  * — the real logo, unedited. It is referenced as an asset rather than inlined so
  * nothing about it is altered: its own fills are preserved (it does NOT inherit
  * currentColor), and its class names cannot collide with a host app's CSS.

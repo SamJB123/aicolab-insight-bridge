@@ -75,10 +75,10 @@ positions and the CPU pick mirror.
 
 ## Developing
 
-A git submodule of the `aicolab-portal` monorepo (`packages/insight-bridge`).
+A git submodule of the `aicolab-portal` monorepo (`insight-bridge/core`).
 `pnpm test`, `pnpm check-types`. Host integrations to learn from live in the
-monorepo's `playground/audit-corpus`, `playground/insightbridge-legal-ai` and
-`playground/insightbridge-basin`.
+monorepo's `insight-bridge/apps/audit-corpus`, `insight-bridge/apps/legal-ai` and
+`insight-bridge/apps/basin`.
 
 ## Versioning and publishing
 
