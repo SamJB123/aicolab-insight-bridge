@@ -22,6 +22,7 @@ import { Panel } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { CORPORA, siblings } from './corpora.ts'
+import { GENERIC_METHOD_COPY } from './method.ts'
 
 /**
  * Links into the HOST's own routes are supplied by the host as ready-made
@@ -228,25 +229,27 @@ const STAGES: { n: string; title: string; body: string }[] = [
 		title: 'Extraction',
 		body: 'Every document is read end-to-end by a language model, which pulls out its key points with verbatim supporting quotes, tags it against controlled vocabularies, and records structured analyses such as the claims it makes and the evidence offered for each.',
 	},
+	// Stages 04–07 are the pipeline's own and read from `method.ts`, which is
+	// where the rule about what these sentences may and may not say is written.
 	{
 		n: '04',
 		title: 'Clustering',
-		body: 'Passages are embedded and clustered from the bottom up, and the resulting hierarchy is cut at its leaves: the smallest coherent groupings survive instead of being absorbed into the broad, stable ones above them. A distance penalty pushes a single source’s own passages apart, so a topic has to be reached by several sources. The topic list is an output of this stage; nothing supplies it beforehand.',
+		body: `${GENERIC_METHOD_COPY.clustering} The smallest coherent groupings are kept as their own topics instead of being absorbed into broad ones above them.`,
 	},
 	{
 		n: '05',
 		title: 'Membership',
-		body: 'Each topic then works out which dimensions of meaning actually separate it from the rest of the corpus, and grades every passage on that topic’s own measure. A passage is an exemplar of a topic, a high-value member, or a member, so the strongest evidence for a topic can be told apart from its edges.',
+		body: `${GENERIC_METHOD_COPY.membership} The strongest evidence for a topic can therefore be told apart from its edges.`,
 	},
 	{
 		n: '06',
 		title: 'Perspectives',
-		body: 'Each cluster’s proposition is synthesised from its members first. Only then is every engaged source assessed against that completed proposition, giving a position and the reasoning behind it. The same is done per lens value, producing the comparative views.',
+		body: `${GENERIC_METHOD_COPY.positions} The same is done per lens value, producing the comparative views. ${GENERIC_METHOD_COPY.evidence}`,
 	},
 	{
 		n: '07',
 		title: 'Grouping',
-		body: 'The topics are clustered again by the same method, this time on a representative vector for each, producing themes and then families above them, until the top generation is small enough to hold in your head. Membership stays soft at every level, so a topic can belong to more than one theme, with one marked primary. What you get is a tree you can walk down and cross-links you can follow sideways.',
+		body: GENERIC_METHOD_COPY.hierarchy,
 	},
 ]
 
@@ -311,8 +314,9 @@ export function InsightBridgeRespect() {
 				<li>
 					<strong>The minority.</strong> How common a view is in a corpus does not automatically say
 					how much it matters. Whether you want the position of a specific community or a specialist
-					perspective is a judgement only you can make. Cutting the clustering at its leaves keeps
-					each small distinct concern as its own topic.
+					perspective is a judgement only you can make. Keeping the smallest coherent groupings as
+					their own topics, instead of folding them into broad ones, keeps each small distinct
+					concern visible.
 				</li>
 				<li>
 					<strong>Your judgement.</strong> You bring your own context, priorities, and principles.
@@ -353,9 +357,9 @@ export function InsightBridgeReading(props: ReadingProps) {
 					that covers similar ground differently.
 				</li>
 				<li>
-					<strong>Propositions are synthesised from the cluster’s own members.</strong> Because the
-					argument is built from the sources that were grouped together, and those sources are then
-					assessed against it, a degree of agreement is built into the method. Comparisons between
+					<strong>Propositions are written from the cluster’s own members.</strong> Because the
+					argument is built from the sources that were grouped together, and positions are read
+					relative to it, a degree of agreement is built into the method. Comparisons between
 					groups carry weight; a corpus-wide agreement rate does not.
 				</li>
 				<li>

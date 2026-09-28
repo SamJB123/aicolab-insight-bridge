@@ -8,6 +8,9 @@
  *     can do with any of them.
  *   • THE READING RULES — `InsightBridgeReading`, mounted on the consumer's
  *     method page beside its own account of its run.
+ *   • THE METHOD COPY — `methodCopy`, the sentences a host's own method page
+ *     uses for the stages the pipeline runs the same way everywhere, in the
+ *     host's nouns. Also at `@aicolab/insight-bridge/method` for server modules.
  *
  * Both render inside the host, so they inherit the host's theme.
  *
@@ -44,3 +47,4 @@ export {
 	type PoweredByInsightBridgeProps,
 } from './brand.tsx'
 export { type Corpus, CORPORA, siblings } from './corpora.ts'
+export { GENERIC_METHOD_COPY, type MethodCopy, type MethodNouns, methodCopy } from './method.ts'
