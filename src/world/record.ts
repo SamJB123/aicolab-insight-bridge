@@ -90,7 +90,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 	const [
 		entityRows,
 		documentRows,
-		docPointCounts,
+		docPointRows,
 		topicRows,
 		scRows,
 		edgeRows,
@@ -119,9 +119,9 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 			})
 			.from(document),
 		db
-			.select({ documentId: keyPoint.documentId, n: count() })
+			.select({ documentId: keyPoint.documentId, point: keyPoint.keyPoint })
 			.from(keyPoint)
-			.groupBy(keyPoint.documentId),
+			.orderBy(asc(keyPoint.keyPointId)),
 		db
 			.select({
 				id: currentTopic.topicClusterId,
@@ -428,7 +428,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 	})
 
 	/* ── sources ── */
-	const docPoints = new Map(docPointCounts.map((r) => [r.documentId, num(r.n)]))
+	const docPoints = grouped(docPointRows, (r) => r.documentId)
 	const docsByEntity = grouped(documentRows, (d) => d.entityUuid)
 	const weakByEntity = new Map<string, number>()
 	for (const m of memberRows) {
@@ -443,7 +443,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 		documents: (docsByEntity.get(e.uuid) ?? []).map((d) => ({
 			id: d.id,
 			title: d.title ?? d.fileName,
-			keyPoints: docPoints.get(d.id) ?? 0,
+			points: (docPoints.get(d.id) ?? []).map((r) => r.point),
 		})),
 		memberOnly: weakByEntity.get(e.uuid) ?? 0,
 	}))

@@ -143,8 +143,10 @@ export const worldDocumentSchema = z
 	.object({
 		id: id,
 		title: z.string(),
-		/** How many key points the pipeline drew from it; the points themselves are a reading (`worldReading`). */
-		keyPoints: z.number().int(),
+		/** The headlines of the key points the pipeline drew from it, in order
+		 *  (a room writes them up where the document is read); each point's
+		 *  details and quotes are a reading (`worldReading`). */
+		points: z.array(z.string()).readonly(),
 	})
 	.readonly()
 export type WorldDocument = z.infer<typeof worldDocumentSchema>
