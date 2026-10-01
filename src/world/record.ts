@@ -305,9 +305,11 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 			})
 		const siteFacet = site?.facets[key]
 		const noun = declared?.noun ?? key
+		const heading = siteFacet?.heading ?? noun.charAt(0).toUpperCase() + noun.slice(1)
 		return {
 			key,
-			heading: siteFacet?.heading ?? noun.charAt(0).toUpperCase() + noun.slice(1),
+			heading,
+			headingPlural: siteFacet?.headingPlural ?? `${heading}s`,
 			values: values.map((value) => ({
 				value,
 				label: siteFacet?.values[value] ?? value,
