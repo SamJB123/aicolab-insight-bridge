@@ -65,20 +65,12 @@ export type WorldSite = z.infer<typeof worldSiteSchema>
 /** A facet the run ANALYSED (it wrote comparative perspectives along it) — the
  *  only facets that become doorways. Values in the profile's order where it
  *  declares one, else by how many sources carry each. */
-/** The heading's plural: the facet as a level of a place ("Sectors") — the
- *  declared one, else the heading with an "s". The one rule, used where the
- *  record is written and where an older record is read. */
-export const facetHeadingPlural = (heading: string, declared?: string | null): string =>
-	declared ?? `${heading}s`
-
-/** A record is served cached (an hour, by design), so a field added here
- *  is OPTIONAL to read with its default derived on parse: a record written
- *  before the field existed must still parse after it does. */
 export const worldFacetSchema = z
 	.object({
 		key: id,
 		heading: z.string().min(1),
-		headingPlural: z.string().min(1).optional(),
+		/** The heading's plural: the facet as a level of a place ("Sectors"). */
+		headingPlural: z.string().min(1),
 		values: z
 			.array(
 				z.object({ value: z.string(), label: z.string(), sources: z.number().int() }).readonly(),
@@ -86,10 +78,6 @@ export const worldFacetSchema = z
 			.readonly(),
 	})
 	.readonly()
-	.transform((facet) => ({
-		...facet,
-		headingPlural: facetHeadingPlural(facet.heading, facet.headingPlural),
-	}))
 export type WorldFacet = z.infer<typeof worldFacetSchema>
 
 export const worldGenerationSchema = z
