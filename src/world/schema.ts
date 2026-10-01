@@ -69,8 +69,6 @@ export const worldFacetSchema = z
 	.object({
 		key: id,
 		heading: z.string().min(1),
-		/** The heading's plural: the facet as a level of a place ("Sectors"). */
-		headingPlural: z.string().min(1),
 		values: z
 			.array(
 				z.object({ value: z.string(), label: z.string(), sources: z.number().int() }).readonly(),
