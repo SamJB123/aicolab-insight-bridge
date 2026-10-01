@@ -55,6 +55,7 @@ import {
 	type WorldSource,
 	type WorldTask,
 	type WorldTopic,
+	facetHeadingPlural,
 	worldGenerationLabel,
 	worldReadingSchema,
 	worldRecordSchema,
@@ -309,7 +310,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 		return {
 			key,
 			heading,
-			headingPlural: siteFacet?.headingPlural ?? `${heading}s`,
+			headingPlural: facetHeadingPlural(heading, siteFacet?.headingPlural),
 			values: values.map((value) => ({
 				value,
 				label: siteFacet?.values[value] ?? value,
