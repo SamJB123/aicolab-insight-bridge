@@ -19,6 +19,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./brief": "./src/brief/index.ts",
+		"./corpora": "./src/corpora.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",
 		"./galaxy": "./src/galaxy/index.ts",
@@ -33,6 +34,8 @@
 		"./sources/data": "./src/sources/data.ts",
 		"./sources/types": "./src/sources/types.ts",
 		"./styles.css": "./src/styles.css",
+		"./world": "./src/world/index.ts",
+		"./world/record": "./src/world/record.ts",
 		"./package.json": "./package.json",
 		"./reading-url": "./src/reading-url.tsx"
 	},
