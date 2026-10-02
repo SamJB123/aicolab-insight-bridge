@@ -197,9 +197,12 @@
 
 		/* The content's own notice — the design system's callout, scaled to the
 		   reading. The band carries the title; the body the why and the who. */
+		/* The callout's knobs are single lengths: `pad` is the body padding and
+		   the basis of the band's inline padding, `bandPad` the band's block
+		   padding. */
 		.ib-reader-notice {
-			--ui-callout-pad: 0.75rem 0.9rem;
-			--ui-callout-band-pad: 0.4rem 0.9rem;
+			--ui-callout-pad: 0.9rem;
+			--ui-callout-band-pad: 0.4rem;
 			--ui-callout-radius: var(--r-sm);
 			font-size: var(--t-sm);
 		}
@@ -355,8 +358,8 @@
 				max-inline-size: 26rem;
 			}
 			.ib-reader-notice {
-				--ui-callout-pad: 1rem 1.2rem;
-				--ui-callout-band-pad: 0.5rem 1.2rem;
+				--ui-callout-pad: 1.1rem;
+				--ui-callout-band-pad: 0.5rem;
 				max-inline-size: 78ch;
 				font-size: 0.98rem;
 			}
