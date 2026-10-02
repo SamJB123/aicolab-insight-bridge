@@ -10,8 +10,18 @@ import { createContext, useContext } from 'solid-js'
 import type { BriefVocabulary, ChapterReading } from './types.ts'
 
 export interface BriefSurface {
-	/** Optional URL-owned folded chapters. Omit to keep local state. */
-	expandedChapters?: string[]
+	/**
+	 * Optional URL-owned folded chapters, as an ACCESSOR. Omit to keep local
+	 * state.
+	 *
+	 * An accessor, not a value, on purpose (Solid 2): the surface is handed to
+	 * a context, which captures the object once, so anything that changes
+	 * over the page's life must be read lazily through a function. A function
+	 * also survives being copied — a host that spreads a navigation helper
+	 * into this object copies the accessor by reference, where a plain value
+	 * or a getter would be snapshotted at the moment of the spread.
+	 */
+	expandedChapters?: () => string[]
 	onExpandedChaptersChange?: (keys: string[]) => void
 	vocabulary: BriefVocabulary
 	/** The position vocabulary in canonical order, supportive first. */

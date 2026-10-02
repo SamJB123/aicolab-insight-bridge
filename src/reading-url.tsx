@@ -53,9 +53,10 @@ export function useReadingNavigation() {
 	return {
 		change,
 		brief: {
-			get expandedChapters() {
-				return expandedSearch(location().search.expanded) ?? []
-			},
+			// An accessor (the Brief's contract), so a host may spread this object
+			// into its surface: a function copies by reference and still reads
+			// the live location when called; a getter would be snapshotted.
+			expandedChapters: () => expandedSearch(location().search.expanded) ?? [],
 			onExpandedChaptersChange(expanded: string[]) {
 				const previous = expandedSearch(location().search.expanded) ?? []
 				change(

@@ -55,7 +55,7 @@ function BriefBody(props: { d: BriefData }) {
 			: Object.keys(d().themes).map((id) => `t-${id}`)
 	const expandAll = () =>
 		s.onExpandedChaptersChange
-			? chapterKeys().every((key) => s.expandedChapters?.includes(key))
+			? chapterKeys().every((key) => s.expandedChapters?.().includes(key))
 			: localExpandAll()
 	const setExpandAll = () => {
 		if (s.onExpandedChaptersChange) s.onExpandedChaptersChange(expandAll() ? [] : chapterKeys())
@@ -247,7 +247,9 @@ function ChapterLink(props: { href: string; num: number; node: BriefNode; themes
 }
 
 /** A folded reading, with the summary line every chapter shares. The children
- *  are a JSX getter, so nothing inside is built until the fold is open. */
+ *  are a JSX getter, so nothing inside is built until the fold first opens;
+ *  once built it stays, hidden by the closed `details`, so the chapter's
+ *  reading is fetched once per page visit however often it is folded. */
 function Fold(props: {
 	chapterKey: string
 	label: string
@@ -259,8 +261,14 @@ function Fold(props: {
 	const s = useBriefSurface()
 	const isOpen = () =>
 		s.onExpandedChaptersChange
-			? !!s.expandedChapters?.includes(props.chapterKey)
+			? !!s.expandedChapters?.().includes(props.chapterKey)
 			: props.expandAll || opened()
+	// The reading is built the first time the fold opens and KEPT: a memo that
+	// latches (its own previous value, or the fold's state) so that folding the
+	// chapter back hides the reading — the native `details` does that — rather
+	// than disposing it, and unfolding it again costs no fetch. The reading's
+	// own async memo lives in the subtree, so it lives as long as this latch.
+	const everOpened = createMemo<boolean>((prev) => prev === true || isOpen())
 	return (
 		<details
 			class="ib-bp-read"
@@ -269,7 +277,7 @@ function Fold(props: {
 				const open = e.currentTarget.open
 				if (s.onExpandedChaptersChange) {
 					if (open === isOpen()) return
-					const keys = (s.expandedChapters ?? []).filter((key) => key !== props.chapterKey)
+					const keys = (s.expandedChapters?.() ?? []).filter((key) => key !== props.chapterKey)
 					s.onExpandedChaptersChange(open ? [...keys, props.chapterKey] : keys)
 				} else if (open) setOpened(true)
 			}}
@@ -278,7 +286,7 @@ function Fold(props: {
 				<span class="ib-bp-read-t">{props.label}</span>
 				<span class="ib-bp-read-n">{props.note}</span>
 			</summary>
-			<Show when={isOpen()}>{props.children}</Show>
+			<Show when={everOpened()}>{props.children}</Show>
 		</details>
 	)
 }
