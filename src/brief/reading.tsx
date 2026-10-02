@@ -18,7 +18,7 @@ import type { BriefData, BriefTopic, Pushback as PushbackRow, ReadingPoint } fro
 export function Quote(props: { q: NonNullable<ReadingPoint['quote']> }) {
 	const s = useBriefSurface()
 	return (
-		<blockquote class="ib-bp-rq">
+		<blockquote class={['ib-bp-rq', { 'ib-bp-rq-withheld': props.q.withheld === true }]}>
 			<p class="ib-bp-rq-text">{props.q.text}</p>
 			<footer class="ib-bp-rq-src">
 				<button type="button" class="ib-bp-rq-btn" onClick={() => s.openSource(props.q.entityId)}>
@@ -173,7 +173,7 @@ export function Pushback(props: {
 			<ul class="ib-bp-pb">
 				<For each={props.rows}>
 					{(r) => (
-						<li class={['ib-bp-pb-row', { 'is-active': props.hover?.active() === r.topicId }]}>
+						<li class={['ib-bp-pb-row', { 'is-active': props.hover?.active() === r.topicId, 'ib-bp-pb-withheld': r.withheld === true }]}>
 							<div class="ib-bp-pb-head">
 								<SourceChip id={r.entityId} name={r.name} detail={r.detail} />
 								<Show when={r.detail}>

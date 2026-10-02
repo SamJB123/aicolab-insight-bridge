@@ -122,6 +122,26 @@ export interface IBQuote {
 	text: string
 	/** Attribution — entity/body/source name, year, etc. */
 	source?: string
+	/** The quote's words are WITHHELD and `text` is the notice standing in
+	 * for them (a source whose content is gated — Indigenous Cultural and
+	 * Intellectual Property under a restricted deployment). Renders as a
+	 * notice, never as a quotation. */
+	withheld?: boolean
+}
+
+/** A notice the content itself carries — a cultural notice on gated
+ * material, a withheld-content card. Rendered as a banded callout, first
+ * among the sections, with the attribution and any way forward. */
+export interface IBNotice {
+	/** 'withheld' reads as a warning band; 'info' as a quiet one. */
+	tone: 'withheld' | 'info'
+	title: string
+	body: string
+	/** Who the notice is about — the custodian, as the record names them. */
+	attribution?: string
+	/** Links the reader can follow (a sign-in, a contact). `href` may be a
+	 * `mailto:`. */
+	links?: Array<{ label: string; href: string }>
 }
 
 export interface IBPoint {
@@ -193,6 +213,7 @@ export interface IBNodeRow {
 }
 
 export type IBContentSection =
+	| { kind: 'notice'; title: string; notice: IBNotice }
 	| { kind: 'points'; title: string; points: IBPoint[] }
 	| { kind: 'facets'; title: string; rows: IBFacetRow[] }
 	| { kind: 'entities'; title: string; rows: IBEntityRow[] }

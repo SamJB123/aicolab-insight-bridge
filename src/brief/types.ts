@@ -142,6 +142,10 @@ export interface ReadingQuote {
 	entityId: string
 	/** The speaker's primary values on the declared facets. */
 	detail: string | null
+	/** The words are WITHHELD and `text` is the notice standing in for them
+	 * (a contributor whose content the app gates — Indigenous Cultural and
+	 * Intellectual Property under a restricted deployment). */
+	withheld?: boolean
 }
 
 export interface ReadingPoint {
@@ -167,8 +171,13 @@ export interface Pushback {
 	name: string
 	detail: string | null
 	position: string
+	/** The pipeline's title for the stance; the notice when `withheld`. */
 	title: string
+	/** Empty when `withheld`. */
 	analysis: string
+	/** The stance's text is withheld (see `ReadingQuote.withheld`); the
+	 * contributor and its position label stay. */
+	withheld?: boolean
 }
 
 export interface ChapterReading {

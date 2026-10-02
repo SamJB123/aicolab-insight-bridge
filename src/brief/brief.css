@@ -690,6 +690,18 @@
 			line-height: 1.55;
 			color: var(--color-base-content-muted);
 		}
+		/* A withheld quote: the notice standing in for the words — upright,
+		   under a warning-coloured rule, still attributed. */
+		.ib-bp-rq-withheld {
+			border-left-color: color-mix(in oklab, var(--color-warning, #b8860b) 70%, transparent);
+		}
+		.ib-bp-rq-withheld .ib-bp-rq-text {
+			font-style: normal;
+		}
+		.ib-bp-pb-withheld .ib-bp-pb-title {
+			font-style: normal;
+			color: var(--color-base-content-muted);
+		}
 		.ib-bp-rq-src {
 			margin-top: 0.3rem;
 			display: flex;

@@ -9,6 +9,9 @@
  *   lede     the pipeline's description
  *   stats    headline figures as chips
  *   sections stacked when two or fewer, behind a picker past that
+ *              notice   — a banded callout the content carries (withheld
+ *                         content, a cultural notice); never counted toward
+ *                         the picker threshold, always rendered above it
  *              points   — accordion, first open, several may be open
  *              facets   — analysed rows as an accordion (badge, analysis,
  *                         PROVENANCE QUOTES, share meter, visit chip); bare
@@ -28,6 +31,7 @@
 import {
 	Accordion,
 	AccordionItem,
+	Callout,
 	Eyebrow,
 	InspectorHeader,
 	Meter,
@@ -44,6 +48,7 @@ import type {
 	IBFlag,
 	IBNodeContent,
 	IBNodeId,
+	IBNotice,
 	IBPoint,
 	IBQuote,
 } from '../galaxy/types.ts'
@@ -114,12 +119,40 @@ function Quotes(props: { quotes: IBQuote[] | undefined }) {
 	return (
 		<For each={props.quotes ?? []}>
 			{(quote) => (
-				<blockquote>
+				<blockquote class={{ 'ib-reader-withheld': quote.withheld === true }}>
 					{quote.text}
 					<Show when={quote.source}>{(source) => <cite>{source()}</cite>}</Show>
 				</blockquote>
 			)}
 		</For>
+	)
+}
+
+/** A notice the content carries — a withheld-content card or a cultural
+ * notice — as the design system's banded callout. */
+function NoticeSection(props: { notice: IBNotice }) {
+	return (
+		<Callout
+			as="aside"
+			class={{ 'ib-reader-notice': true, 'ib-reader-notice-withheld': props.notice.tone === 'withheld' }}
+			colorBase={props.notice.tone === 'withheld' ? 'warning' : 'info'}
+			variant="soft"
+			band={() => props.notice.title}
+		>
+			<p>{props.notice.body}</p>
+			<Show when={props.notice.attribution}>{(who) => <cite>{who()}</cite>}</Show>
+			<Show when={(props.notice.links?.length ?? 0) > 0}>
+				<div class="ib-reader-notice-links">
+					<For each={props.notice.links}>
+						{(link) => (
+							<a class="ib-reader-chip" href={link.href}>
+								{link.label}
+							</a>
+						)}
+					</For>
+				</div>
+			</Show>
+		</Callout>
 	)
 }
 
@@ -318,6 +351,7 @@ function SectionBody(props: {
 	visitLabel: (row: IBFacetRow) => string
 }) {
 	const section = props.section
+	if (section.kind === 'notice') return <NoticeSection notice={section.notice} />
 	if (section.kind === 'points') return <PointsSection points={section.points} label={section.title} />
 	if (section.kind === 'nodes') return <NodesSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
 	if (section.kind === 'facets') return <FacetsSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} visitLabel={props.visitLabel} />
@@ -379,6 +413,37 @@ const STACKED_SECTIONS_MAX = 2
  * chosen section is remembered against the sections array itself, so a new
  * reading starts on its first section without any reactive write. */
 function ReaderSections(props: {
+ section?: string
+ onSectionChange?: (section: string) => void
+	sections: IBContentSection[]
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+	onOpenDocument?: (row: IBDocumentRow) => void
+	visitLabel: (row: IBFacetRow) => string
+}) {
+	// Notices stand above the picker, always visible, and never count toward
+	// the stacking threshold: a withheld reading with one notice and one
+	// section still stacks, and a long reading's notice is never hidden
+	// behind a section that has not been picked.
+	const notices = createMemo(() => props.sections.filter((section) => section.kind === 'notice'))
+	const body = createMemo(() => props.sections.filter((section) => section.kind !== 'notice'))
+	return (
+		<>
+			<For each={notices()}>
+				{(section) => (
+					<section class="ib-reader-section" aria-label={section.title}>
+						<SectionBody section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={props.visitLabel} />
+					</section>
+				)}
+			</For>
+			<Show when={body().length > 0}>
+				<PickedSections section={props.section} onSectionChange={props.onSectionChange} sections={body()} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={props.visitLabel} />
+			</Show>
+		</>
+	)
+}
+
+function PickedSections(props: {
  section?: string
  onSectionChange?: (section: string) => void
 	sections: IBContentSection[]

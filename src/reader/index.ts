@@ -46,6 +46,7 @@ export type {
 	IBNodeContent,
 	IBNodeId,
 	IBNodeRow,
+	IBNotice,
 	IBPoint,
 	IBQuote,
 } from '../galaxy/types.ts'

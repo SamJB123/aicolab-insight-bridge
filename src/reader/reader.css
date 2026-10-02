@@ -187,6 +187,43 @@
 			margin-block-start: 0.5rem;
 		}
 
+		/* A withheld quote: the notice standing in for the words. Upright, not
+		   a quotation; the rule and the cite keep its place in the list. */
+		.ib-reader-point blockquote.ib-reader-withheld {
+			font-style: normal;
+			border-inline-start-color: var(--color-warning, #b8860b);
+			color: var(--color-base-content-muted);
+		}
+
+		/* The content's own notice — the design system's callout, scaled to the
+		   reading. The band carries the title; the body the why and the who. */
+		.ib-reader-notice {
+			--ui-callout-pad: 0.75rem 0.9rem;
+			--ui-callout-band-pad: 0.4rem 0.9rem;
+			--ui-callout-radius: var(--r-sm);
+			font-size: var(--t-sm);
+		}
+		.ib-reader-notice p {
+			margin: 0;
+			line-height: 1.5;
+			text-wrap: pretty;
+		}
+		.ib-reader-notice cite {
+			display: block;
+			margin-block-start: 0.45rem;
+			font-family: var(--font-label, var(--font-data, ui-monospace, monospace));
+			font-style: normal;
+			font-size: var(--t-2xs);
+			letter-spacing: 0.06em;
+			color: var(--color-base-content-muted);
+		}
+		.ib-reader-notice-links {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			margin-block-start: 0.6rem;
+		}
+
 		.ib-reader-trailing {
 			display: inline-flex;
 			align-items: center;
@@ -316,6 +353,12 @@
 			}
 			.ib-reader-tabs {
 				max-inline-size: 26rem;
+			}
+			.ib-reader-notice {
+				--ui-callout-pad: 1rem 1.2rem;
+				--ui-callout-band-pad: 0.5rem 1.2rem;
+				max-inline-size: 78ch;
+				font-size: 0.98rem;
 			}
 			.ib-reader-detail {
 				font-size: var(--t-sm);
