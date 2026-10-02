@@ -14,8 +14,7 @@
  * reads joined in TypeScript, which is both cheaper than id-list queries and
  * clear of D1's ~100 bound-parameter cap.
  */
-import { eq, inArray } from 'drizzle-orm'
-import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
+
 import {
 	clusterEntityPerspective,
 	clusterKeyPerspective,
@@ -30,6 +29,8 @@ import {
 	facet as facetTable,
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
+import { eq, inArray } from 'drizzle-orm'
+import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
 import type {
 	BriefContributor,
 	BriefData,
@@ -102,7 +103,8 @@ export interface PositionScale {
 	unclear?: string
 }
 
-const DEFAULT_SCALE: PositionScale = {
+/** The pipeline's own scale: what a run gets when it declares none. */
+export const DEFAULT_SCALE: PositionScale = {
 	order: POSITIONS,
 	supportive: ['Supports', 'Builds on'],
 	contesting: ['Mixed', 'Redirects', 'Opposes'],
@@ -121,9 +123,7 @@ const DEFAULT_SCALE: PositionScale = {
  * to say about leads.
  */
 export async function analysedFacets(db: BriefDb): Promise<string[]> {
-	const rows = await db
-		.select({ facet: clusterKeyPerspective.facet })
-		.from(clusterKeyPerspective)
+	const rows = await db.select({ facet: clusterKeyPerspective.facet }).from(clusterKeyPerspective)
 	const weight = new Map<string, number>()
 	for (const r of rows) weight.set(r.facet, (weight.get(r.facet) ?? 0) + 1)
 	return [...weight].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([facet]) => facet)
@@ -278,7 +278,12 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 		// The constellation, baked per build by the corpus's own star bake. Empty
 		// until the bake has run, and the pages draw without a sky until then.
 		db
-			.select({ topicClusterId: topicStar.topicClusterId, x: topicStar.x, y: topicStar.y, r: topicStar.r })
+			.select({
+				topicClusterId: topicStar.topicClusterId,
+				x: topicStar.x,
+				y: topicStar.y,
+				r: topicStar.r,
+			})
 			.from(topicStar),
 	])
 

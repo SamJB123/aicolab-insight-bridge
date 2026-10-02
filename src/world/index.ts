@@ -7,7 +7,9 @@
  * reaches drizzle and the canonical tables.
  */
 export {
+	isPromptTask,
 	MEMBERSHIP_GRADES,
+	PROMPT_TASK_KINDS,
 	questionClause,
 	type WorldAnswer,
 	type WorldDocument,
@@ -17,7 +19,8 @@ export {
 	type WorldMembership,
 	type WorldPerspective,
 	type WorldPoint,
-	type WorldQuestion,
+	type WorldPrompt,
+	type WorldPromptTask,
 	type WorldQuote,
 	type WorldReading,
 	type WorldReadingRef,

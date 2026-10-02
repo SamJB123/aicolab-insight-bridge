@@ -187,13 +187,14 @@ export const worldPerspectiveSchema = z
 	.readonly()
 export type WorldPerspective = z.infer<typeof worldPerspectiveSchema>
 
-/** One document's answer to one question of a question task: its position
- *  and its first point, the rest a reading (`worldReading`). */
+/** One document's answer to one prompt of a task: its position where the
+ *  task writes one (a question task does; a criteria task does not), its
+ *  first point, the rest a reading (`worldReading`). */
 export const worldAnswerSchema = z
 	.object({
 		sourceId: id,
 		documentId: id,
-		position: z.string(),
+		position: z.string().nullable(),
 		lead: z.string().nullable(),
 		keyPoints: z.number().int(),
 	})
@@ -204,12 +205,12 @@ export type WorldAnswer = z.infer<typeof worldAnswerSchema>
  * The readings a room fetches when an item is opened — the key points the
  * record counts but does not carry (they are three quarters of its weight):
  * a source's perspective on a topic, a document's own analysis, a document's
- * answer to a question.
+ * answer to a task's prompt.
  */
 export const worldReadingRefSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('perspective'), topicId: z.number().int(), sourceId: id }).readonly(),
 	z.object({ kind: z.literal('document'), documentId: id }).readonly(),
-	z.object({ kind: z.literal('answer'), questionKey: id, documentId: id }).readonly(),
+	z.object({ kind: z.literal('answer'), taskId: id, promptKey: id, documentId: id }).readonly(),
 ])
 export type WorldReadingRef = z.infer<typeof worldReadingRefSchema>
 
@@ -218,44 +219,55 @@ export const worldReadingSchema = z
 	.readonly()
 export type WorldReading = z.infer<typeof worldReadingSchema>
 
-export const worldQuestionSchema = z
+/**
+ * One PROMPT a task read every document against, with every answer: a
+ * question of a question task; a criterion of a perspective or criteria
+ * task (the analysis's subtopic, under its analysis topic as `group`).
+ */
+export const worldPromptSchema = z
 	.object({
+		/** The question's key, or the criterion's own id in the run. */
 		key: id,
-		/** The clause as it reads on a plaque — "(a)" — or the key when the text has none. */
+		/** The clause as it reads on a plaque — "(a)" — or "(1)", "(2)"… for a criterion. */
 		clause: z.string(),
 		text: z.string(),
+		/** The analysis topic a criterion sits under; null for a question. */
+		group: z.string().nullable(),
 		ordinal: z.number().int(),
 		answers: z.array(worldAnswerSchema).readonly(),
 	})
 	.readonly()
-export type WorldQuestion = z.infer<typeof worldQuestionSchema>
+export type WorldPrompt = z.infer<typeof worldPromptSchema>
+
+/** The task kinds whose results are prompts answered per document. */
+export const PROMPT_TASK_KINDS = [
+	'question_response',
+	'perspective_analysis',
+	'criteria_assessment',
+] as const
 
 /**
- * A custom analysis the profile declared — a headline concern of this report,
- * so each becomes an entry point of its own. A question task carries its
- * questions and every answer; the other kinds are carried as declared so the
- * island can name their building, and gain their rooms as their readings are
- * added here (their tables: analysis_topic/criterion_analysis, metric, and
- * the vocabulary facets a tagging task writes).
+ * A custom analysis the run performed — a headline concern of this report,
+ * so each becomes an entry point of its own. Read from the run's ledger
+ * (`doc_custom_analysis`), so a run has exactly the tasks it ran. A prompt
+ * task (questions, perspective criteria, assessment criteria) carries its
+ * prompts and every answer, from that kind's own canonical tables; a tagging
+ * or metrics task is carried as declared, so the island can name its
+ * building, and gains its rooms as its readings are added here.
  */
 export const worldTaskSchema = z.discriminatedUnion('kind', [
 	z
 		.object({
-			kind: z.literal('question_response'),
+			kind: z.enum(PROMPT_TASK_KINDS),
 			id: id,
 			title: z.string(),
 			description: z.string(),
-			questions: z.array(worldQuestionSchema).readonly(),
+			prompts: z.array(worldPromptSchema).readonly(),
 		})
 		.readonly(),
 	z
 		.object({
-			kind: z.enum([
-				'metadata_tagging',
-				'perspective_analysis',
-				'criteria_assessment',
-				'metrics_evaluation',
-			]),
+			kind: z.enum(['metadata_tagging', 'metrics_evaluation']),
 			id: id,
 			title: z.string(),
 			description: z.string(),
@@ -263,6 +275,9 @@ export const worldTaskSchema = z.discriminatedUnion('kind', [
 		.readonly(),
 ])
 export type WorldTask = z.infer<typeof worldTaskSchema>
+/** A task that carries prompts and answers. */
+export type WorldPromptTask = Extract<WorldTask, { prompts: unknown }>
+export const isPromptTask = (task: WorldTask): task is WorldPromptTask => 'prompts' in task
 
 export const worldRecordSchema = z
 	.object({
