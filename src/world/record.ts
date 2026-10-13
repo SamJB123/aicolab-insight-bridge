@@ -11,10 +11,17 @@
  * and only the ANALYSED facets (those `cluster_key_perspective` holds) are
  * carried: they are the only facets that become doorways.
  *
- * WHAT THE APP DECLARES. Two facts differ between an app on the canonical
+ * WHAT THE APP DECLARES. Three facts differ between an app on the canonical
  * schema verbatim and one prepared to hold a single build, and the app's own
- * schema already states both, so the app passes them (`WorldShape`): which
- * column holds a document's title, and how a quote's verification is kept.
+ * schema already states them, so the app passes them (`WorldShape`): which
+ * column holds a document's title, how a quote's verification is kept, and
+ * where the PUBLISHED rows are read. A database that keeps an append history
+ * retains every document it ever held — a document an update removed stays
+ * in the canonical table for the record — and reads its current evidence
+ * through its own views over those tables; such an app passes the views
+ * (`WorldPublished`), and every read of a document, its passages, points,
+ * quotes and answers goes through them. A database with no history publishes
+ * every row it holds: the canonical tables themselves, the default.
  * The run's WORDS — title, nouns, position scale, facet headings, task titles
  * — come from the app the way the Brief and the Sources layer already take
  * them (`WorldWords`); a run that carries `run_meta` supplies their defaults
@@ -72,8 +79,22 @@ import {
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
-import { and, asc, count, countDistinct, eq, inArray, sql } from 'drizzle-orm'
-import type { AnySQLiteColumn, SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
+import {
+	and,
+	asc,
+	type ChangeColumnTableName,
+	count,
+	countDistinct,
+	eq,
+	inArray,
+	sql,
+} from 'drizzle-orm'
+import type {
+	AnySQLiteColumn,
+	SQLiteAsyncDatabase,
+	SQLiteTable,
+	SQLiteViewWithSelection,
+} from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
 import {
 	MEMBERSHIP_GRADES,
@@ -99,10 +120,60 @@ import {
 export type WorldDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
 /**
- * The two column shapes an app's schema decides. An app on the canonical
- * schema verbatim passes the contracts' `document.documentTitle` and
- * `{ kind: 'table' }`; a prepared app passes its own `document.title` and
- * its `keyQuote.verified` column (or `'none'` when it kept no verification).
+ * A canonical table as the reader may be given it: the table itself, or a
+ * view over it carrying its columns (an app's published layer).
+ */
+export type Published<T extends SQLiteTable> =
+	| T
+	| SQLiteViewWithSelection<
+			string,
+			boolean,
+			{
+				[K in keyof T['_']['columns']]: ChangeColumnTableName<
+					T['_']['columns'][K],
+					string,
+					'sqlite'
+				>
+			}
+	  >
+
+/**
+ * Where the published rows of the corpus tier and the question tables are
+ * read: the tables an app's own readers read a document, its passages, its
+ * points and quotes and its answers from. The canonical tables themselves
+ * for a database with no append history (`CANONICAL_PUBLISHED`); the app's
+ * views over them for one that keeps removed documents for the record.
+ */
+export interface WorldPublished {
+	document: Published<typeof document>
+	chunk: Published<typeof chunk>
+	keyPoint: Published<typeof keyPoint>
+	keyQuote: Published<typeof keyQuote>
+	keyQuoteVerification: Published<typeof keyQuoteVerification>
+	questionResponse: Published<typeof questionResponse>
+	questionResponseKeyPoint: Published<typeof questionResponseKeyPoint>
+	questionResponseQuote: Published<typeof questionResponseQuote>
+}
+
+/** Every row the canonical tables hold is published: the default. */
+export const CANONICAL_PUBLISHED: WorldPublished = {
+	document,
+	chunk,
+	keyPoint,
+	keyQuote,
+	keyQuoteVerification,
+	questionResponse,
+	questionResponseKeyPoint,
+	questionResponseQuote,
+}
+
+/**
+ * The column shapes an app's schema decides, and where its published rows
+ * are read. An app on the canonical schema verbatim passes the contracts'
+ * `document.documentTitle` and `{ kind: 'table' }`; a prepared app passes
+ * its own `document.title` and its `keyQuote.verified` column (or `'none'`
+ * when it kept no verification); an app that keeps an append history passes
+ * its published views, and its title column is the view's.
  */
 export interface WorldShape {
 	/** The column that holds a document's displayed title (null falls back to the file name). */
@@ -112,7 +183,11 @@ export interface WorldShape {
 		| { kind: 'table' }
 		| { kind: 'column'; column: AnySQLiteColumn<{ data: number }> }
 		| { kind: 'none' }
+	/** Where the published rows are read; the canonical tables when absent. */
+	published?: WorldPublished
 }
+
+const publishedOf = (shape: WorldShape): WorldPublished => shape.published ?? CANONICAL_PUBLISHED
 
 /** How one facet reads: the heading a reader meets, short words for long
  *  values, and the order its values read in (an ordinal facet — eras,
@@ -192,6 +267,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 	const site = meta?.site ?? null
 	const words = config.words ?? {}
 	const params = profile?.prompts.params ?? null
+	const { document, chunk, keyPoint } = publishedOf(config.shape)
 
 	const title = words.title ?? site?.title ?? meta?.name
 	const nouns =
@@ -583,7 +659,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 
 	/* ── the custom analyses, from the run's ledger ── */
 	const ownerOfDocument = new Map(documentRows.map((d) => [d.id, slugOf.get(d.entityUuid) ?? null]))
-	const tasks = await tasksOf(db, tables, {
+	const tasks = await tasksOf(db, tables, publishedOf(config.shape), {
 		ownerOfDocument,
 		titleOf: (taskId) => {
 			const declared = profile?.analysis_tasks.find((t) => t.task_id === taskId)
@@ -656,6 +732,7 @@ const ordinalClause = (ordinal: number): string => `(${ordinal})`
 async function tasksOf(
 	db: WorldDb,
 	tables: ReadonlySet<string>,
+	{ questionResponse, questionResponseKeyPoint }: WorldPublished,
 	words: TaskWords,
 ): Promise<WorldTask[]> {
 	if (!tables.has('doc_custom_analysis')) return []
@@ -846,7 +923,7 @@ export async function worldReading(
 	const points = async (): Promise<WorldPoint[]> => {
 		if (ref.kind === 'perspective') return perspectiveReading(db, ref)
 		if (ref.kind === 'document') return documentReading(db, ref, shape)
-		return answerReading(db, ref)
+		return answerReading(db, ref, publishedOf(shape))
 	}
 	return worldReadingSchema.parse({ ref, keyPoints: await points() } satisfies WorldReading)
 }
@@ -905,6 +982,7 @@ async function documentReading(
 	ref: Extract<WorldReadingRef, { kind: 'document' }>,
 	shape: WorldShape,
 ): Promise<WorldPoint[]> {
+	const { document, keyPoint, keyQuote, keyQuoteVerification } = publishedOf(shape)
 	const [owner] = await db
 		.select({ sourceId: entity.entityId })
 		.from(document)
@@ -957,6 +1035,7 @@ async function documentReading(
 async function answerReading(
 	db: WorldDb,
 	ref: Extract<WorldReadingRef, { kind: 'answer' }>,
+	{ document, questionResponse, questionResponseKeyPoint, questionResponseQuote }: WorldPublished,
 ): Promise<WorldPoint[]> {
 	const [entry] = await db
 		.select({
