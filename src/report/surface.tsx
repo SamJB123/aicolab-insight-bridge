@@ -8,7 +8,7 @@
 import type { RunWords } from '@aicolab/insight-bridge-contracts/explorer'
 import type { JSX } from '@solidjs/web'
 import { createContext, useContext } from 'solid-js'
-import type { ReadingTarget } from '../explorer/readings.ts'
+import type { DocumentLine, ReadingTarget } from '../explorer/readings.ts'
 
 /** A report's sections, in the order its header lists them. */
 export const REPORT_SECTIONS = [
@@ -42,7 +42,13 @@ export interface ReportSurface {
 	/** The host's own link to a section. */
 	Link: (props: { section: ReportSection; class?: string; children: JSX.Element }) => JSX.Element
 	vocabulary?: ReportVocabulary
+	/** A document's name in a list; its title, else its file name. The same as the readings'. */
+	documentLabel?: (d: DocumentLine) => string
 }
+
+/** The surface's document name, with its default. */
+export const documentLabelOf = (s: ReportSurface, d: DocumentLine) =>
+	s.documentLabel ? s.documentLabel(d) : (d.title ?? d.fileName)
 
 /** The surface's vocabulary with its defaults. */
 export const vocabularyOf = (s: ReportSurface) => ({
