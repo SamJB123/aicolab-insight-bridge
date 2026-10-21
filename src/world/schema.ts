@@ -197,6 +197,8 @@ export const worldAnswerSchema = z
 		position: z.string().nullable(),
 		lead: z.string().nullable(),
 		keyPoints: z.number().int(),
+		/** A criteria assessment's score for this criterion (schema v12); absent on every other answer. */
+		score: z.number().optional(),
 	})
 	.readonly()
 export type WorldAnswer = z.infer<typeof worldAnswerSchema>

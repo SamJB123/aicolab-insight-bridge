@@ -247,6 +247,12 @@ async function tablesOf(db: CorpusDb): Promise<Set<string>> {
 	return new Set(rows.map((r) => r.name))
 }
 
+/** A table's columns, as the database says (a column a later schema version added may be absent). */
+async function columnsOf(db: CorpusDb, table: string): Promise<Set<string>> {
+	const rows = await db.all<{ name: string }>(sql`SELECT name FROM pragma_table_info(${table})`)
+	return new Set(rows.map((r) => r.name))
+}
+
 /** The run's own account of itself, where the database carries one. */
 async function runMetaOf(db: CorpusDb, tables: ReadonlySet<string>) {
 	if (!tables.has('run_meta')) return null
@@ -819,6 +825,8 @@ async function tasksOf(
 	// subtopics), and each document's points under each.
 	const criteriaPrompts = new Map<string, WorldPrompt[]>()
 	if (criteriaTasks.length > 0 && tables.has('criterion_analysis')) {
+		// an assessment's score has its own column from schema v12; before it, the score was the point's text
+		const scored = (await columnsOf(db, 'criterion_analysis')).has('score')
 		const [criteria, rows] = await Promise.all([
 			db
 				.select({
@@ -838,6 +846,7 @@ async function tasksOf(
 					criterionId: criterionAnalysis.analysisSubtopicId,
 					analysisId: criterionAnalysis.customAnalysisId,
 					point: criterionAnalysis.keyPoint,
+					score: scored ? criterionAnalysis.score : sql<null>`NULL`,
 				})
 				.from(criterionAnalysis)
 				.orderBy(asc(criterionAnalysis.criterionAnalysisId)),
@@ -872,6 +881,7 @@ async function tasksOf(
 							answers: [...byDocument].flatMap(([documentId, points]): WorldAnswer[] => {
 								const sourceId = words.ownerOfDocument.get(documentId)
 								if (!sourceId) return []
+								const score = points[0]?.score ?? null
 								return [
 									{
 										sourceId,
@@ -879,6 +889,7 @@ async function tasksOf(
 										position: null,
 										lead: points[0]?.point ?? null,
 										keyPoints: points.length,
+										...(score === null ? {} : { score }),
 									},
 								]
 							}),
