@@ -45,7 +45,11 @@ export function OverviewPage(props: {
 }) {
 	return (
 		<ReportSurfaceContext value={props.surface}>
-			<OverviewBody overview={props.overview} landscape={props.landscape} additions={props.additions} />
+			<OverviewBody
+				overview={props.overview}
+				landscape={props.landscape}
+				additions={props.additions}
+			/>
 		</ReportSurfaceContext>
 	)
 }
@@ -220,7 +224,8 @@ function OverviewBody(props: {
 										const l = lens() ?? ''
 										const value = row.value
 										return {
-											label: value === null ? 'Unclassified' : (w().facets[l]?.values[value] ?? value),
+											label:
+												value === null ? 'Unclassified' : (w().facets[l]?.values[value] ?? value),
 											value: row.sources,
 											tip: value === null ? undefined : w().facets[l]?.descriptions[value],
 										}
@@ -245,7 +250,9 @@ function OverviewBody(props: {
 								</button>
 								<p class="fig-note">
 									{`${fmt(t().sources)} ${nouns().entities} engage it, ${fmt(t().stances)} with a written stance${lensPlural(t().lensValueCount)}.` +
-										(w().scale.supportive.length ? ` ${t().supportivePct}% supportive of its framing.` : '')}
+										(w().scale.supportive.length
+											? ` ${t().supportivePct}% supportive of its framing.`
+											: '')}
 								</p>
 								<PositionStrip
 									positions={t().positions}
@@ -278,7 +285,11 @@ function OverviewBody(props: {
 						</s.Link>
 					</Show>
 					<s.Link section="search" class="fig reveal door">
-						<DoorCard eyebrow="Search" title="Find where your question meets the record" go="Search the topics →">
+						<DoorCard
+							eyebrow="Search"
+							title="Find where your question meets the record"
+							go="Search the topics →"
+						>
 							<p>
 								{`Describe a question in your own words; the topics closest to it come from a semantic search over ${fmt(o().passages)} passages.`}
 							</p>
@@ -302,7 +313,10 @@ function OverviewBody(props: {
 					</s.Link>
 					<s.Link section="method" class="fig reveal door">
 						<DoorCard eyebrow="Method" title="How the record was read" go="Read the method →">
-							<p>The pipeline as this run actually ran it, how to read a position, and the run's scale in live figures.</p>
+							<p>
+								The pipeline as this run actually ran it, how to read a position, and the run's
+								scale in live figures.
+							</p>
 						</DoorCard>
 					</s.Link>
 					<s.Link section="connect" class="fig reveal door">
