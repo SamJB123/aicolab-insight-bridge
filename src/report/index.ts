@@ -24,3 +24,4 @@ export {
 	type ReportVocabulary,
 	useReportSurface,
 } from './surface.tsx'
+export { TopicSearchPage } from './topic-search-page.tsx'

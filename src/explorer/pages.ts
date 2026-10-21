@@ -1,10 +1,10 @@
 /**
  * @aicolab/insight-bridge/explorer/pages — what a report's pages read beyond
- * the drawers: the overview, the landscape of topics and groups, the
- * questions the run put to every document, and the method's facts. One
- * definition over the canonical run schema, in the shapes the contracts
- * declare (`ReportOverview`, `Landscape`, `QuestionsOverview`,
- * `QuestionDetail`, `MethodData`); generalised from Training Data's own page
+ * the drawers: the overview, the landscape of topics and groups, the topics a
+ * search found, the questions the run put to every document, and the method's
+ * facts. One definition over the canonical run schema, in the shapes the
+ * contracts declare (`ReportOverview`, `Landscape`, `TopicHit`,
+ * `QuestionsOverview`, `QuestionDetail`, `MethodData`); generalised from Training Data's own page
  * reads (2026-10-21), whose corpus-specific counts are that app's extension.
  *
  * Every count is of contributors; a contributor counts towards a topic by any
@@ -16,7 +16,7 @@
  * (`RunWords.lens`); a contributor with no lens value is counted as
  * unclassified (null), never as a value of its own.
  */
-import { asc, eq, sql } from 'drizzle-orm'
+
 import type {
 	GenerationCount,
 	GroupProfile,
@@ -26,10 +26,12 @@ import type {
 	QuestionsOverview,
 	ReportOverview,
 	RunWords,
+	TopicHit,
 	TopicProfile,
 } from '@aicolab/insight-bridge-contracts/explorer'
-import * as s from '@aicolab/insight-bridge-contracts/schema'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
+import * as s from '@aicolab/insight-bridge-contracts/schema'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { generationLabel } from '../brief/data.ts'
 import { questionClause } from '../world/schema.ts'
 import { hierarchy, treeOf } from './data.ts'
@@ -73,8 +75,8 @@ const generationsOf = (tree: ReturnType<typeof treeOf>): GenerationCount[] => {
 		}))
 }
 
-/** Every stance on a current topic: who, which topic, which position. */
-const currentStances = (db: CorpusDb) =>
+/** Every stance on a current topic (or on those `ids` names): who, which topic, which position. */
+const currentStances = (db: CorpusDb, ids?: number[]) =>
 	db
 		.select({
 			topicClusterId: s.clusterEntityPerspective.topicClusterId,
@@ -86,13 +88,23 @@ const currentStances = (db: CorpusDb) =>
 			s.currentTopic,
 			eq(s.currentTopic.topicClusterId, s.clusterEntityPerspective.topicClusterId),
 		)
+		.where(ids ? inArray(s.currentTopic.topicClusterId, ids) : undefined)
 
-/** Each current topic's strong documents. */
-const strongDocuments = (db: CorpusDb) =>
-	db.all<{ topicClusterId: number; documentId: string }>(sql`
-		SELECT DISTINCT m.topic_cluster_id AS topicClusterId, c.document_id AS documentId
-		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id
-		WHERE m.membership_type IN ('exemplar', 'high_value')`)
+/** Each current topic's (or each of those `ids` names) strong documents. */
+const strongDocuments = (db: CorpusDb, ids?: number[]) =>
+	db
+		.selectDistinct({
+			topicClusterId: s.currentChunkMembership.topicClusterId,
+			documentId: s.publishedChunk.documentId,
+		})
+		.from(s.currentChunkMembership)
+		.innerJoin(s.publishedChunk, eq(s.publishedChunk.id, s.currentChunkMembership.chunkId))
+		.where(
+			and(
+				inArray(s.currentChunkMembership.membershipType, ['exemplar', 'high_value']),
+				ids ? inArray(s.currentChunkMembership.topicClusterId, ids) : undefined,
+			),
+		)
 
 // ---------------------------------------------------------------- the overview
 
@@ -139,7 +151,10 @@ export async function reportOverview(
 			: Promise.resolve([]),
 		db.$count(s.entity),
 		db
-			.select({ documentId: s.publishedDocument.documentId, entityUuid: s.publishedDocument.entityUuid })
+			.select({
+				documentId: s.publishedDocument.documentId,
+				entityUuid: s.publishedDocument.entityUuid,
+			})
 			.from(s.publishedDocument),
 		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
 		db.all<{ passages: number; keyPoints: number; quotes: number; verified: number }>(sql`
@@ -219,21 +234,26 @@ export async function reportOverview(
 		lensSupportivePct: pct(countIn(lensMix, supportive), lensTotal),
 		hardFriction,
 		hardFrictionPct: pct(hardFriction, stances.length),
-		frictionSources: new Set(stances.filter((r) => hard.has(r.position)).map((r) => r.entityUuid)).size,
+		frictionSources: new Set(stances.filter((r) => hard.has(r.position)).map((r) => r.entityUuid))
+			.size,
 		lensValues: [...byLens]
 			.map(([value, count]) => ({ value, sources: count }))
 			.sort((a, b) => b.sources - a.sources || rank(a.value) - rank(b.value)),
 		singleSourceTopics: reach.filter((r) => n(r.sources) === 1).length,
 		questions: questionCount,
 		answers: answerRows.length,
-		answeringSources: new Set(answerRows.map((r) => ownerOf.get(r.documentId)).filter(Boolean)).size,
+		answeringSources: new Set(answerRows.map((r) => ownerOf.get(r.documentId)).filter(Boolean))
+			.size,
 	}
 }
 
 // ---------------------------------------------------------------- the landscape
 
-/** Every current topic and every grouping node, with live counts rolled up through the primary tree. */
-export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscape> {
+/**
+ * The current topics' profiles — every one, or only those `ids` names — and
+ * the per-topic facts the grouping nodes roll up.
+ */
+async function topicFacts(db: CorpusDb, words: RunWords, ids?: number[]) {
 	const supportive = new Set(words.scale.supportive)
 	const contesting = new Set(words.scale.contesting)
 	const [h, entityFacets, topicRows, memberRows, stances, strong] = await Promise.all([
@@ -241,16 +261,18 @@ export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscap
 		loadFacetCache(db, 'entity'),
 		db
 			.select({ topicClusterId: s.currentTopic.topicClusterId, title: s.currentTopic.title })
-			.from(s.currentTopic),
+			.from(s.currentTopic)
+			.where(ids ? inArray(s.currentTopic.topicClusterId, ids) : undefined),
 		db
 			.select({
 				topicClusterId: s.currentEntityMembership.topicClusterId,
 				entityUuid: s.currentEntityMembership.entityUuid,
 				membershipType: s.currentEntityMembership.membershipType,
 			})
-			.from(s.currentEntityMembership),
-		currentStances(db),
-		strongDocuments(db),
+			.from(s.currentEntityMembership)
+			.where(ids ? inArray(s.currentEntityMembership.topicClusterId, ids) : undefined),
+		currentStances(db, ids),
+		strongDocuments(db, ids),
 	])
 	const tree = treeOf(h)
 	const generations = generationsOf(tree)
@@ -258,15 +280,22 @@ export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscap
 	const membersOf = new Map<number, Set<string>>()
 	const exemplarsOf = new Map<number, number>()
 	for (const m of memberRows) {
-		membersOf.set(m.topicClusterId, (membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid))
+		membersOf.set(
+			m.topicClusterId,
+			(membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid),
+		)
 		if (m.membershipType === 'exemplar')
 			exemplarsOf.set(m.topicClusterId, (exemplarsOf.get(m.topicClusterId) ?? 0) + 1)
 	}
 	const stancesOf = new Map<number, { entityUuid: string; position: string }[]>()
-	for (const r of stances) stancesOf.set(r.topicClusterId, [...(stancesOf.get(r.topicClusterId) ?? []), r])
+	for (const r of stances)
+		stancesOf.set(r.topicClusterId, [...(stancesOf.get(r.topicClusterId) ?? []), r])
 	const documentsOf = new Map<number, Set<string>>()
 	for (const r of strong)
-		documentsOf.set(r.topicClusterId, (documentsOf.get(r.topicClusterId) ?? new Set()).add(r.documentId))
+		documentsOf.set(
+			r.topicClusterId,
+			(documentsOf.get(r.topicClusterId) ?? new Set()).add(r.documentId),
+		)
 	const lensValueOf = (entityUuid: string) => lensOf(words, entityFacets.get(entityUuid))
 
 	const topics: TopicProfile[] = topicRows
@@ -300,6 +329,13 @@ export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscap
 		})
 		.sort((a, b) => b.sources - a.sources || a.topicClusterId - b.topicClusterId)
 
+	return { tree, generations, top, topics, membersOf, documentsOf, stancesOf, lensValueOf }
+}
+
+/** Every current topic and every grouping node, with live counts rolled up through the primary tree. */
+export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscape> {
+	const { tree, generations, top, topics, membersOf, documentsOf, stancesOf, lensValueOf } =
+		await topicFacts(db, words)
 	const groups: GroupProfile[] = [...tree.byId.values()]
 		.filter((node) => node.generation > 0)
 		.map((node) => {
@@ -336,6 +372,72 @@ export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscap
 		.sort((a, b) => b.generation - a.generation || b.sources - a.sources)
 
 	return { generations, top, groups, topics }
+}
+
+// ---------------------------------------------------------------- the topic search
+
+/** D1 binds at most 100 parameters to a statement, so passage ids go in batches under it. */
+const ID_BATCH = 90
+
+/**
+ * The topics a semantic search's passages point to. `scores` are the host's
+ * nearest passages (chunk id → similarity, from whatever index it binds).
+ * Each passage gives its score to its primary topic — its highest-scoring
+ * current membership, the lower topic id on a tie — and the `limit` topics
+ * with the most come back, most relevant first, relevance to three places.
+ */
+export async function topicSearch(
+	db: CorpusDb,
+	words: RunWords,
+	scores: ReadonlyMap<string, number>,
+	limit = 24,
+): Promise<TopicHit[]> {
+	const chunkIds = [...scores.keys()]
+	const batches: string[][] = []
+	for (let i = 0; i < chunkIds.length; i += ID_BATCH) batches.push(chunkIds.slice(i, i + ID_BATCH))
+	const rows = (
+		await Promise.all(
+			batches.map((batch) =>
+				db
+					.select({
+						chunkId: s.currentChunkMembership.chunkId,
+						topicClusterId: s.currentChunkMembership.topicClusterId,
+						softScore: s.currentChunkMembership.softScore,
+					})
+					.from(s.currentChunkMembership)
+					.where(inArray(s.currentChunkMembership.chunkId, batch)),
+			),
+		)
+	).flat()
+	const primary = new Map<string, { topicClusterId: number; softScore: number }>()
+	for (const r of rows) {
+		const held = primary.get(r.chunkId)
+		const softScore = r.softScore ?? 0
+		if (
+			!held ||
+			softScore > held.softScore ||
+			(softScore === held.softScore && r.topicClusterId < held.topicClusterId)
+		)
+			primary.set(r.chunkId, { topicClusterId: r.topicClusterId, softScore })
+	}
+	const relevance = new Map<number, number>()
+	for (const [chunkId, p] of primary)
+		relevance.set(
+			p.topicClusterId,
+			(relevance.get(p.topicClusterId) ?? 0) + (scores.get(chunkId) ?? 0),
+		)
+	const ranked = [...relevance].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, limit)
+	if (!ranked.length) return []
+	const { topics } = await topicFacts(
+		db,
+		words,
+		ranked.map(([id]) => id),
+	)
+	const byId = new Map(topics.map((t) => [t.topicClusterId, t]))
+	return ranked.flatMap(([id, score]) => {
+		const t = byId.get(id)
+		return t ? [{ ...t, relevance: Math.round(score * 1000) / 1000 }] : []
+	})
 }
 
 // ---------------------------------------------------------------- the questions
@@ -399,7 +501,12 @@ export async function questionsOverview(db: CorpusDb, words: RunWords): Promise<
 			value: v.value,
 			cells: questions.map((q) => {
 				const addressed = cell.get(`${v.value ?? ''}|${q.questionId}`)?.size ?? 0
-				return { questionId: q.questionId, addressed, sources: v.sources, pct: pct(addressed, v.sources) }
+				return {
+					questionId: q.questionId,
+					addressed,
+					sources: v.sources,
+					pct: pct(addressed, v.sources),
+				}
 			}),
 		})),
 		overall: questions.map((q) => ({
@@ -416,7 +523,11 @@ export async function questionDetail(
 	words: RunWords,
 	questionId: number,
 ): Promise<QuestionDetail | null> {
-	const [q] = await db.select().from(s.question).where(eq(s.question.questionId, questionId)).limit(1)
+	const [q] = await db
+		.select()
+		.from(s.question)
+		.where(eq(s.question.questionId, questionId))
+		.limit(1)
 	if (!q) return null
 	const [entityFacets, documentFacets, rows, keyPoints] = await Promise.all([
 		loadFacetCache(db, 'entity'),
@@ -459,7 +570,10 @@ export async function questionDetail(
 	])
 	const keyPointsOf = new Map<number, { keyPoint: string; details: string }[]>()
 	for (const k of keyPoints)
-		keyPointsOf.set(k.responseId, [...(keyPointsOf.get(k.responseId) ?? []), { keyPoint: k.keyPoint, details: k.details }])
+		keyPointsOf.set(k.responseId, [
+			...(keyPointsOf.get(k.responseId) ?? []),
+			{ keyPoint: k.keyPoint, details: k.details },
+		])
 	const byValue = new Map<string | null, QuestionDetail['byLensValue'][number]['answers']>()
 	for (const r of rows) {
 		const value = lensOf(words, entityFacets.get(r.entityUuid))
@@ -492,7 +606,10 @@ export async function questionDetail(
 			keyPoints: keyPoints.length,
 		},
 		byLensValue: [...byValue]
-			.map(([value, answers]) => ({ value, answers: answers.sort((a, b) => a.name.localeCompare(b.name)) }))
+			.map(([value, answers]) => ({
+				value,
+				answers: answers.sort((a, b) => a.name.localeCompare(b.name)),
+			}))
 			.sort((a, b) => rank(a.value) - rank(b.value) || b.answers.length - a.answers.length),
 	}
 }

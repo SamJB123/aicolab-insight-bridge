@@ -442,6 +442,7 @@
 	/* ── the landing's doorway grid ──────────────────────────────────────────── */
 	.findings-grid {
 		column-rule: 1px solid var(--color-border);
+		/* biome-ignore lint/correctness/noUnknownProperty: CSS gap decorations (a draft the engines ship ahead of the linter) */
 		row-rule: 1px solid var(--color-border);
 	}
 	.door {
