@@ -86,11 +86,6 @@ export interface ExplorerToolHost {
 
 const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
-const likeNeedle = (q: string) =>
-	`%${q
-		.trim()
-		.replace(/[%_\\]/g, '')
-		.slice(0, 46)}%`
 /** Facets that are the pipeline's own bookkeeping, never a reader's facet. */
 const INTERNAL_FACETS: ReadonlySet<string> = new Set(['entity_name_provenance', 'llm_entity_name'])
 const internalFacet = (key: string) =>
@@ -459,8 +454,8 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 						.from(s.currentTopic)
 						.where(
 							or(
-								like(s.currentTopic.title, likeNeedle(a.query)),
-								like(s.currentTopic.description, likeNeedle(a.query)),
+								like(s.currentTopic.title, x.likePattern(a.query)),
+								like(s.currentTopic.description, x.likePattern(a.query)),
 							),
 						)
 				).map((r) => r.id),

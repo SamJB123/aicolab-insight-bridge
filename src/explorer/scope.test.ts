@@ -133,4 +133,36 @@ describe.skipIf(!file || !existsSync(file))('the reader’s scope', () => {
 			expect(view.content.sections[0]?.kind).toBe('notice')
 		}
 	})
+
+	it('a withheld answer reads the notice: its prose and its key points are the source’s words', async () => {
+		const words = await x.runWords(db)
+		// an answer with prose, in a run that asked questions (a run without any has nothing to withhold here)
+		const answer = sqlite
+			.prepare(
+				`SELECT d.entity_uuid AS uuid, r.document_id AS documentId, r.question_id AS questionId
+				 FROM published_question_response r JOIN published_document d ON d.document_id = r.document_id
+				 WHERE r.addressed = 1 AND length(r.position) > 0 LIMIT 1`,
+			)
+			.get()
+		if (!answer) return
+		const uuid = String(answer.uuid)
+		const scope: ReadScope = { withhold: { entities: new Set([uuid]), notice: NOTICE } }
+		const document = await x.documentById(db, String(answer.documentId), scope)
+		for (const r of document?.questionResponses ?? []) {
+			expect(r.position).toBe('')
+			expect(r.keyPoints).toEqual([])
+		}
+		const question = await pages.questionDetail(db, words, Number(answer.questionId), scope)
+		const theirs =
+			question?.byLensValue.flatMap((v) => v.answers).filter((a) => a.entityUuid === uuid) ?? []
+		expect(theirs.length).toBeGreaterThan(0)
+		for (const a of theirs) {
+			expect(a.position).toBe(NOTICE)
+			expect(a.keyPoints).toEqual([])
+			expect(a.withheld).toBe(true)
+		}
+		for (const q of await x.questionSummary(db, scope))
+			for (const p of q.positions.filter((p) => p.documentId === answer.documentId))
+				expect(p.position).toBe(NOTICE)
+	})
 })

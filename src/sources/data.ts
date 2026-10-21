@@ -16,6 +16,7 @@ import {
 	facet as facetTable,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { and, eq, inArray, like, or } from 'drizzle-orm'
+import { likePattern } from '../explorer/data.ts'
 import { isKept } from '../explorer/scope.ts'
 import type {
 	SourceDocument,
@@ -36,8 +37,6 @@ const DEFAULT_PAGE_SIZE = 40
  * complex"). Metacharacters are stripped rather than escaped: Drizzle binds
  * the pattern as a parameter, so there is no ESCAPE clause to lean on.
  */
-const needle = (q: string) => `%${q.trim().replace(/[%_]/g, '').slice(0, 46)}%`
-
 const chunked = <T>(xs: T[], size = CHUNK): T[][] => {
 	const out: T[][] = []
 	for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size))
@@ -98,10 +97,16 @@ export async function sourcesData(
 	 * A document facet is filed against the document, so it is projected up to
 	 * the contributor who lodged it — every count on these pages counts
 	 * contributors. An entity facet passes straight through. */
+	const derived = new Map((config.derived ?? []).map((d) => [d.key, d.holders]))
 	const subjectsOf = async (
 		key: string,
 		value?: string,
 	): Promise<{ id: string; value: string }[]> => {
+		const own = derived.get(key)
+		if (own)
+			return own
+				.filter((h) => value === undefined || h.value === value)
+				.map((h) => ({ id: h.entityUuid, value: h.value }))
 		const where = value
 			? and(eq(facetAssignment.facet, key), eq(facetAssignment.facetValue, value))
 			: eq(facetAssignment.facet, key)
@@ -135,7 +140,7 @@ export async function sourcesData(
 	// works without a corpus declaring that it should.
 	const q = typeof search.q === 'string' ? search.q.trim() : ''
 	if (q) {
-		const pattern = needle(q)
+		const pattern = likePattern(q)
 		const [byName, byFacet] = await Promise.all([
 			db
 				.select({ id: entity.id })
@@ -227,6 +232,11 @@ export async function sourcesData(
 				)
 			for (const r of rows) bagUp(entityFacets, r.id, r.facet, r.value)
 		}
+		// the host's derived facets ride on the rows they describe
+		const onPage = new Set(ids)
+		for (const [key, holders] of derived)
+			for (const h of holders)
+				if (onPage.has(h.entityUuid)) bagUp(entityFacets, h.entityUuid, key, h.value)
 
 		const docRows: { documentId: string; entityUuid: string }[] = []
 		for (const batch of chunked(ids)) {

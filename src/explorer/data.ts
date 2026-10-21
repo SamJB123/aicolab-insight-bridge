@@ -1136,8 +1136,8 @@ export async function documentById(
 			questionKey: r.questionKey,
 			questionText: r.questionText,
 			addressed: r.addressed === 1,
-			// the answer's one-word position stays, as on the question's own page
-			position: r.position,
+			// the answer's position is the pipeline's reading of it in prose: the source's words
+			position: own(r.position),
 			keyPoints: words.withheld
 				? []
 				: qrKp
@@ -1176,13 +1176,30 @@ export async function documentById(
 	}
 }
 
+/**
+ * A reader's words as a `%…%` LIKE pattern. D1 refuses a LIKE pattern over 50
+ * bytes ("LIKE or GLOB pattern too complex"), so the words are cut to fit, by
+ * bytes and at a character boundary; LIKE's own wildcards and the escape are
+ * dropped from them. Their spacing is kept: a passage is matched as written.
+ */
+export function likePattern(query: string): string {
+	const words = query.replace(/[%_\\]/g, ' ').trim()
+	const bytes = new TextEncoder()
+	let cut = ''
+	for (const ch of words) {
+		if (bytes.encode(cut + ch).length > 48) break
+		cut += ch
+	}
+	return `%${cut.trim()}%`
+}
+
 export async function findDocuments(
 	db: CorpusDb,
 	query: string,
 	limit = 15,
 	scope?: ReadScope,
 ): Promise<FoundDocument[]> {
-	const pattern = `%${query.replace(/[%_]/g, '')}%`
+	const pattern = likePattern(query)
 	return db
 		.select({
 			documentId: s.publishedDocument.documentId,
@@ -1589,6 +1606,7 @@ export async function questionSummary(db: CorpusDb, scope?: ReadScope): Promise<
 			documentId: s.publishedQuestionResponse.documentId,
 			addressed: s.publishedQuestionResponse.addressed,
 			position: s.publishedQuestionResponse.position,
+			entityUuid: s.entity.id,
 			entityName: s.entity.entityName,
 			title: s.publishedDocument.documentTitle,
 		})
@@ -1613,7 +1631,8 @@ export async function questionSummary(db: CorpusDb, scope?: ReadScope): Promise<
 					documentId: r.documentId,
 					entityName: r.entityName,
 					title: r.title,
-					position: r.position,
+					// the answer in prose is the source's words: the notice when withheld
+					position: textOf(scope, r.entityUuid, r.position),
 				})),
 		}
 	})
@@ -1804,7 +1823,7 @@ export async function searchText(
 	limit = 20,
 	scope?: ReadScope,
 ): Promise<TextHit[]> {
-	const pattern = `%${query.replace(/[%_]/g, ' ').trim()}%`
+	const pattern = likePattern(query)
 	const rows = await db.all<TextHit & { entityUuid: string }>(sql`
 		SELECT c.id AS chunkId, d.document_id AS documentId, d.document_title AS title, d.file_name AS fileName, e.entity_name AS entityName, e.id AS entityUuid, c.text
 		FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid

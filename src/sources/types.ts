@@ -29,6 +29,20 @@ export interface SourcesConfig {
 	pageSize?: number
 	/** The reader's scope (explorer/scope.ts): its excluded contributors are left out of the record. */
 	scope?: ReadScope
+	/**
+	 * Facets the host derives from its own tables, beside the run's: who holds
+	 * which value, by contributor uuid. A derived facet filters, counts and
+	 * sorts exactly as a run facet does when `filters` names its key, and its
+	 * values ride on each row's `facets` so the row can show them (High Water:
+	 * a submitter's campaign role, its documents' primary report theme).
+	 */
+	derived?: DerivedFacet[]
+}
+
+/** A host's own facet over the contributors: its key, and who holds which value. */
+export interface DerivedFacet {
+	key: string
+	holders: ReadonlyArray<{ entityUuid: string; value: string }>
 }
 
 /** One value of one facet, with how many contributors hold it. */

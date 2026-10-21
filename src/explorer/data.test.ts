@@ -36,6 +36,21 @@ import { documentReading, groupReading, sourceReading, topicReading } from './re
 
 const file = process.env.EXPLORER_DB
 
+describe('a reader’s words as a LIKE pattern', () => {
+	const bytes = (s: string) => new TextEncoder().encode(s).length
+	it('fits D1’s 50-byte cap, by bytes, at a character boundary', () => {
+		const long = 'Water-quality pressures remain significant, while overlapping provisions'
+		expect(bytes(x.likePattern(long))).toBeLessThanOrEqual(50)
+		const wide = 'Ngarrindjeri Ruwe · Kurangk — the Coorong, the Lakes and the Murray Mouth'
+		const pattern = x.likePattern(wide)
+		expect(bytes(pattern)).toBeLessThanOrEqual(50)
+		expect(wide.startsWith(pattern.slice(1, -1))).toBe(true)
+	})
+	it('drops LIKE’s wildcards and its escape from the words', () => {
+		expect(x.likePattern('  100%_of \\ water  ')).toBe('%100  of   water%')
+	})
+})
+
 describe.skipIf(!file || !existsSync(file))('explorer reads over a run database', () => {
 	const sqlite = new DatabaseSync(file ?? ':memory:', { readOnly: true })
 	const db = drizzle({ client: sqlite })

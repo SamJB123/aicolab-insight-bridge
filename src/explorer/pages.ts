@@ -777,23 +777,16 @@ export async function questionDetail(
 	const quotesOf = new Map<number, string[]>()
 	for (const r of quotes)
 		quotesOf.set(r.keyPointId, [...(quotesOf.get(r.keyPointId) ?? []), r.quote])
-	// an answer's source decides how its words read: a withheld answer keeps its
-	// position and one key point reading the notice, no details, no quotes
+	// an answer's source decides how its words read: a withheld answer's position
+	// (the answer in prose) reads the notice, and its key points are not shown
 	const sourceOf = new Map(rows.map((r) => [r.id, r.entityUuid]))
 	const keptPoints = keyPoints.filter((k) => sourceOf.has(k.responseId))
 	const keyPointsOf = new Map<number, { keyPoint: string; details: string; quotes: string[] }[]>()
 	for (const k of keptPoints) {
-		const entityUuid = sourceOf.get(k.responseId)
-		const withheld = wordsOf(scope, entityUuid).withheld === true
-		const held = keyPointsOf.get(k.responseId) ?? []
-		if (withheld && held.length) continue
+		if (wordsOf(scope, sourceOf.get(k.responseId)).withheld) continue
 		keyPointsOf.set(k.responseId, [
-			...held,
-			{
-				keyPoint: textOf(scope, entityUuid, k.keyPoint),
-				details: withheld ? '' : k.details,
-				quotes: withheld ? [] : (quotesOf.get(k.id) ?? []),
-			},
+			...(keyPointsOf.get(k.responseId) ?? []),
+			{ keyPoint: k.keyPoint, details: k.details, quotes: quotesOf.get(k.id) ?? [] },
 		])
 	}
 	const byValue = new Map<string | null, QuestionDetail['byLensValue'][number]['answers']>()
@@ -810,7 +803,7 @@ export async function questionDetail(
 				documentTitle: r.documentTitle,
 				fileName: r.fileName,
 				documentFacets: documentFacets.get(r.documentId) ?? {},
-				position: r.position,
+				position: textOf(scope, r.entityUuid, r.position),
 				keyPoints: keyPointsOf.get(r.id) ?? [],
 				...wordsOf(scope, r.entityUuid),
 			},
