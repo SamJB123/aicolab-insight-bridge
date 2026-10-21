@@ -26,6 +26,7 @@
 		"./explorer/analysis": "./src/explorer/analysis.ts",
 		"./explorer/pages": "./src/explorer/pages.ts",
 		"./explorer/scope": "./src/explorer/scope.ts",
+		"./explorer/embed": "./src/explorer/embed.ts",
 		"./explorer/mcp": "./src/explorer/mcp.ts",
 		"./explorer/tools": "./src/explorer/tools.ts",
 		"./brief/data": "./src/brief/data.ts",
