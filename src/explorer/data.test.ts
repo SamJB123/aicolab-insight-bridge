@@ -20,9 +20,11 @@ import {
 	entityDetailSchema,
 	groupDetailSchema,
 	overviewSchema,
+	runWordsSchema,
 	topicDetailSchema,
 } from '@aicolab/insight-bridge-contracts/explorer'
 import * as x from './data.ts'
+import { documentReading, groupReading, sourceReading, topicReading } from './readings.ts'
 
 const file = process.env.EXPLORER_DB
 
@@ -74,6 +76,33 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		if (!doc) return
 		const document = documentDetailSchema.parse(await x.documentById(db, doc.documentId))
 		expect(document.keyPointItems.length).toBe(doc.keyPoints)
+	})
+
+	it('the run says its words, and every reading reads from them', async () => {
+		const words = runWordsSchema.parse(await x.runWords(db))
+		const c = { words, positionColors: {} }
+		const first = topics[0]
+		if (!first) return
+		const topic = await x.topicById(db, first.topicClusterId)
+		if (!topic) throw new Error('the first topic did not read')
+		const view = topicReading(topic, c)
+		expect(view.title).toBe(first.title)
+		expect(view.content.contributors?.reduce((n, g) => n + g.rows.length, 0)).toBe(topic.members.length)
+		const [node] = (await x.hierarchy(db)).nodes.filter((n) => n.generation > 0)
+		if (node) {
+			const group = await x.groupById(db, node.superclusterId)
+			if (!group) throw new Error('a grouping node did not read')
+			expect(groupReading(group, c).content.sections[0]?.kind).toBe('nodes')
+		}
+		const [source] = (await x.entities(db)).filter((e) => e.documents > 0)
+		if (!source) return
+		const detail = await x.entityByKey(db, source.entityId)
+		if (!detail) throw new Error('the source did not read')
+		const docs = await Promise.all(detail.documentItems.map((d) => x.documentById(db, d.documentId)))
+		const read = docs.flatMap((d) => (d ? [d] : []))
+		expect(sourceReading(detail, read, c).title).toBe(detail.entityName)
+		const [doc] = read
+		if (doc) expect(documentReading(doc, c).detail).toBe(doc.entityName)
 	})
 
 	it('search, vocabularies, questions, task results and the galaxy answer', async () => {

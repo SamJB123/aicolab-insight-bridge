@@ -41,6 +41,7 @@ import type {
 	Overview,
 	QuestionSummary,
 	RelatedTopic,
+	RunWords,
 	SearchHit,
 	TagCategorySummary,
 	TagDocument,
@@ -51,6 +52,7 @@ import type {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
+import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
 
@@ -64,6 +66,7 @@ export type {
 	Hierarchy,
 	Overview,
 	QuestionSummary,
+	RunWords,
 	TagCategorySummary,
 	TopicDetail,
 	TopicSummary,
@@ -80,6 +83,51 @@ function inGroups<T>(items: T[], size: number): T[][] {
 
 /** A vocabulary facet's granularity, and an assignment's subject: CHECKed in the schema. */
 const granularitySchema = z.enum(['entity', 'document'])
+
+// ---------------------------------------------------------------- the run's words
+
+/**
+ * The words a run's readings are written in, from its own row: the site
+ * where the site says, the profile where it does not — the same fallbacks the
+ * world record reads by. A database with no run_meta, or one whose run cannot
+ * account for itself (no profile), is not a canonical run: that throws.
+ */
+export async function runWords(db: CorpusDb): Promise<RunWords> {
+	const [meta] = await db.select().from(s.runMeta).where(eq(s.runMeta.singleton, 1)).limit(1)
+	const profile = meta?.profile
+	if (!meta || !profile)
+		throw new Error('[explorer] run_meta or its profile is missing: the run cannot say its own words')
+	const site = meta.site
+	const params = profile.prompts.params
+	const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
+	const facets: RunWords['facets'] = {}
+	for (const f of profile.facets) {
+		const said = site?.facets[f.name]
+		facets[f.name] = { heading: said?.heading ?? cap(f.noun), values: said?.values ?? {} }
+	}
+	for (const [name, said] of Object.entries(site?.facets ?? {}))
+		facets[name] ??= { heading: said.heading ?? cap(name.replace(/_/g, ' ')), values: said.values }
+	return {
+		title: site?.title ?? meta.name,
+		nouns: {
+			entity: params.entity_noun,
+			entities: params.entity_noun_plural,
+			document: params.document_noun,
+			documents: params.document_noun_plural,
+		},
+		scale: {
+			order: [...profile.stance.labels],
+			supportive: [...(profile.stance.agreement?.supportive ?? [])],
+			contesting: [...(profile.stance.agreement?.contesting ?? [])],
+			unclear: profile.stance.agreement?.unclear ?? null,
+		},
+		lens: profile.facets_to_analyse[0] ?? profile.identity.primary_facet ?? null,
+		facets,
+		tasks: Object.fromEntries(
+			profile.analysis_tasks.map((t) => [t.task_id, { type: t.task_type, title: taskTitle(t) }]),
+		),
+	}
+}
 
 // ---------------------------------------------------------------- overview
 
@@ -528,6 +576,7 @@ export async function groupById(db: CorpusDb, superclusterId: number): Promise<G
 	return {
 		superclusterId,
 		generation: node.generation,
+		topGeneration: Math.max(0, ...[...tree.byId.values()].map((n) => n.generation)),
 		title: node.title,
 		description: node.description,
 		lineage: tree.ancestorsOf(superclusterId),
@@ -1774,6 +1823,9 @@ export async function galaxy(
 		},
 		{ tier: 0, label: 'Topic', labelPlural: 'Topics', weightLabel: null },
 	]
+	// The galaxy names every tier distinctly (its tiers are layers a reader
+	// moves between), so a deep tree reads "Theme level n" where the Brief's
+	// generationLabel would repeat "group".
 	for (const tier of [...new Set(h.nodes.map((node) => node.generation))]
 		.filter((tier) => tier > 0)
 		.sort((a, b) => a - b)) {

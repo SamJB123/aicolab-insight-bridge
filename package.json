@@ -22,6 +22,7 @@
 		"./corpora": "./src/corpora.ts",
 		"./explorer": "./src/explorer/data.ts",
 		"./explorer/facets": "./src/explorer/facets.ts",
+		"./explorer/readings": "./src/explorer/readings.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",
 		"./galaxy": "./src/galaxy/index.ts",
