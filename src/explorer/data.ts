@@ -27,8 +27,7 @@
  * DO SQLite both bind ~100 parameters per statement. Moved from the pipeline
  * zone's store/explorer.ts on 2026-10-21.
  */
-import { and, asc, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
-import { z } from 'zod'
+
 import type {
 	DocumentDetail,
 	DocumentSummary,
@@ -50,10 +49,12 @@ import type {
 	TopicDetail,
 	TopicSummary,
 } from '@aicolab/insight-bridge-contracts/explorer'
-import * as s from '@aicolab/insight-bridge-contracts/schema'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
+import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
+import { and, asc, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
+import { z } from 'zod'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
 
 export type {
@@ -96,7 +97,9 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 	const [meta] = await db.select().from(s.runMeta).where(eq(s.runMeta.singleton, 1)).limit(1)
 	const profile = meta?.profile
 	if (!meta || !profile)
-		throw new Error('[explorer] run_meta or its profile is missing: the run cannot say its own words')
+		throw new Error(
+			'[explorer] run_meta or its profile is missing: the run cannot say its own words',
+		)
 	const site = meta.site
 	const params = profile.prompts.params
 	const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
@@ -237,10 +240,12 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 				.groupBy(s.currentEntityMembership.topicClusterId)
 		).map((r) => [r.id, n(r.n)]),
 	)
+	// a topic's documents are the ones it holds strongly: an exemplar or
+	// high-value passage, the rule every count of the record follows
 	const docs = new Map(
 		(
 			await db.all<{ id: number; n: number }>(
-				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id GROUP BY m.topic_cluster_id`,
+				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id WHERE m.membership_type IN ('exemplar', 'high_value') GROUP BY m.topic_cluster_id`,
 			)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -400,7 +405,7 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 	}>(sql`
 		SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
 		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
-		WHERE m.topic_cluster_id = ${tc} GROUP BY d.document_id ORDER BY chunks DESC`)
+		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ('exemplar', 'high_value') GROUP BY d.document_id ORDER BY chunks DESC`)
 	const parents = await db.all<{
 		superclusterId: number
 		title: string | null
@@ -504,7 +509,11 @@ function treeOf(h: Hierarchy) {
 			seen.add(at)
 			const node = byId.get(at)
 			if (!node) break
-			out.push({ superclusterId: node.superclusterId, generation: node.generation, title: node.title })
+			out.push({
+				superclusterId: node.superclusterId,
+				generation: node.generation,
+				title: node.title,
+			})
 		}
 		return out
 	}
@@ -544,7 +553,10 @@ export async function groupById(db: CorpusDb, superclusterId: number): Promise<G
 		.from(s.currentEntityMembership)
 	const membersOf = new Map<number, Set<string>>()
 	for (const m of membership)
-		membersOf.set(m.topicClusterId, (membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid))
+		membersOf.set(
+			m.topicClusterId,
+			(membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid),
+		)
 	const reachOf = (topicIds: number[]) => {
 		const reach = new Set<string>()
 		for (const t of topicIds) for (const e of membersOf.get(t) ?? []) reach.add(e)
@@ -885,7 +897,10 @@ export async function documentById(
 			verified: s.publishedKeyQuoteVerification.verified,
 		})
 		.from(s.publishedKeyQuote)
-		.innerJoin(s.publishedKeyPoint, eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId))
+		.innerJoin(
+			s.publishedKeyPoint,
+			eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId),
+		)
 		.leftJoin(
 			s.publishedKeyQuoteVerification,
 			eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
@@ -1204,10 +1219,9 @@ async function conceptTree(
 }
 
 /** A concept addressed by full path, external id, notation, or — when unique in the vocabulary — its preferred label. */
-function findConcept<T extends { path: string; externalId: string; notation: string | null; name: string }>(
-	tree: Map<number, T>,
-	ref: string,
-): T | undefined {
+function findConcept<
+	T extends { path: string; externalId: string; notation: string | null; name: string },
+>(tree: Map<number, T>, ref: string): T | undefined {
 	const nodes = [...tree.values()]
 	const exact = nodes.find(
 		(c) => c.path === ref || c.externalId === ref || (c.notation !== null && c.notation === ref),
@@ -1839,8 +1853,10 @@ export async function galaxy(
 	for (const tier of [...new Set(h.nodes.map((node) => node.generation))]
 		.filter((tier) => tier > 0)
 		.sort((a, b) => a - b)) {
-		const label = tier === maxGen && maxGen >= 2 ? 'Family' : maxGen <= 2 ? 'Theme' : `Theme level ${tier}`
-		const labelPlural = label === 'Family' ? 'Families' : label === 'Theme' ? 'Themes' : `Themes level ${tier}`
+		const label =
+			tier === maxGen && maxGen >= 2 ? 'Family' : maxGen <= 2 ? 'Theme' : `Theme level ${tier}`
+		const labelPlural =
+			label === 'Family' ? 'Families' : label === 'Theme' ? 'Themes' : `Themes level ${tier}`
 		tiers.push({ tier, label, labelPlural, weightLabel: null })
 	}
 	return {

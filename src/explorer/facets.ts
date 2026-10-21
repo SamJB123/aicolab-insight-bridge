@@ -8,9 +8,10 @@
  * explorer reads became core's (2026-10-21), and typed to `CorpusDb` so an
  * app's D1 and a run's Durable Object read them alike.
  */
-import { asc, desc, eq, sql } from 'drizzle-orm'
+
 import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
 import { type CorpusDb, facetAssignment } from '@aicolab/insight-bridge-contracts/schema'
+import { asc, desc, eq, sql } from 'drizzle-orm'
 
 export type EffectiveFacets = Record<string, string[]>
 /** v7: the same, with the resolved concept beside each value (null = free facet or unresolved). */

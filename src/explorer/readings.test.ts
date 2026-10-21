@@ -15,7 +15,9 @@ test('a quote is a sentence, never a file name or a title', () => {
 	expect(looksLikeQuote('Submission 12 - attachment.pdf')).toBe(false)
 	expect(looksLikeQuote('The Australian Government Response to the Inquiry Report')).toBe(false)
 	expect(
-		looksLikeQuote('we think the regulator should be given the powers it needs to act on the evidence it has'),
+		looksLikeQuote(
+			'we think the regulator should be given the powers it needs to act on the evidence it has',
+		),
 	).toBe(true)
 })
 
@@ -31,5 +33,13 @@ test('quotes prefer a different source each, then fill from the rest', () => {
 		2,
 	)
 	expect(picked.map((q) => q.source)).toEqual(['A', 'B'])
-	expect(pickQuotes([{ text: sentence(1), source: 'A' }, { text: sentence(2), source: 'A' }], 2)).toHaveLength(2)
+	expect(
+		pickQuotes(
+			[
+				{ text: sentence(1), source: 'A' },
+				{ text: sentence(2), source: 'A' },
+			],
+			2,
+		),
+	).toHaveLength(2)
 })

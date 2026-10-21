@@ -13,8 +13,6 @@
  */
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { drizzle } from 'drizzle-orm/node-sqlite'
-import { beforeAll, describe, expect, it } from 'vitest'
 import {
 	documentDetailSchema,
 	entityDetailSchema,
@@ -23,6 +21,8 @@ import {
 	runWordsSchema,
 	topicDetailSchema,
 } from '@aicolab/insight-bridge-contracts/explorer'
+import { drizzle } from 'drizzle-orm/node-sqlite'
+import { beforeAll, describe, expect, it } from 'vitest'
 import * as x from './data.ts'
 import { documentReading, groupReading, sourceReading, topicReading } from './readings.ts'
 
@@ -51,7 +51,8 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		const topic = topicDetailSchema.parse(await x.topicById(db, first.topicClusterId))
 		expect(topic.members.length).toBe(first.entities)
 		const stanceHolders = new Set(topic.entityPerspectives.map((p) => p.entityUuid))
-		for (const uuid of stanceHolders) expect(topic.members.some((m) => m.entityUuid === uuid)).toBe(true)
+		for (const uuid of stanceHolders)
+			expect(topic.members.some((m) => m.entityUuid === uuid)).toBe(true)
 		for (const node of topic.lineage) expect(node.generation).toBeGreaterThan(0)
 	})
 
@@ -87,7 +88,9 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		if (!topic) throw new Error('the first topic did not read')
 		const view = topicReading(topic, c)
 		expect(view.title).toBe(first.title)
-		expect(view.content.contributors?.reduce((n, g) => n + g.rows.length, 0)).toBe(topic.members.length)
+		expect(view.content.contributors?.reduce((n, g) => n + g.rows.length, 0)).toBe(
+			topic.members.length,
+		)
 		const [node] = (await x.hierarchy(db)).nodes.filter((n) => n.generation > 0)
 		if (node) {
 			const group = await x.groupById(db, node.superclusterId)
@@ -98,7 +101,9 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		if (!source) return
 		const detail = await x.entityByKey(db, source.entityId)
 		if (!detail) throw new Error('the source did not read')
-		const docs = await Promise.all(detail.documentItems.map((d) => x.documentById(db, d.documentId)))
+		const docs = await Promise.all(
+			detail.documentItems.map((d) => x.documentById(db, d.documentId)),
+		)
 		const read = docs.flatMap((d) => (d ? [d] : []))
 		expect(sourceReading(detail, read, c).title).toBe(detail.entityName)
 		const [doc] = read

@@ -197,7 +197,11 @@ const mixOf = (positions: readonly string[]) => {
 
 /* ── a topic ───────────────────────────────────────────────────────────── */
 
-export function topicReading(d: TopicDetail, c: ReadingContext, add?: ReadingAdditions): ReadingView {
+export function topicReading(
+	d: TopicDetail,
+	c: ReadingContext,
+	add?: ReadingAdditions,
+): ReadingView {
 	const { nouns } = c.words
 	const facetsOf = new Map(d.members.map((m) => [m.entityUuid, m.facets]))
 	const lensOf = (entityUuid: string | null) =>
@@ -234,7 +238,9 @@ export function topicReading(d: TopicDetail, c: ReadingContext, add?: ReadingAdd
 	const facetOrder = [...new Set(d.facetPerspectives.map((p) => p.facet))].sort(
 		(a, b) => Number(b === lens) - Number(a === lens),
 	)
-	for (const p of [...d.facetPerspectives].sort((a, b) => rank(c, b.position) - rank(c, a.position))) {
+	for (const p of [...d.facetPerspectives].sort(
+		(a, b) => rank(c, b.position) - rank(c, a.position),
+	)) {
 		const label = valueWord(c, p.facet, p.facetValue)
 		byFacet.set(p.facet, [
 			...(byFacet.get(p.facet) ?? []),
@@ -243,7 +249,9 @@ export function topicReading(d: TopicDetail, c: ReadingContext, add?: ReadingAdd
 				position: p.position,
 				positionColor: c.positionColors[p.position],
 				analysis: p.positionAnalysis,
-				quotes: pickQuotes(p.quotes.map((q) => ({ text: q.text, source: source(q.entityName, q.entityUuid) }))),
+				quotes: pickQuotes(
+					p.quotes.map((q) => ({ text: q.text, source: source(q.entityName, q.entityUuid) })),
+				),
 				share: p.facet === lens && stances ? (lensValues.get(label) ?? 0) / stances : undefined,
 			},
 		])
@@ -262,8 +270,8 @@ export function topicReading(d: TopicDetail, c: ReadingContext, add?: ReadingAdd
 			.filter((m) => m.membershipType === grade)
 			.sort(
 				(a, b) =>
-					rank(c, stanceOf.get(b.entityUuid) ?? null) - rank(c, stanceOf.get(a.entityUuid) ?? null) ||
-					a.entityName.localeCompare(b.entityName),
+					rank(c, stanceOf.get(b.entityUuid) ?? null) -
+						rank(c, stanceOf.get(a.entityUuid) ?? null) || a.entityName.localeCompare(b.entityName),
 			)
 	const contributorGroups: ContributorGroup[] = [
 		{ label: 'Exemplars', rows: graded('exemplar').map((m) => row(m, true)) },
@@ -277,44 +285,63 @@ export function topicReading(d: TopicDetail, c: ReadingContext, add?: ReadingAdd
 		},
 	]
 
-	return withAdditions({
-		eyebrow: 'Topic',
-		title: d.title,
-		detail: `${d.entities} ${nouns.entities} · ${stances} written stances${unjudged ? ` · ${unjudged} members without one` : ''}`,
-		mix: d.positions,
-		flags,
-		content: buildTopicContent(
-			{
-				description: d.description,
-				contributors: { value: d.entities, unit: nouns.entities },
-				documents: { value: d.documents, unit: vocabularyOf(c).documentsUnit },
-				stats: [
-					...(lens ? [{ label: plural(headingOf(c, lens).toLowerCase()), value: String(lensValues.size) }] : []),
-					{ label: `core ${nouns.entities}`, value: String(graded('exemplar').length) },
-				],
-				keyPoints: d.keyPointItems.map((kp) => ({
-					text: kp.keyPoint,
-					detail: kp.details || undefined,
-					quotes: pickQuotes(kp.quotes.map((q) => ({ text: q.text, source: source(q.entityName, q.entityUuid) }))),
-				})),
-				lenses: facetOrder.map((facet) => ({ label: headingOf(c, facet), rows: byFacet.get(facet) ?? [] })),
-				parents: d.parents.map((p) => ({
-					id: groupNodeId(p.superclusterId),
-					label: p.title ?? `Group ${p.superclusterId}`,
-					isPrimary: p.isPrimary,
-					membershipType: p.membershipType,
-					similarity: p.similarity,
-				})),
-				contributorGroups,
-			},
-			vocabularyOf(c),
-		),
-	}, add)
+	return withAdditions(
+		{
+			eyebrow: 'Topic',
+			title: d.title,
+			detail: `${d.entities} ${nouns.entities} · ${stances} written stances${unjudged ? ` · ${unjudged} members without one` : ''}`,
+			mix: d.positions,
+			flags,
+			content: buildTopicContent(
+				{
+					description: d.description,
+					contributors: { value: d.entities, unit: nouns.entities },
+					documents: { value: d.documents, unit: vocabularyOf(c).documentsUnit },
+					stats: [
+						...(lens
+							? [
+									{
+										label: plural(headingOf(c, lens).toLowerCase()),
+										value: String(lensValues.size),
+									},
+								]
+							: []),
+						{ label: `core ${nouns.entities}`, value: String(graded('exemplar').length) },
+					],
+					keyPoints: d.keyPointItems.map((kp) => ({
+						text: kp.keyPoint,
+						detail: kp.details || undefined,
+						quotes: pickQuotes(
+							kp.quotes.map((q) => ({ text: q.text, source: source(q.entityName, q.entityUuid) })),
+						),
+					})),
+					lenses: facetOrder.map((facet) => ({
+						label: headingOf(c, facet),
+						rows: byFacet.get(facet) ?? [],
+					})),
+					parents: d.parents.map((p) => ({
+						id: groupNodeId(p.superclusterId),
+						label: p.title ?? `Group ${p.superclusterId}`,
+						isPrimary: p.isPrimary,
+						membershipType: p.membershipType,
+						similarity: p.similarity,
+					})),
+					contributorGroups,
+				},
+				vocabularyOf(c),
+			),
+		},
+		add,
+	)
 }
 
 /* ── a grouping node ───────────────────────────────────────────────────── */
 
-export function groupReading(d: GroupDetail, c: ReadingContext, add?: ReadingAdditions): ReadingView {
+export function groupReading(
+	d: GroupDetail,
+	c: ReadingContext,
+	add?: ReadingAdditions,
+): ReadingView {
 	return withAdditions(groupView(d, c), add)
 }
 
@@ -330,7 +357,11 @@ function groupView(d: GroupDetail, c: ReadingContext): ReadingView {
 	const view = { eyebrow: cap(kind), title: d.title ?? `Group ${d.superclusterId}` }
 	const detail = `${d.topicCount} topics · ${d.entities} ${nouns.entities}`
 	if (d.children.length) {
-		const childKind = generationLabel(d.children[0]?.generation ?? d.generation - 1, d.topGeneration, true)
+		const childKind = generationLabel(
+			d.children[0]?.generation ?? d.generation - 1,
+			d.topGeneration,
+			true,
+		)
 		return {
 			...view,
 			detail,
@@ -440,7 +471,8 @@ function analysisBlocks(
 			detail: [m.explicitness, m.metricDescription].filter(Boolean).join(' — ') || undefined,
 		})),
 	)
-	if (metrics.length) blocks.push({ title: taskTitleOf(c, 'metrics_evaluation', 'Metrics'), points: metrics })
+	if (metrics.length)
+		blocks.push({ title: taskTitleOf(c, 'metrics_evaluation', 'Metrics'), points: metrics })
 	return blocks
 }
 
@@ -464,7 +496,8 @@ export function sourceReading(
 	add?: ReadingAdditions,
 ): ReadingView {
 	const { nouns, lens } = c.words
-	const order = c.documentOrder ?? ((a: DocumentLine, b: DocumentLine) => a.fileName.localeCompare(b.fileName))
+	const order =
+		c.documentOrder ?? ((a: DocumentLine, b: DocumentLine) => a.fileName.localeCompare(b.fileName))
 	const docs = [...documents].sort(order)
 	const several = docs.length >= 2
 	const lensValues = lens ? (e.facets[lens] ?? []).map((v) => valueWord(c, lens, v)) : []
@@ -492,7 +525,9 @@ export function sourceReading(
 				{
 					meta: [...(add?.meta ?? []), ...(docs.length === 1 && docs[0] ? tagLines(docs[0]) : [])],
 					perspectives: stanced
-						.sort((a, b) => rank(c, b.position) - rank(c, a.position) || a.title.localeCompare(b.title))
+						.sort(
+							(a, b) => rank(c, b.position) - rank(c, a.position) || a.title.localeCompare(b.title),
+						)
 						.map((t) => ({
 							id: topicNodeId(t.topicClusterId),
 							label: t.title,
@@ -523,8 +558,13 @@ export function sourceReading(
 					keyPoints: docs.flatMap((doc) => keyPointsOf(c, doc)),
 					analysis: analysisBlocks(docs, c, several),
 					stats: answered.size
-					? [{ label: c.vocabulary?.answeredUnit ?? 'questions answered', value: String(answered.size) }]
-					: [],
+						? [
+								{
+									label: c.vocabulary?.answeredUnit ?? 'questions answered',
+									value: String(answered.size),
+								},
+							]
+						: [],
 				},
 				vocabularyOf(c),
 			),
