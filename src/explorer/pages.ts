@@ -1,0 +1,556 @@
+/**
+ * @aicolab/insight-bridge/explorer/pages — what a report's pages read beyond
+ * the drawers: the overview, the landscape of topics and groups, the
+ * questions the run put to every document, and the method's facts. One
+ * definition over the canonical run schema, in the shapes the contracts
+ * declare (`ReportOverview`, `Landscape`, `QuestionsOverview`,
+ * `QuestionDetail`, `MethodData`); generalised from Training Data's own page
+ * reads (2026-10-21), whose corpus-specific counts are that app's extension.
+ *
+ * Every count is of contributors; a contributor counts towards a topic by any
+ * current membership, and a topic's documents are its strong ones (an
+ * exemplar or high-value passage — the record's counting rule). Stances are
+ * read on current topics only (the `current_topic` view leaves out retired
+ * and confirmed-junk topics), so a stance on a topic an earlier build retired
+ * is never counted. The lens is the facet the run compares stances along
+ * (`RunWords.lens`); a contributor with no lens value is counted as
+ * unclassified (null), never as a value of its own.
+ */
+import { asc, eq, sql } from 'drizzle-orm'
+import type {
+	GenerationCount,
+	GroupProfile,
+	Landscape,
+	MethodData,
+	QuestionDetail,
+	QuestionsOverview,
+	ReportOverview,
+	RunWords,
+	TopicProfile,
+} from '@aicolab/insight-bridge-contracts/explorer'
+import * as s from '@aicolab/insight-bridge-contracts/schema'
+import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
+import { generationLabel } from '../brief/data.ts'
+import { questionClause } from '../world/schema.ts'
+import { hierarchy, treeOf } from './data.ts'
+import { type EffectiveFacets, loadFacetCache } from './facets.ts'
+
+const n = (v: unknown) => Number(v ?? 0)
+const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
+const mixOf = (positions: readonly string[]) => {
+	const mix: Record<string, number> = {}
+	for (const p of positions) mix[p] = (mix[p] ?? 0) + 1
+	return mix
+}
+const countIn = (mix: Readonly<Record<string, number>>, set: ReadonlySet<string>) =>
+	Object.entries(mix).reduce((a, [p, k]) => a + (set.has(p) ? k : 0), 0)
+
+/** A contributor's lens value, or null when it has none. */
+const lensOf = (words: RunWords, facets: EffectiveFacets | undefined) =>
+	(words.lens ? facets?.[words.lens]?.[0] : undefined) ?? null
+
+/** The lens's values in the profile's order, then any the profile did not list, then the unclassified. */
+const lensRank = (words: RunWords) => {
+	const order = words.lens ? (words.facets[words.lens]?.order ?? []) : []
+	return (value: string | null) => {
+		if (value === null) return Number.MAX_SAFE_INTEGER
+		const at = order.indexOf(value)
+		return at < 0 ? order.length : at
+	}
+}
+
+/** The grouping generations present, roots first, each named. */
+const generationsOf = (tree: ReturnType<typeof treeOf>): GenerationCount[] => {
+	const nodes = [...tree.byId.values()].filter((node) => node.generation > 0)
+	const top = Math.max(0, ...nodes.map((node) => node.generation))
+	return [...new Set(nodes.map((node) => node.generation))]
+		.sort((a, b) => b - a)
+		.map((generation) => ({
+			generation,
+			label: generationLabel(generation, top),
+			labelPlural: generationLabel(generation, top, true),
+			count: nodes.filter((node) => node.generation === generation).length,
+		}))
+}
+
+/** Every stance on a current topic: who, which topic, which position. */
+const currentStances = (db: CorpusDb) =>
+	db
+		.select({
+			topicClusterId: s.clusterEntityPerspective.topicClusterId,
+			entityUuid: s.clusterEntityPerspective.entityUuid,
+			position: s.clusterEntityPerspective.position,
+		})
+		.from(s.clusterEntityPerspective)
+		.innerJoin(
+			s.currentTopic,
+			eq(s.currentTopic.topicClusterId, s.clusterEntityPerspective.topicClusterId),
+		)
+
+/** Each current topic's strong documents. */
+const strongDocuments = (db: CorpusDb) =>
+	db.all<{ topicClusterId: number; documentId: string }>(sql`
+		SELECT DISTINCT m.topic_cluster_id AS topicClusterId, c.document_id AS documentId
+		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id
+		WHERE m.membership_type IN ('exemplar', 'high_value')`)
+
+// ---------------------------------------------------------------- the overview
+
+/**
+ * The record's scale and shape. `documentFacet` names the document facet the
+ * host sorts its documents by (Training Data: `document_type`), if any.
+ */
+export async function reportOverview(
+	db: CorpusDb,
+	words: RunWords,
+	options: { documentFacet?: string } = {},
+): Promise<ReportOverview> {
+	const supportive = new Set(words.scale.supportive)
+	const hard = new Set(words.scale.contesting.slice(-2))
+	const [
+		entityFacets,
+		documentFacets,
+		stances,
+		lensPerspectives,
+		sources,
+		docRows,
+		analysedDocs,
+		counts,
+		topicCount,
+		junkCount,
+		memberships,
+		reach,
+		h,
+		questionCount,
+		answerRows,
+	] = await Promise.all([
+		loadFacetCache(db, 'entity'),
+		loadFacetCache(db, 'document'),
+		currentStances(db),
+		words.lens
+			? db
+					.select({ position: s.clusterKeyPerspective.position })
+					.from(s.clusterKeyPerspective)
+					.innerJoin(
+						s.currentTopic,
+						eq(s.currentTopic.topicClusterId, s.clusterKeyPerspective.topicClusterId),
+					)
+					.where(eq(s.clusterKeyPerspective.facet, words.lens))
+			: Promise.resolve([]),
+		db.$count(s.entity),
+		db
+			.select({ documentId: s.publishedDocument.documentId, entityUuid: s.publishedDocument.entityUuid })
+			.from(s.publishedDocument),
+		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
+		db.all<{ passages: number; keyPoints: number; quotes: number; verified: number }>(sql`
+			SELECT (SELECT COUNT(*) FROM published_chunk) AS passages,
+				(SELECT COUNT(*) FROM published_key_point) AS keyPoints,
+				(SELECT COUNT(*) FROM published_key_quote) AS quotes,
+				(SELECT COUNT(*) FROM published_key_quote_verification WHERE verified = 1) AS verified`),
+		db.$count(s.currentTopic),
+		db.$count(
+			s.topicCluster,
+			sql`${s.topicCluster.retiredBuildId} IS NULL AND ${s.topicCluster.junkStatus} = 'confirmed'`,
+		),
+		db.$count(s.currentEntityMembership),
+		db.all<{ topicClusterId: number; sources: number }>(sql`
+			SELECT topic_cluster_id AS topicClusterId, COUNT(DISTINCT entity_uuid) AS sources
+			FROM current_entity_membership GROUP BY topic_cluster_id`),
+		hierarchy(db),
+		db.$count(s.question),
+		db
+			.select({ documentId: s.publishedQuestionResponse.documentId })
+			.from(s.publishedQuestionResponse)
+			.where(eq(s.publishedQuestionResponse.addressed, 1)),
+	])
+	const tree = treeOf(h)
+	const positionMix = mixOf(stances.map((r) => r.position))
+	const lensMix = mixOf(lensPerspectives.map((r) => r.position))
+	const lensTotal = lensPerspectives.length
+	const hardFriction = countIn(positionMix, hard)
+	const total = counts[0]
+	const analysed = new Set(analysedDocs.map((d) => d.documentId))
+	const ownerOf = new Map(docRows.map((d) => [d.documentId, d.entityUuid]))
+
+	const byLens = new Map<string | null, number>()
+	const entityIds = (await db.select({ id: s.entity.id }).from(s.entity)).map((e) => e.id)
+	for (const id of entityIds) {
+		const value = lensOf(words, entityFacets.get(id))
+		byLens.set(value, (byLens.get(value) ?? 0) + 1)
+	}
+	const rank = lensRank(words)
+
+	const documentFacet = options.documentFacet
+	const byDocumentValue = new Map<string, number>()
+	if (documentFacet)
+		for (const d of docRows) {
+			const value = documentFacets.get(d.documentId)?.[documentFacet]?.[0]
+			if (value !== undefined) byDocumentValue.set(value, (byDocumentValue.get(value) ?? 0) + 1)
+		}
+	const documentOrder = documentFacet ? (words.facets[documentFacet]?.order ?? []) : []
+	const documentRank = (value: string) => {
+		const at = documentOrder.indexOf(value)
+		return at < 0 ? documentOrder.length : at
+	}
+
+	return {
+		sources,
+		documents: docRows.length,
+		documentsBy: [...byDocumentValue]
+			.map(([value, documents]) => ({ value, documents }))
+			.sort((a, b) => documentRank(a.value) - documentRank(b.value) || b.documents - a.documents),
+		unanalysedDocuments: docRows.filter((d) => !analysed.has(d.documentId)).length,
+		passages: n(total?.passages),
+		keyPoints: n(total?.keyPoints),
+		quotes: n(total?.quotes),
+		quotesVerified: n(total?.verified),
+		quotesVerifiedPct: pct(n(total?.verified), n(total?.quotes)),
+		topics: topicCount,
+		junkTopics: junkCount,
+		generations: generationsOf(tree),
+		groups: [...tree.byId.values()].filter((node) => node.generation > 0).length,
+		memberships,
+		stances: stances.length,
+		stancedSources: new Set(stances.map((r) => r.entityUuid)).size,
+		lensRows: lensTotal,
+		positionMix,
+		lensMix,
+		supportivePct: pct(countIn(positionMix, supportive), stances.length),
+		lensSupportivePct: pct(countIn(lensMix, supportive), lensTotal),
+		hardFriction,
+		hardFrictionPct: pct(hardFriction, stances.length),
+		frictionSources: new Set(stances.filter((r) => hard.has(r.position)).map((r) => r.entityUuid)).size,
+		lensValues: [...byLens]
+			.map(([value, count]) => ({ value, sources: count }))
+			.sort((a, b) => b.sources - a.sources || rank(a.value) - rank(b.value)),
+		singleSourceTopics: reach.filter((r) => n(r.sources) === 1).length,
+		questions: questionCount,
+		answers: answerRows.length,
+		answeringSources: new Set(answerRows.map((r) => ownerOf.get(r.documentId)).filter(Boolean)).size,
+	}
+}
+
+// ---------------------------------------------------------------- the landscape
+
+/** Every current topic and every grouping node, with live counts rolled up through the primary tree. */
+export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscape> {
+	const supportive = new Set(words.scale.supportive)
+	const contesting = new Set(words.scale.contesting)
+	const [h, entityFacets, topicRows, memberRows, stances, strong] = await Promise.all([
+		hierarchy(db),
+		loadFacetCache(db, 'entity'),
+		db
+			.select({ topicClusterId: s.currentTopic.topicClusterId, title: s.currentTopic.title })
+			.from(s.currentTopic),
+		db
+			.select({
+				topicClusterId: s.currentEntityMembership.topicClusterId,
+				entityUuid: s.currentEntityMembership.entityUuid,
+				membershipType: s.currentEntityMembership.membershipType,
+			})
+			.from(s.currentEntityMembership),
+		currentStances(db),
+		strongDocuments(db),
+	])
+	const tree = treeOf(h)
+	const generations = generationsOf(tree)
+	const top = generations[0]?.generation ?? 0
+	const membersOf = new Map<number, Set<string>>()
+	const exemplarsOf = new Map<number, number>()
+	for (const m of memberRows) {
+		membersOf.set(m.topicClusterId, (membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid))
+		if (m.membershipType === 'exemplar')
+			exemplarsOf.set(m.topicClusterId, (exemplarsOf.get(m.topicClusterId) ?? 0) + 1)
+	}
+	const stancesOf = new Map<number, { entityUuid: string; position: string }[]>()
+	for (const r of stances) stancesOf.set(r.topicClusterId, [...(stancesOf.get(r.topicClusterId) ?? []), r])
+	const documentsOf = new Map<number, Set<string>>()
+	for (const r of strong)
+		documentsOf.set(r.topicClusterId, (documentsOf.get(r.topicClusterId) ?? new Set()).add(r.documentId))
+	const lensValueOf = (entityUuid: string) => lensOf(words, entityFacets.get(entityUuid))
+
+	const topics: TopicProfile[] = topicRows
+		.map((t) => {
+			const mine = stancesOf.get(t.topicClusterId) ?? []
+			const positions = mixOf(mine.map((r) => r.position))
+			const values = new Map<string, number>()
+			for (const r of mine) {
+				const value = lensValueOf(r.entityUuid)
+				if (value !== null) values.set(value, (values.get(value) ?? 0) + 1)
+			}
+			const ranked = [...values].sort((a, b) => b[1] - a[1])
+			const base = tree.baseOfTopic.get(t.topicClusterId)
+			const lineage = base ? tree.ancestorsOf(base.superclusterId) : []
+			return {
+				topicClusterId: t.topicClusterId,
+				title: t.title,
+				lineage,
+				parentId: lineage[0]?.superclusterId ?? null,
+				documents: documentsOf.get(t.topicClusterId)?.size ?? 0,
+				sources: membersOf.get(t.topicClusterId)?.size ?? 0,
+				exemplars: exemplarsOf.get(t.topicClusterId) ?? 0,
+				positions,
+				stances: mine.length,
+				supportivePct: pct(countIn(positions, supportive), mine.length),
+				contestedPct: pct(countIn(positions, contesting), mine.length),
+				lensValueCount: values.size,
+				topLensValue: ranked[0]?.[0] ?? null,
+				singleLensValue: values.size === 1 ? (ranked[0]?.[0] ?? null) : null,
+			}
+		})
+		.sort((a, b) => b.sources - a.sources || a.topicClusterId - b.topicClusterId)
+
+	const groups: GroupProfile[] = [...tree.byId.values()]
+		.filter((node) => node.generation > 0)
+		.map((node) => {
+			const topicIds = tree.topicsUnder(node.superclusterId)
+			const reach = new Set<string>()
+			const documents = new Set<string>()
+			const mine: { entityUuid: string; position: string }[] = []
+			for (const t of topicIds) {
+				for (const e of membersOf.get(t) ?? []) reach.add(e)
+				for (const d of documentsOf.get(t) ?? []) documents.add(d)
+				mine.push(...(stancesOf.get(t) ?? []))
+			}
+			const parentId = tree.ancestorsOf(node.superclusterId)[0]?.superclusterId ?? null
+			const parent = parentId !== null ? tree.byId.get(parentId) : undefined
+			return {
+				superclusterId: node.superclusterId,
+				generation: node.generation,
+				kind: generationLabel(node.generation, top),
+				title: node.title ?? `Group ${node.superclusterId}`,
+				description: node.description,
+				parentId,
+				parentTitle: parent?.title ?? null,
+				topics: topicIds.length,
+				children: tree.childrenOf(node.superclusterId).length,
+				documents: documents.size,
+				sources: reach.size,
+				positions: mixOf(mine.map((r) => r.position)),
+				stances: mine.length,
+				lensValueCount: new Set(
+					mine.map((r) => lensValueOf(r.entityUuid)).filter((v): v is string => v !== null),
+				).size,
+			}
+		})
+		.sort((a, b) => b.generation - a.generation || b.sources - a.sources)
+
+	return { generations, top, groups, topics }
+}
+
+// ---------------------------------------------------------------- the questions
+
+/** Every question the run put to every document, and who answered which, by lens value. */
+export async function questionsOverview(db: CorpusDb, words: RunWords): Promise<QuestionsOverview> {
+	const [entityFacets, questions, answers, keyPoints, contributors] = await Promise.all([
+		loadFacetCache(db, 'entity'),
+		db.select().from(s.question).orderBy(asc(s.question.ordinal)),
+		db
+			.select({
+				questionId: s.publishedQuestionResponse.questionId,
+				entityUuid: s.publishedDocument.entityUuid,
+			})
+			.from(s.publishedQuestionResponse)
+			.innerJoin(
+				s.publishedDocument,
+				eq(s.publishedDocument.documentId, s.publishedQuestionResponse.documentId),
+			)
+			.where(eq(s.publishedQuestionResponse.addressed, 1)),
+		db.all<{ questionId: number; keyPoints: number }>(sql`
+			SELECT r.question_id AS questionId, COUNT(*) AS keyPoints
+			FROM published_question_response_key_point k
+			JOIN published_question_response r ON r.question_response_id = k.question_response_id
+			GROUP BY r.question_id`),
+		db.selectDistinct({ entityUuid: s.publishedDocument.entityUuid }).from(s.publishedDocument),
+	])
+	const lensValueOf = (entityUuid: string) => lensOf(words, entityFacets.get(entityUuid))
+	const rank = lensRank(words)
+	const totals = new Map<string | null, number>()
+	for (const c of contributors) {
+		const value = lensValueOf(c.entityUuid)
+		totals.set(value, (totals.get(value) ?? 0) + 1)
+	}
+	const sourcesOf = new Map<number, Set<string>>()
+	const responsesOf = new Map<number, number>()
+	const cell = new Map<string, Set<string>>()
+	for (const a of answers) {
+		sourcesOf.set(a.questionId, (sourcesOf.get(a.questionId) ?? new Set()).add(a.entityUuid))
+		responsesOf.set(a.questionId, (responsesOf.get(a.questionId) ?? 0) + 1)
+		const key = `${lensValueOf(a.entityUuid) ?? ''}|${a.questionId}`
+		cell.set(key, (cell.get(key) ?? new Set()).add(a.entityUuid))
+	}
+	const keyPointsOf = new Map(keyPoints.map((r) => [r.questionId, n(r.keyPoints)]))
+	const lensValues = [...totals]
+		.map(([value, sources]) => ({ value, sources }))
+		.sort((a, b) => rank(a.value) - rank(b.value) || b.sources - a.sources)
+	return {
+		questions: questions.map((q) => ({
+			questionId: q.questionId,
+			key: q.questionKey,
+			clause: questionClause(q.questionKey, q.questionText),
+			text: q.questionText,
+			ordinal: q.ordinal,
+			sources: sourcesOf.get(q.questionId)?.size ?? 0,
+			responses: responsesOf.get(q.questionId) ?? 0,
+			keyPoints: keyPointsOf.get(q.questionId) ?? 0,
+		})),
+		lensValues,
+		heat: lensValues.map((v) => ({
+			value: v.value,
+			cells: questions.map((q) => {
+				const addressed = cell.get(`${v.value ?? ''}|${q.questionId}`)?.size ?? 0
+				return { questionId: q.questionId, addressed, sources: v.sources, pct: pct(addressed, v.sources) }
+			}),
+		})),
+		overall: questions.map((q) => ({
+			questionId: q.questionId,
+			pct: pct(sourcesOf.get(q.questionId)?.size ?? 0, contributors.length),
+		})),
+		sourcesWithDocuments: contributors.length,
+	}
+}
+
+/** One question's answers, by lens value, each with its contributor, document and key points. */
+export async function questionDetail(
+	db: CorpusDb,
+	words: RunWords,
+	questionId: number,
+): Promise<QuestionDetail | null> {
+	const [q] = await db.select().from(s.question).where(eq(s.question.questionId, questionId)).limit(1)
+	if (!q) return null
+	const [entityFacets, documentFacets, rows, keyPoints] = await Promise.all([
+		loadFacetCache(db, 'entity'),
+		loadFacetCache(db, 'document'),
+		db
+			.select({
+				id: s.publishedQuestionResponse.questionResponseId,
+				documentId: s.publishedQuestionResponse.documentId,
+				position: s.publishedQuestionResponse.position,
+				entityUuid: s.entity.id,
+				entityId: s.entity.entityId,
+				name: s.entity.entityName,
+				documentTitle: s.publishedDocument.documentTitle,
+				fileName: s.publishedDocument.fileName,
+			})
+			.from(s.publishedQuestionResponse)
+			.innerJoin(
+				s.publishedDocument,
+				eq(s.publishedDocument.documentId, s.publishedQuestionResponse.documentId),
+			)
+			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
+			.where(
+				sql`${s.publishedQuestionResponse.questionId} = ${questionId} AND ${s.publishedQuestionResponse.addressed} = 1`,
+			),
+		db
+			.select({
+				responseId: s.publishedQuestionResponseKeyPoint.questionResponseId,
+				keyPoint: s.publishedQuestionResponseKeyPoint.keyPoint,
+				details: s.publishedQuestionResponseKeyPoint.details,
+			})
+			.from(s.publishedQuestionResponseKeyPoint)
+			.innerJoin(
+				s.publishedQuestionResponse,
+				eq(
+					s.publishedQuestionResponse.questionResponseId,
+					s.publishedQuestionResponseKeyPoint.questionResponseId,
+				),
+			)
+			.where(eq(s.publishedQuestionResponse.questionId, questionId)),
+	])
+	const keyPointsOf = new Map<number, { keyPoint: string; details: string }[]>()
+	for (const k of keyPoints)
+		keyPointsOf.set(k.responseId, [...(keyPointsOf.get(k.responseId) ?? []), { keyPoint: k.keyPoint, details: k.details }])
+	const byValue = new Map<string | null, QuestionDetail['byLensValue'][number]['answers']>()
+	for (const r of rows) {
+		const value = lensOf(words, entityFacets.get(r.entityUuid))
+		byValue.set(value, [
+			...(byValue.get(value) ?? []),
+			{
+				entityUuid: r.entityUuid,
+				entityId: r.entityId,
+				name: r.name,
+				lensValue: value,
+				documentId: r.documentId,
+				documentTitle: r.documentTitle,
+				fileName: r.fileName,
+				documentFacets: documentFacets.get(r.documentId) ?? {},
+				position: r.position,
+				keyPoints: keyPointsOf.get(r.id) ?? [],
+			},
+		])
+	}
+	const rank = lensRank(words)
+	return {
+		question: {
+			questionId: q.questionId,
+			key: q.questionKey,
+			clause: questionClause(q.questionKey, q.questionText),
+			text: q.questionText,
+			ordinal: q.ordinal,
+			sources: new Set(rows.map((r) => r.entityUuid)).size,
+			responses: rows.length,
+			keyPoints: keyPoints.length,
+		},
+		byLensValue: [...byValue]
+			.map(([value, answers]) => ({ value, answers: answers.sort((a, b) => a.name.localeCompare(b.name)) }))
+			.sort((a, b) => rank(a.value) - rank(b.value) || b.answers.length - a.answers.length),
+	}
+}
+
+// ---------------------------------------------------------------- the method's facts
+
+/** What the method page states that the run's own row does not: the counts, the junk, the unread, the committed build. */
+export async function methodData(db: CorpusDb, words: RunWords): Promise<MethodData> {
+	const [overview, junk, docRows, analysedDocs, builds, clustered] = await Promise.all([
+		reportOverview(db, words),
+		db
+			.select({
+				topicClusterId: s.topicCluster.topicClusterId,
+				title: s.topicCluster.title,
+				reason: s.topicCluster.junkAiReason,
+				aiFlagged: s.topicCluster.junkAiFlagged,
+			})
+			.from(s.topicCluster)
+			.where(
+				sql`${s.topicCluster.retiredBuildId} IS NULL AND ${s.topicCluster.junkStatus} = 'confirmed'`,
+			),
+		db
+			.select({
+				documentId: s.publishedDocument.documentId,
+				title: s.publishedDocument.documentTitle,
+				fileName: s.publishedDocument.fileName,
+				entityId: s.entity.entityId,
+				name: s.entity.entityName,
+			})
+			.from(s.publishedDocument)
+			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid)),
+		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
+		db
+			.select({
+				buildId: s.clusterBuild.buildId,
+				kind: s.clusterBuild.kind,
+				points: s.clusterBuild.points,
+				params: s.clusterBuild.params,
+				tuning: s.clusterBuild.tuning,
+				hierarchy: s.clusterBuild.hierarchy,
+				labels: s.clusterBuild.labels,
+			})
+			.from(s.clusterBuild)
+			.innerJoin(s.runCurrentBuild, eq(s.runCurrentBuild.buildId, s.clusterBuild.buildId))
+			.limit(1),
+		db.all<{ passages: number }>(sql`
+			SELECT COUNT(DISTINCT m.chunk_id) AS passages
+			FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id`),
+	])
+	const analysed = new Set(analysedDocs.map((d) => d.documentId))
+	return {
+		overview,
+		junk: junk.map((t) => ({ ...t, aiFlagged: t.aiFlagged === 1 })),
+		unanalysed: docRows
+			.filter((d) => !analysed.has(d.documentId))
+			.map((d) => ({ entityId: d.entityId, name: d.name, title: d.title ?? d.fileName }))
+			.sort((a, b) => a.name.localeCompare(b.name)),
+		build: builds[0] ?? null,
+		clusteredPassages: n(clustered[0]?.passages),
+	}
+}

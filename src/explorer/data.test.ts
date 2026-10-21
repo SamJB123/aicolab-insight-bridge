@@ -17,13 +17,19 @@ import {
 	documentDetailSchema,
 	entityDetailSchema,
 	groupDetailSchema,
+	landscapeSchema,
+	methodDataSchema,
 	overviewSchema,
+	questionDetailSchema,
+	questionsOverviewSchema,
+	reportOverviewSchema,
 	runWordsSchema,
 	topicDetailSchema,
 } from '@aicolab/insight-bridge-contracts/explorer'
 import { drizzle } from 'drizzle-orm/node-sqlite'
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as x from './data.ts'
+import * as pages from './pages.ts'
 import { documentReading, groupReading, sourceReading, topicReading } from './readings.ts'
 
 const file = process.env.EXPLORER_DB
@@ -108,6 +114,27 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		expect(sourceReading(detail, read, c).title).toBe(detail.entityName)
 		const [doc] = read
 		if (doc) expect(documentReading(doc, c).detail).toBe(doc.entityName)
+	})
+
+	it('the pages read: overview, landscape, questions and the method’s facts hold together', async () => {
+		const words = runWordsSchema.parse(await x.runWords(db))
+		const overview = reportOverviewSchema.parse(await pages.reportOverview(db, words))
+		const land = landscapeSchema.parse(await pages.landscape(db, words))
+		expect(overview.topics).toBe(topics.length)
+		expect(land.topics.length).toBe(topics.length)
+		expect(overview.groups).toBe(land.groups.length)
+		expect(overview.lensValues.reduce((a, v) => a + v.sources, 0)).toBe(overview.sources)
+		for (const g of land.groups) expect(g.topics).toBeGreaterThan(0)
+		const questions = questionsOverviewSchema.parse(await pages.questionsOverview(db, words))
+		expect(questions.questions.length).toBe(overview.questions)
+		const [first] = questions.questions
+		if (first) {
+			const detail = questionDetailSchema.parse(await pages.questionDetail(db, words, first.questionId))
+			expect(detail.byLensValue.reduce((a, v) => a + v.answers.length, 0)).toBe(first.responses)
+		}
+		const method = methodDataSchema.parse(await pages.methodData(db, words))
+		expect(method.junk.length).toBe(overview.junkTopics)
+		expect(method.unanalysed.length).toBe(overview.unanalysedDocuments)
 	})
 
 	it('search, vocabularies, questions, task results and the galaxy answer', async () => {

@@ -106,12 +106,26 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 	const facets: RunWords['facets'] = {}
 	for (const f of profile.facets) {
 		const said = site?.facets[f.name]
-		facets[f.name] = { heading: said?.heading ?? cap(f.noun), values: said?.values ?? {} }
+		const excluded = new Set(f.excluded_values)
+		facets[f.name] = {
+			heading: said?.heading ?? cap(f.noun),
+			values: said?.values ?? {},
+			descriptions: f.display_labels,
+			order: (f.values ?? f.derive?.buckets.map((b) => b.label) ?? []).filter((v) => !excluded.has(v)),
+		}
 	}
 	for (const [name, said] of Object.entries(site?.facets ?? {}))
-		facets[name] ??= { heading: said.heading ?? cap(name.replace(/_/g, ' ')), values: said.values }
+		facets[name] ??= {
+			heading: said.heading ?? cap(name.replace(/_/g, ' ')),
+			values: said.values,
+			descriptions: {},
+			order: [],
+		}
 	return {
 		title: site?.title ?? meta.name,
+		eyebrow: site?.eyebrow ?? null,
+		standfirst: site?.standfirst ?? params.corpus_description,
+		source: site?.source ?? null,
 		nouns: {
 			entity: params.entity_noun,
 			entities: params.entity_noun_plural,
@@ -488,7 +502,7 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 }
 
 /** The committed build's tree by primary edge: each node's primary parent and children. */
-function treeOf(h: Hierarchy) {
+export function treeOf(h: Hierarchy) {
 	const byId = new Map(h.nodes.map((node) => [node.superclusterId, node]))
 	const parentOf = new Map<number, number>()
 	const childrenOf = new Map<number, number[]>()
