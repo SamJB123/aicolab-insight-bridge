@@ -72,6 +72,14 @@ import {
 	keyPoint,
 	keyQuote,
 	keyQuoteVerification,
+	publishedChunk,
+	publishedDocument,
+	publishedKeyPoint,
+	publishedKeyQuote,
+	publishedKeyQuoteVerification,
+	publishedQuestionResponse,
+	publishedQuestionResponseKeyPoint,
+	publishedQuestionResponseQuote,
 	question,
 	questionResponse,
 	questionResponseKeyPoint,
@@ -92,6 +100,7 @@ import {
 } from 'drizzle-orm'
 import type { AnySQLiteColumn, SQLiteTable, SQLiteViewWithSelection } from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
+import { isKept, keepSources, type ReadScope, wordsOf } from '../explorer/scope.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import {
 	MEMBERSHIP_GRADES,
@@ -183,6 +192,27 @@ export interface WorldShape {
 
 const publishedOf = (shape: WorldShape): WorldPublished => shape.published ?? CANONICAL_PUBLISHED
 
+/**
+ * The shape of a run on the canonical schema verbatim, as every app re-prepared
+ * onto it holds one: a document's title is `document_title`, verification is
+ * its own table, and the published rows are the canonical published views
+ * (contracts schema/views.ts), which keep the run's append history out.
+ */
+export const CANONICAL_RUN_SHAPE: WorldShape = {
+	documentTitle: publishedDocument.documentTitle,
+	verification: { kind: 'table' },
+	published: {
+		document: publishedDocument,
+		chunk: publishedChunk,
+		keyPoint: publishedKeyPoint,
+		keyQuote: publishedKeyQuote,
+		keyQuoteVerification: publishedKeyQuoteVerification,
+		questionResponse: publishedQuestionResponse,
+		questionResponseKeyPoint: publishedQuestionResponseKeyPoint,
+		questionResponseQuote: publishedQuestionResponseQuote,
+	},
+}
+
 /** How one facet reads: the heading a reader meets, short words for long
  *  values, and the order its values read in (an ordinal facet — eras,
  *  periods — is never alphabetical or by count). */
@@ -217,7 +247,19 @@ export interface WorldRecordConfig {
 	slug: string
 	shape: WorldShape
 	words?: WorldWords
+	/**
+	 * The reader's scope, as every explorer read takes it (explorer/scope.ts).
+	 * An excluded source is absent from the record and from every count; a
+	 * withheld source keeps its name, facets, one-word positions, scores and
+	 * every count, and each text of its own (its quotes, its documents' points,
+	 * its perspectives' title and analysis, its answers) reads the notice.
+	 * The record's shape is unchanged.
+	 */
+	scope?: ReadScope
 }
+
+/** A withheld source's reading: its points stand behind the notice, which is the one point shown. */
+const noticePoints = (notice: string): WorldPoint[] => [{ point: notice, details: '', quotes: [] }]
 
 const grouped = <T, K>(rows: readonly T[], key: (row: T) => K): Map<K, T[]> => {
 	const out = new Map<K, T[]>()
@@ -268,6 +310,9 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	const words = config.words ?? {}
 	const params = profile?.prompts.params ?? null
 	const { document, chunk, keyPoint } = publishedOf(config.shape)
+	const scope = config.scope
+	const notice = scope?.withhold?.notice ?? ''
+	const withheld = (uuid: string | null | undefined) => wordsOf(scope, uuid).withheld === true
 
 	const title = words.title ?? site?.title ?? meta?.name
 	const nouns =
@@ -287,19 +332,19 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	}
 
 	const [
-		entityRows,
-		documentRows,
+		allEntityRows,
+		allDocumentRows,
 		docPointRows,
 		topicRows,
 		scRows,
 		edgeRows,
-		memberRows,
+		allMemberRows,
 		topicDocRows,
 		topicPointRows,
-		topicPointQuoteRows,
+		allTopicPointQuoteRows,
 		lensRows,
-		lensQuoteRows,
-		perspectiveRows,
+		allLensQuoteRows,
+		allPerspectiveRows,
 		perspectivePointCounts,
 		perspectiveQuoteRows,
 		facetRows,
@@ -360,7 +405,13 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 			})
 			.from(currentChunkMembership)
 			.innerJoin(chunk, eq(chunk.id, currentChunkMembership.chunkId))
-			.where(inArray(currentChunkMembership.membershipType, [...MEMBERSHIP_GRADES]))
+			.innerJoin(document, eq(document.documentId, chunk.documentId))
+			.where(
+				and(
+					inArray(currentChunkMembership.membershipType, [...MEMBERSHIP_GRADES]),
+					keepSources(document.entityUuid, scope),
+				),
+			)
 			.groupBy(currentChunkMembership.topicClusterId),
 		db
 			.select({
@@ -432,6 +483,18 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		db.select({ facet: facet.facet, noun: facet.noun }).from(facet),
 		db.select().from(topicStar),
 	])
+
+	/* ── the reader's scope: excluded sources leave; withheld sources' words read the notice ── */
+	const entityRows = allEntityRows.filter((e) => isKept(scope, e.uuid))
+	const documentRows = allDocumentRows.filter((d) => isKept(scope, d.entityUuid))
+	const memberRows = allMemberRows.filter((m) => isKept(scope, m.entityUuid))
+	const ownWords = <Q extends { text: string; entityUuid: string | null }>(rows: readonly Q[]) =>
+		rows
+			.filter((q) => isKept(scope, q.entityUuid))
+			.map((q) => (withheld(q.entityUuid) ? { ...q, text: notice } : q))
+	const topicPointQuoteRows = ownWords(allTopicPointQuoteRows)
+	const lensQuoteRows = ownWords(allLensQuoteRows)
+	const perspectiveRows = allPerspectiveRows.filter((p) => isKept(scope, p.entityUuid))
 
 	/* ── identities ── */
 	const slugOf = new Map(entityRows.map((e) => [e.uuid, e.id]))
@@ -632,7 +695,8 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		documents: (docsByEntity.get(e.uuid) ?? []).map((d) => ({
 			id: d.id,
 			title: text(d.title) ?? d.fileName,
-			points: (docPoints.get(d.id) ?? []).map((r) => r.point),
+			// a withheld source's points stand behind the notice, the one line shown
+			points: withheld(e.uuid) ? [notice] : (docPoints.get(d.id) ?? []).map((r) => r.point),
 		})),
 		memberOnly: weakByEntity.get(e.uuid) ?? 0,
 	}))
@@ -647,24 +711,30 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	const perspectives: WorldPerspective[] = perspectiveRows.flatMap((p) => {
 		const sourceId = slugOf.get(p.entityUuid)
 		if (!sourceId || !topicIds.has(p.topicId)) return []
+		// a withheld stance keeps its one-word position and its count; its words read the notice
+		const own = !withheld(p.entityUuid)
 		return [
 			{
 				topicId: p.topicId,
 				sourceId,
-				title: p.title,
-				description: p.description,
+				title: own ? p.title : notice,
+				description: own ? p.description : '',
 				position: p.position,
-				analysis: p.analysis,
+				analysis: own ? p.analysis : '',
 				keyPoints: perspectivePoints.get(p.id) ?? 0,
-				quotes: (perspectiveQuotes.get(p.id) ?? []).map((q) => q.text),
+				quotes: own ? (perspectiveQuotes.get(p.id) ?? []).map((q) => q.text) : [],
 			},
 		]
 	})
 
 	/* ── the custom analyses, from the run's ledger ── */
 	const ownerOfDocument = new Map(documentRows.map((d) => [d.id, slugOf.get(d.entityUuid) ?? null]))
+	const withheldDocuments = new Set(
+		documentRows.filter((d) => withheld(d.entityUuid)).map((d) => d.id),
+	)
 	const tasks = await tasksOf(db, tables, publishedOf(config.shape), {
 		ownerOfDocument,
+		withheldNotice: (documentId) => (withheldDocuments.has(documentId) ? notice : null),
 		titleOf: (taskId) => {
 			const declared = profile?.analysis_tasks.find((t) => t.task_id === taskId)
 			return words.tasks?.[taskId] ?? taskTitle(declared ?? { task_id: taskId, title: null })
@@ -720,7 +790,10 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 /* ───────────────────────── the tasks ───────────────────────── */
 
 interface TaskWords {
+	/** A document's source slug; absent for a document the scope leaves out. */
 	ownerOfDocument: ReadonlyMap<string, string | null>
+	/** The notice a withheld source's answer reads in its words' place, else null. */
+	withheldNotice(documentId: string): string | null
 	titleOf(taskId: string): string
 	descriptionOf(taskId: string): string
 }
@@ -805,12 +878,14 @@ async function tasksOf(
 								const sourceId = words.ownerOfDocument.get(r.documentId)
 								if (!sourceId) return []
 								const points = pointsByResponse.get(r.id) ?? []
+								// a question's position is the answer in prose: the source's words
+								const held = words.withheldNotice(r.documentId)
 								return [
 									{
 										sourceId,
 										documentId: r.documentId,
-										position: r.position,
-										lead: points[0]?.point ?? null,
+										position: held === null ? r.position : null,
+										lead: held ?? points[0]?.point ?? null,
 										keyPoints: points.length,
 									},
 								]
@@ -887,7 +962,8 @@ async function tasksOf(
 										sourceId,
 										documentId,
 										position: null,
-										lead: points[0]?.point ?? null,
+										// the score is a figure and stays; the finding is the source's words
+										lead: words.withheldNotice(documentId) ?? points[0]?.point ?? null,
 										keyPoints: points.length,
 										...(score === null ? {} : { score }),
 									},
@@ -922,27 +998,41 @@ async function tasksOf(
 
 /**
  * One item's reading, fetched when a visitor opens it: the key points (with
- * their quotes) the record only counts. Unknown ids read as empty.
+ * their quotes) the record only counts. Unknown ids read as empty, and so does
+ * an item of a source the scope leaves out; a withheld source's reading is the
+ * notice, its one point.
  */
 export async function worldReading(
 	db: CorpusDb,
 	ref: WorldReadingRef,
 	shape: WorldShape,
+	scope?: ReadScope,
 ): Promise<WorldReading> {
 	const points = async (): Promise<WorldPoint[]> => {
-		if (ref.kind === 'perspective') return perspectiveReading(db, ref)
-		if (ref.kind === 'document') return documentReading(db, ref, shape)
-		return answerReading(db, ref, publishedOf(shape))
+		if (ref.kind === 'perspective') return perspectiveReading(db, ref, scope)
+		if (ref.kind === 'document') return documentReading(db, ref, shape, scope)
+		return answerReading(db, ref, publishedOf(shape), scope)
 	}
 	return worldReadingSchema.parse({ ref, keyPoints: await points() } satisfies WorldReading)
+}
+
+/** How an owner's reading reads in the scope: absent, behind the notice, or as written (null). */
+const scopedReading = (scope: ReadScope | undefined, entityUuid: string): WorldPoint[] | null => {
+	if (!isKept(scope, entityUuid)) return []
+	const words = wordsOf(scope, entityUuid)
+	return words.withheld ? noticePoints(words.notice ?? '') : null
 }
 
 async function perspectiveReading(
 	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'perspective' }>,
+	scope: ReadScope | undefined,
 ): Promise<WorldPoint[]> {
 	const [owner] = await db
-		.select({ id: clusterEntityPerspective.clusterEntityPerspectiveId })
+		.select({
+			id: clusterEntityPerspective.clusterEntityPerspectiveId,
+			entityUuid: entity.id,
+		})
 		.from(clusterEntityPerspective)
 		.innerJoin(entity, eq(entity.id, clusterEntityPerspective.entityUuid))
 		.where(
@@ -953,6 +1043,8 @@ async function perspectiveReading(
 		)
 		.limit(1)
 	if (!owner) return []
+	const scoped = scopedReading(scope, owner.entityUuid)
+	if (scoped) return scoped
 	const rows = await db
 		.select({
 			id: clusterEntityPerspectiveKeyPoint.keyPointId,
@@ -990,14 +1082,17 @@ async function documentReading(
 	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'document' }>,
 	shape: WorldShape,
+	scope: ReadScope | undefined,
 ): Promise<WorldPoint[]> {
 	const { document, keyPoint, keyQuote, keyQuoteVerification } = publishedOf(shape)
 	const [owner] = await db
-		.select({ sourceId: entity.entityId })
+		.select({ sourceId: entity.entityId, entityUuid: entity.id })
 		.from(document)
 		.innerJoin(entity, eq(entity.id, document.entityUuid))
 		.where(eq(document.documentId, ref.documentId))
 		.limit(1)
+	const scoped = owner ? scopedReading(scope, owner.entityUuid) : null
+	if (scoped) return scoped
 	const rows = await db
 		.select({ id: keyPoint.keyPointId, point: keyPoint.keyPoint, details: keyPoint.details })
 		.from(keyPoint)
@@ -1045,12 +1140,14 @@ async function answerReading(
 	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'answer' }>,
 	{ document, questionResponse, questionResponseKeyPoint, questionResponseQuote }: WorldPublished,
+	scope: ReadScope | undefined,
 ): Promise<WorldPoint[]> {
 	const [entry] = await db
 		.select({
 			id: docCustomAnalysis.customAnalysisId,
 			taskType: docCustomAnalysis.taskType,
 			sourceId: entity.entityId,
+			entityUuid: entity.id,
 		})
 		.from(docCustomAnalysis)
 		.innerJoin(document, eq(document.documentId, docCustomAnalysis.documentId))
@@ -1063,6 +1160,8 @@ async function answerReading(
 		)
 		.limit(1)
 	if (!entry) return []
+	const scoped = scopedReading(scope, entry.entityUuid)
+	if (scoped) return scoped
 	if (entry.taskType === 'question_response') {
 		const [response] = await db
 			.select({ id: questionResponse.questionResponseId })
