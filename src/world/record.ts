@@ -43,7 +43,6 @@
  * tables are small and D1 caps bound parameters at ~100).
  */
 
-import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
 import {
 	analysisSubtopic,
 	analysisTopic,
@@ -68,7 +67,6 @@ import {
 	document,
 	entity,
 	facet,
-	facetAssignment,
 	keyPoint,
 	keyQuote,
 	keyQuoteVerification,
@@ -100,6 +98,7 @@ import {
 } from 'drizzle-orm'
 import type { AnySQLiteColumn, SQLiteTable, SQLiteViewWithSelection } from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
+import { loadFacetCache } from '../explorer/facets.ts'
 import { isKept, keepSources, type ReadScope, wordsOf } from '../explorer/scope.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import {
@@ -350,7 +349,7 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		allPerspectiveRows,
 		perspectivePointCounts,
 		perspectiveQuoteRows,
-		facetRows,
+		entityFacets,
 		facetDeclarations,
 		starRows,
 	] = await Promise.all([
@@ -472,17 +471,9 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 				text: clusterEntityPerspectiveQuote.quoteText,
 			})
 			.from(clusterEntityPerspectiveQuote),
-		db
-			.select({
-				subjectId: facetAssignment.subjectId,
-				facet: facetAssignment.facet,
-				value: facetAssignment.facetValue,
-				provenance: facetAssignment.provenance,
-				confidence: facetAssignment.confidence,
-				id: facetAssignment.facetAssignmentId,
-			})
-			.from(facetAssignment)
-			.where(eq(facetAssignment.subjectType, 'entity')),
+		// every reader's facet resolution (explorer/facets.ts): by provenance rank,
+		// and the facets the profile derives (era from year) included
+		loadFacetCache(db, 'entity'),
 		db.select({ facet: facet.facet, noun: facet.noun }).from(facet),
 		db.select().from(topicStar),
 	])
@@ -518,21 +509,11 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		.map(([facet]) => facet)
 	const analysedSet = new Set(analysed)
 
-	/* ── facets by provenance rank, analysed facets only ── */
-	const best = new Map<string, Map<string, { rank: number; values: string[] }>>()
-	const ranked = [...facetRows]
-		.filter((r) => analysedSet.has(r.facet))
-		.sort((a, b) => num(b.confidence) - num(a.confidence) || a.id - b.id)
-	for (const r of ranked) {
-		const rank = provenanceRank(r.provenance)
-		const facets = best.get(r.subjectId) ?? new Map<string, { rank: number; values: string[] }>()
-		best.set(r.subjectId, facets)
-		const cur = facets.get(r.facet)
-		if (!cur || rank < cur.rank) facets.set(r.facet, { rank, values: [r.value] })
-		else if (rank === cur.rank) cur.values.push(r.value)
-	}
+	/* ── a source's values on the analysed facets only ── */
 	const facetsOf = (uuid: string): Record<string, string[]> =>
-		Object.fromEntries([...(best.get(uuid) ?? [])].map(([f, { values }]) => [f, values]))
+		Object.fromEntries(
+			Object.entries(entityFacets.get(uuid) ?? {}).filter(([f]) => analysedSet.has(f)),
+		)
 
 	const nounOf = new Map(facetDeclarations.map((f) => [f.facet, f.noun]))
 	const facets = analysed.map((key) => {

@@ -58,6 +58,13 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 		all = await record()
 	})
 
+	it('every analysed facet has sources behind its values (a derived facet included)', () => {
+		for (const facet of all.facets) {
+			expect(facet.values.length).toBeGreaterThan(0)
+			expect(facet.values.reduce((a, v) => a + v.sources, 0)).toBeGreaterThan(0)
+		}
+	})
+
 	it('an excluded source is absent, and every count leaves it out', async () => {
 		const less = await record({ exclude: new Set([source.uuid]) })
 		expect(less.sources.some((s) => s.id === source.slug)).toBe(false)
