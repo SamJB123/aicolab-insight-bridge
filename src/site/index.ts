@@ -15,8 +15,18 @@
  * copy rather than renaming markup.
  *
  * A theme is the host's: import one (`@aicolab/ui-solid/themes/night-ochre.css`
- * is the default for generated sites) and load its font files. Nothing here
- * carries a palette.
+ * is the default for generated sites) and load its font files. The analytical
+ * palette's defaults (the heat ramp and the position colours) are site.css's,
+ * and `positionColors` says which position takes which; a host overrides the
+ * colours, never the assignment.
  */
-export { BarList, type BarRow, DoorCard, PositionStrip, SectionHead, StatTiles } from './figures.tsx'
+export {
+	BarList,
+	type BarRow,
+	DoorCard,
+	PositionStrip,
+	SectionHead,
+	StatTiles,
+} from './figures.tsx'
+export { type PositionScale, positionColors } from './palette.ts'
 export { SiteShell, type SiteShellProps } from './SiteShell.tsx'

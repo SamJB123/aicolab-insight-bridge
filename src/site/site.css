@@ -32,9 +32,61 @@
  *     one (`@aicolab/ui-solid/themes/night-ochre.css` is the default for
  *     generated sites), and loads its font files
  *   • style the theme toggle — that is ui-solid's ThemeToggle, which brings its own
- *   • carry any corpus's palette — the heat ramp and position colours stay with
- *     whoever defines what they mean
+ *
+ * WHAT IT DOES CARRY BESIDES THE FRAME: the analytical palette's DEFAULTS (see
+ * the block below) — one heat ramp and one set of position colours every
+ * report reads, so a run's site and an app agree unless the app says otherwise.
  */
+
+/* ── the analytical palette ────────────────────────────────────────────────
+   Two scales every report draws with. The heat ramp --s1…--s5 reads
+   contestedness, consensual to contested (teal climbing to the theme's ochre,
+   so attention and identity coincide under night-ochre, the default theme for
+   generated sites). The position colours give each place on a run's stance
+   scale its colour: --p-supports … --p-opposes for a scale with an agreement
+   reading (positionColors in ./palette.ts assigns them by role), --p-order-1 …
+   --p-order-8 by order for a scale without one, --p-unclear for a position
+   that reads as neither.
+
+   DEFAULTS ONLY, on a class like a ui-solid theme: `.ib-site` (SiteShell's
+   element) or `.ib-palette` (for a view outside a site, such as the pipeline's
+   console results), and again on any `.ui-theme` inside one, so a forced-scheme
+   subtree (the galaxy's dark shell) re-resolves them. They sit in the
+   ui.tokens layer, so a host overrides any of them by declaring the same name
+   on its `.ui-theme`, unlayered, as a theme does. */
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
+
+@layer ui.tokens {
+	:is(.ib-site, .ib-palette),
+	:is(.ib-site, .ib-palette) .ui-theme {
+		--s1: light-dark(#2f8c80, #5fb8ac);
+		--s2: light-dark(#5f8f6a, #8fb58f);
+		--s3: light-dark(#9c8a2a, #c9b04e);
+		--s4: light-dark(#b0741b, #d99a4e);
+		--s5: light-dark(#9a6410, #e6b04a);
+		--p-supports: var(--s1);
+		--p-builds: color-mix(in oklab, var(--s1) 50%, var(--s2));
+		--p-unclear: color-mix(in oklab, var(--color-base-content) 26%, var(--color-base-300));
+		--p-mixed: var(--s3);
+		--p-redirects: var(--s4);
+		--p-opposes: var(--s5);
+		--p-order-1: #5a9a62;
+		--p-order-2: #8fae6e;
+		--p-order-3: #c9a34e;
+		--p-order-4: #c97e3f;
+		--p-order-5: #b04a3a;
+		--p-order-6: #8b8f96;
+		--p-order-7: #6b7fa8;
+		--p-order-8: #a86bb0;
+	}
+}
 
 @scope (.ib-site) {
 	/* The site is the scrolling frame: a fixed 100dvh flex column, masthead on
