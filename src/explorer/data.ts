@@ -44,6 +44,7 @@ import type {
 	SearchHit,
 	TagCategorySummary,
 	TagDocument,
+	TaskResult,
 	TaskResultRow,
 	TextHit,
 	TopicDetail,
@@ -1610,9 +1611,55 @@ export async function questionSummary(db: CorpusDb, scope?: ReadScope): Promise<
 }
 
 // ---------------------------------------------------------------- custom analysis (task results)
+/**
+ * Every custom-analysis task the run declares, with its corpus-wide results:
+ * zero counts when nothing landed (a task that silently produced nothing stays
+ * VISIBLE), titled as the run's site names it (else the profile's title, else
+ * the humanised id), described as the profile asked it; then rows for tasks the
+ * profile no longer declares, with a humanised identity. Moved from the
+ * pipeline's lib/task-results.ts (2026-10-21), so the results page, the
+ * connector and every app read one merge.
+ */
+export async function taskResults(db: CorpusDb, scope?: ReadScope): Promise<TaskResult[]> {
+	const [meta] = await db
+		.select({ profile: s.runMeta.profile, site: s.runMeta.site })
+		.from(s.runMeta)
+		.where(eq(s.runMeta.singleton, 1))
+		.limit(1)
+	const rows = await taskResultRows(db, scope)
+	const byId = new Map(rows.map((row) => [row.taskId, row]))
+	const declared = meta?.profile?.analysis_tasks ?? []
+	return [
+		...declared.map(
+			(t): TaskResult => ({
+				...(byId.get(t.task_id) ?? {
+					taskId: t.task_id,
+					taskType: t.task_type,
+					documentsAnalysed: 0,
+					tagCategories: null,
+					questions: null,
+					topics: null,
+					metrics: null,
+				}),
+				title: meta?.site?.tasks[t.task_id]?.title ?? taskTitle(t),
+				description: t.task_description,
+			}),
+		),
+		...rows
+			.filter((row) => !declared.some((t) => t.task_id === row.taskId))
+			.map(
+				(row): TaskResult => ({
+					...row,
+					title: taskTitle({ task_id: row.taskId, title: null }),
+					description: '',
+				}),
+			),
+	]
+}
+
 /** Corpus-wide results per custom-analysis task PRESENT in the store, one rollup shape per task
  *  type (contracts/explorer.ts taskResultRowSchema), over published documents. */
-export async function taskResults(db: CorpusDb, scope?: ReadScope): Promise<TaskResultRow[]> {
+async function taskResultRows(db: CorpusDb, scope?: ReadScope): Promise<TaskResultRow[]> {
 	const kept = andKept(sql`d.entity_uuid`, scope)
 	const tasks = await db.all<{ taskId: string; taskType: string; documents: number }>(sql`
 		SELECT dca.task_id AS taskId, dca.task_type AS taskType, COUNT(DISTINCT dca.document_id) AS documents

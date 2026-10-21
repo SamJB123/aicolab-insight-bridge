@@ -26,6 +26,7 @@
 		"./explorer/analysis": "./src/explorer/analysis.ts",
 		"./explorer/pages": "./src/explorer/pages.ts",
 		"./explorer/scope": "./src/explorer/scope.ts",
+		"./explorer/mcp": "./src/explorer/mcp.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",
 		"./galaxy": "./src/galaxy/index.ts",
