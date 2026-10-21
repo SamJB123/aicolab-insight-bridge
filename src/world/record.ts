@@ -47,6 +47,7 @@ import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
 import {
 	analysisSubtopic,
 	analysisTopic,
+	type CorpusDb,
 	chunk,
 	clusterEntityPerspective,
 	clusterEntityPerspectiveKeyPoint,
@@ -89,12 +90,7 @@ import {
 	inArray,
 	sql,
 } from 'drizzle-orm'
-import type {
-	AnySQLiteColumn,
-	SQLiteAsyncDatabase,
-	SQLiteTable,
-	SQLiteViewWithSelection,
-} from 'drizzle-orm/sqlite-core'
+import type { AnySQLiteColumn, SQLiteTable, SQLiteViewWithSelection } from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import {
@@ -116,8 +112,6 @@ import {
 	worldReadingSchema,
 	worldRecordSchema,
 } from './schema.ts'
-
-export type WorldDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
 /**
  * A canonical table as the reader may be given it: the table itself, or a
@@ -246,7 +240,7 @@ const isPromptKind = (kind: string): kind is (typeof PROMPT_TASK_KINDS)[number] 
 	(PROMPT_TASK_KINDS as readonly string[]).includes(kind)
 
 /** The tables and views the database says it has. */
-async function tablesOf(db: WorldDb): Promise<Set<string>> {
+async function tablesOf(db: CorpusDb): Promise<Set<string>> {
 	const rows = await db.all<{ name: string }>(
 		sql`SELECT name FROM sqlite_master WHERE type IN ('table', 'view')`,
 	)
@@ -254,13 +248,13 @@ async function tablesOf(db: WorldDb): Promise<Set<string>> {
 }
 
 /** The run's own account of itself, where the database carries one. */
-async function runMetaOf(db: WorldDb, tables: ReadonlySet<string>) {
+async function runMetaOf(db: CorpusDb, tables: ReadonlySet<string>) {
 	if (!tables.has('run_meta')) return null
 	const [meta] = await db.select().from(runMeta).where(eq(runMeta.singleton, 1)).limit(1)
 	return meta ?? null
 }
 
-export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promise<WorldRecord> {
+export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Promise<WorldRecord> {
 	const tables = await tablesOf(db)
 	const meta = await runMetaOf(db, tables)
 	const profile = meta?.profile ?? null
@@ -734,7 +728,7 @@ const ordinalClause = (ordinal: number): string => `(${ordinal})`
  * from that kind's own tables. A database with no ledger ran no tasks.
  */
 async function tasksOf(
-	db: WorldDb,
+	db: CorpusDb,
 	tables: ReadonlySet<string>,
 	{ questionResponse, questionResponseKeyPoint }: WorldPublished,
 	words: TaskWords,
@@ -920,7 +914,7 @@ async function tasksOf(
  * their quotes) the record only counts. Unknown ids read as empty.
  */
 export async function worldReading(
-	db: WorldDb,
+	db: CorpusDb,
 	ref: WorldReadingRef,
 	shape: WorldShape,
 ): Promise<WorldReading> {
@@ -933,7 +927,7 @@ export async function worldReading(
 }
 
 async function perspectiveReading(
-	db: WorldDb,
+	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'perspective' }>,
 ): Promise<WorldPoint[]> {
 	const [owner] = await db
@@ -982,7 +976,7 @@ async function perspectiveReading(
 /** A document's own key points, with the quotes the run verified — as the
  *  database keeps verification: a table, a column, or not at all. */
 async function documentReading(
-	db: WorldDb,
+	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'document' }>,
 	shape: WorldShape,
 ): Promise<WorldPoint[]> {
@@ -1037,7 +1031,7 @@ async function documentReading(
  *  question task, from the criterion tables for a perspective or criteria
  *  task — the ledger says which the task is. */
 async function answerReading(
-	db: WorldDb,
+	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'answer' }>,
 	{ document, questionResponse, questionResponseKeyPoint, questionResponseQuote }: WorldPublished,
 ): Promise<WorldPoint[]> {
