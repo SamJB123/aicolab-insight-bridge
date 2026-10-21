@@ -716,13 +716,22 @@ export async function entities(db: CorpusDb): Promise<EntitySummary[]> {
 	}))
 }
 
+/** A source by its uuid, its `entity_id` slug, or the id of one of its published documents — so prose can cite a source by any of them. */
 export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDetail | null> {
-	const row = (
-		await db
-			.select()
-			.from(s.entity)
-			.where(or(eq(s.entity.id, key), eq(s.entity.entityId, key)))
-	)[0]
+	const row =
+		(
+			await db
+				.select()
+				.from(s.entity)
+				.where(or(eq(s.entity.id, key), eq(s.entity.entityId, key)))
+		)[0] ??
+		(
+			await db
+				.select({ entity: s.entity })
+				.from(s.publishedDocument)
+				.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
+				.where(eq(s.publishedDocument.documentId, key))
+		)[0]?.entity
 	if (!row) return null
 	const summary = (await entities(db)).find((e) => e.entityUuid === row.id)
 	if (!summary) return null
@@ -783,6 +792,7 @@ export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDeta
 	const documentFacets = await loadFacetCache(db, 'document')
 	return {
 		...summary,
+		inferredName: row.inferredName ?? summary.facets.llm_entity_name?.[0] ?? null,
 		documentItems: docs.map((d) => ({
 			...d,
 			keyPoints: kp.get(d.documentId) ?? 0,

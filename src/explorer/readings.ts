@@ -25,7 +25,7 @@ import type {
 	TopicDetail,
 } from '@aicolab/insight-bridge-contracts/explorer'
 import { generationLabel } from '../brief/data.ts'
-import type { IBFlag, IBNodeId, IBPoint, IBQuote } from '../galaxy/types.ts'
+import type { IBFlag, IBNodeContent, IBNodeId, IBPoint, IBQuote } from '../galaxy/types.ts'
 import {
 	type AnalysisBlock,
 	buildContainerContent,
@@ -34,6 +34,7 @@ import {
 	buildTopicContent,
 	type ContentVocabulary,
 	type ContributorGroup,
+	type StatChip,
 	type TopicLens,
 } from '../reader/content-builders.ts'
 import type { ReadingView } from '../reader/detail-sheet.tsx'
@@ -41,14 +42,65 @@ import { questionClause } from '../world/schema.ts'
 
 export type { ReadingView }
 
+/** A document as the readings name and order it: its id, titles and facets. */
+export interface DocumentLine {
+	documentId: string
+	title: string | null
+	fileName: string
+	facets: Readonly<Record<string, string[]>>
+}
+
+/** The reader's fixed words, and the readings' own, where the corpus says them differently. */
+export interface ReadingVocabulary extends Partial<ContentVocabulary> {
+	/** The answers section's title; else the run's one question task's title, else 'Answers'. */
+	answersTitle?: string
+	/** The answered-questions stat's unit — 'questions answered'. */
+	answeredUnit?: string
+}
+
 /** What every reading is written with. */
 export interface ReadingContext {
 	words: RunWords
 	/** The host's colour for each position (its palette, as the Brief takes it). */
 	positionColors: Readonly<Record<string, string>>
-	/** The reader's fixed section titles, where the corpus says them differently. */
-	vocabulary?: Partial<ContentVocabulary>
+	vocabulary?: ReadingVocabulary
+	/** A document's name in a list or as a quote's source; its title, else its file name. */
+	documentLabel?: (d: DocumentLine) => string
+	/** The order a source's documents read in; by file name when absent. */
+	documentOrder?: (a: DocumentLine, b: DocumentLine) => number
 }
+
+/**
+ * What an app adds to a reading from its own facets and tables: an eyebrow
+ * or a detail line in place of the default, and flags, lede fragments, links
+ * and stats after the default ones; a related chip.
+ */
+export interface ReadingAdditions {
+	eyebrow?: string
+	detail?: string
+	flags?: IBFlag[]
+	meta?: Array<string | null | undefined>
+	links?: IBNodeContent['links']
+	stats?: StatChip[]
+	related?: IBNodeContent['related']
+}
+
+/** A reading with an app's additions folded in. */
+const withAdditions = (view: ReadingView, add: ReadingAdditions | undefined): ReadingView =>
+	add
+		? {
+				...view,
+				eyebrow: add.eyebrow ?? view.eyebrow,
+				detail: add.detail ?? view.detail,
+				flags: [...(view.flags ?? []), ...(add.flags ?? [])],
+				content: {
+					...view.content,
+					stats: [...(view.content.stats ?? []), ...(add.stats ?? [])],
+					links: [...(view.content.links ?? []), ...(add.links ?? [])],
+					related: add.related ?? view.content.related,
+				},
+			}
+		: view
 
 export const topicNodeId = (topicClusterId: number): IBNodeId => `t:${topicClusterId}`
 export const groupNodeId = (superclusterId: number): IBNodeId => `g:${superclusterId}`
@@ -131,7 +183,7 @@ const rank = (c: ReadingContext, position: string | null) => {
 	return at < 0 ? -1 : at
 }
 
-const vocabularyOf = (c: ReadingContext): Partial<ContentVocabulary> => ({
+const vocabularyOf = (c: ReadingContext) => ({
 	documentsTitle: cap(c.words.nouns.documents),
 	documentsUnit: c.words.nouns.documents,
 	...c.vocabulary,
@@ -145,7 +197,7 @@ const mixOf = (positions: readonly string[]) => {
 
 /* ── a topic ───────────────────────────────────────────────────────────── */
 
-export function topicReading(d: TopicDetail, c: ReadingContext): ReadingView {
+export function topicReading(d: TopicDetail, c: ReadingContext, add?: ReadingAdditions): ReadingView {
 	const { nouns } = c.words
 	const facetsOf = new Map(d.members.map((m) => [m.entityUuid, m.facets]))
 	const lensOf = (entityUuid: string | null) =>
@@ -225,7 +277,7 @@ export function topicReading(d: TopicDetail, c: ReadingContext): ReadingView {
 		},
 	]
 
-	return {
+	return withAdditions({
 		eyebrow: 'Topic',
 		title: d.title,
 		detail: `${d.entities} ${nouns.entities} · ${stances} written stances${unjudged ? ` · ${unjudged} members without one` : ''}`,
@@ -235,7 +287,7 @@ export function topicReading(d: TopicDetail, c: ReadingContext): ReadingView {
 			{
 				description: d.description,
 				contributors: { value: d.entities, unit: nouns.entities },
-				documents: { value: d.documents, unit: nouns.documents },
+				documents: { value: d.documents, unit: vocabularyOf(c).documentsUnit },
 				stats: [
 					...(lens ? [{ label: plural(headingOf(c, lens).toLowerCase()), value: String(lensValues.size) }] : []),
 					{ label: `core ${nouns.entities}`, value: String(graded('exemplar').length) },
@@ -257,12 +309,16 @@ export function topicReading(d: TopicDetail, c: ReadingContext): ReadingView {
 			},
 			vocabularyOf(c),
 		),
-	}
+	}, add)
 }
 
 /* ── a grouping node ───────────────────────────────────────────────────── */
 
-export function groupReading(d: GroupDetail, c: ReadingContext): ReadingView {
+export function groupReading(d: GroupDetail, c: ReadingContext, add?: ReadingAdditions): ReadingView {
+	return withAdditions(groupView(d, c), add)
+}
+
+function groupView(d: GroupDetail, c: ReadingContext): ReadingView {
 	const { nouns, scale, lens } = c.words
 	const kind = generationLabel(d.generation, d.topGeneration)
 	const supportive = new Set(scale.supportive)
@@ -321,7 +377,8 @@ export function groupReading(d: GroupDetail, c: ReadingContext): ReadingView {
 
 /* ── a document's analyses ─────────────────────────────────────────────── */
 
-const documentLabel = (d: { title: string | null; fileName: string }) => d.title ?? d.fileName
+const documentLabel = (c: ReadingContext, d: DocumentLine) =>
+	c.documentLabel ? c.documentLabel(d) : (d.title ?? d.fileName)
 
 /** The title the run gives its one task of a type, else the reader's word for it. */
 const taskTitleOf = (c: ReadingContext, type: string, fallback: string) => {
@@ -352,7 +409,7 @@ function analysisBlocks(
 ): AnalysisBlock[] {
 	const quoteOf = (doc: DocumentDetail) => (text: string) => ({
 		text,
-		source: withSource ? documentLabel(doc) : undefined,
+		source: withSource ? documentLabel(c, doc) : undefined,
 	})
 	const answers: IBPoint[] = docs.flatMap((doc) =>
 		doc.questionResponses
@@ -360,11 +417,15 @@ function analysisBlocks(
 			.map((r) => ({
 				text: `${questionClause(r.questionKey, r.questionText)} ${r.questionText.replace(/^\([a-z0-9]+\)\s*/i, '')}`,
 				detail: r.position || undefined,
-				quotes: r.keyPoints.flatMap((kp) => kp.quotes.map(quoteOf(doc))),
+				quotes: r.keyPoints.flatMap((kp) => kp.quotes.slice(0, 2).map(quoteOf(doc))),
 			})),
 	)
 	const blocks: AnalysisBlock[] = []
-	if (answers.length) blocks.push({ title: taskTitleOf(c, 'question_response', 'Answers'), points: answers })
+	if (answers.length)
+		blocks.push({
+			title: c.vocabulary?.answersTitle ?? taskTitleOf(c, 'question_response', 'Answers'),
+			points: answers,
+		})
 	const byTopic = new Map<string, IBPoint[]>()
 	for (const doc of docs)
 		for (const cr of doc.criteria)
@@ -383,14 +444,14 @@ function analysisBlocks(
 	return blocks
 }
 
-/** A document's key points, with the quotes the pipeline verified. */
-const keyPointsOf = (doc: DocumentDetail, withSource: boolean): IBPoint[] =>
+/** A document's key points, with the quotes the pipeline verified, each attributed to its document. */
+const keyPointsOf = (c: ReadingContext, doc: DocumentDetail): IBPoint[] =>
 	doc.keyPointItems.map((kp) => ({
 		text: kp.keyPoint,
 		detail: kp.details || undefined,
 		quotes: kp.quotes
 			.filter((q) => q.verified)
-			.map((q) => ({ text: q.text, source: withSource ? documentLabel(doc) : undefined })),
+			.map((q) => ({ text: q.text, source: documentLabel(c, doc) })),
 	}))
 
 /* ── a source ──────────────────────────────────────────────────────────── */
@@ -400,70 +461,85 @@ export function sourceReading(
 	e: EntityDetail,
 	documents: readonly DocumentDetail[],
 	c: ReadingContext,
+	add?: ReadingAdditions,
 ): ReadingView {
 	const { nouns, lens } = c.words
-	const several = documents.length >= 2
+	const order = c.documentOrder ?? ((a: DocumentLine, b: DocumentLine) => a.fileName.localeCompare(b.fileName))
+	const docs = [...documents].sort(order)
+	const several = docs.length >= 2
 	const lensValues = lens ? (e.facets[lens] ?? []).map((v) => valueWord(c, lens, v)) : []
 	const flags: IBFlag[] = lensValues.slice(1).map((v) => ({
 		label: `also ${v}`,
 		tip: `The pipeline placed this ${nouns.entity} under more than one ${headingOf(c, lens ?? '').toLowerCase()}; the first is primary.`,
 	}))
-	const inferred = e.facets.llm_entity_name?.[0]
-	if (inferred && inferred !== e.entityName)
+	if (e.inferredName && e.inferredName !== e.entityName)
 		flags.push({
-			label: inferred,
+			label: e.inferredName,
 			tip: `The pipeline's own reading of the ${nouns.entity}'s name; the record's name stands.`,
 		})
 	const stanced = e.topicItems.filter((t) => t.position !== null)
 	const answered = new Set(
-		documents.flatMap((d) => d.questionResponses.filter((r) => r.addressed).map((r) => r.questionKey)),
+		docs.flatMap((d) => d.questionResponses.filter((r) => r.addressed).map((r) => r.questionKey)),
 	)
-	return {
-		eyebrow: cap(nouns.entity),
-		title: e.entityName,
-		detail: lensValues[0],
-		mix: mixOf(stanced.flatMap((t) => (t.position ? [t.position] : []))),
-		flags,
-		content: buildSourceContent(
-			{
-				meta: documents.length === 1 && documents[0] ? tagLines(documents[0]) : [],
-				perspectives: stanced
-					.sort((a, b) => rank(c, b.position) - rank(c, a.position))
-					.map((t) => ({
-						id: topicNodeId(t.topicClusterId),
-						label: t.title,
-						position: t.position ?? undefined,
-						positionColor: t.position ? c.positionColors[t.position] : undefined,
-						analysis: t.positionAnalysis ?? undefined,
-						quotes: t.quotes.map((q) => ({ text: q })),
-					})),
-				engaged: e.topicItems
-					.filter((t) => t.position === null)
-					.sort((a, b) => a.title.localeCompare(b.title))
-					.map((t) => ({ id: topicNodeId(t.topicClusterId), label: t.title })),
-				documents: e.documentItems.map((d) => {
-					const doc = documents.find((x) => x.documentId === d.documentId)
-					const answers = doc?.questionResponses.filter((r) => r.addressed).length ?? 0
-					return {
-						documentId: d.documentId,
-						label: documentLabel(d),
-						detail: [`${d.keyPoints} key points`, answers ? `${answers} answered` : null]
-							.filter(Boolean)
-							.join(' · '),
-					}
-				}),
-				keyPoints: documents.flatMap((doc) => keyPointsOf(doc, several)),
-				analysis: analysisBlocks(documents, c, several),
-				stats: answered.size ? [{ label: 'questions answered', value: String(answered.size) }] : [],
-			},
-			vocabularyOf(c),
-		),
-	}
+	return withAdditions(
+		{
+			eyebrow: cap(nouns.entity),
+			title: e.entityName,
+			detail: lensValues[0],
+			mix: mixOf(stanced.flatMap((t) => (t.position ? [t.position] : []))),
+			flags,
+			content: buildSourceContent(
+				{
+					meta: [...(add?.meta ?? []), ...(docs.length === 1 && docs[0] ? tagLines(docs[0]) : [])],
+					perspectives: stanced
+						.sort((a, b) => rank(c, b.position) - rank(c, a.position) || a.title.localeCompare(b.title))
+						.map((t) => ({
+							id: topicNodeId(t.topicClusterId),
+							label: t.title,
+							position: t.position ?? undefined,
+							positionColor: t.position ? c.positionColors[t.position] : undefined,
+							analysis: t.positionAnalysis ?? undefined,
+							quotes: t.quotes
+								.map((q) => q.trim())
+								.filter((q) => looksLikeQuote(q, 40))
+								.slice(0, 2)
+								.map((q) => ({ text: q })),
+						})),
+					engaged: e.topicItems
+						.filter((t) => t.position === null)
+						.sort((a, b) => a.title.localeCompare(b.title))
+						.map((t) => ({ id: topicNodeId(t.topicClusterId), label: t.title })),
+					documents: [...e.documentItems].sort(order).map((d) => {
+						const doc = docs.find((x) => x.documentId === d.documentId)
+						const answers = doc?.questionResponses.filter((r) => r.addressed).length ?? 0
+						return {
+							documentId: d.documentId,
+							label: documentLabel(c, d),
+							detail: [`${d.keyPoints} key points`, answers ? `${answers} answered` : null]
+								.filter(Boolean)
+								.join(' · '),
+						}
+					}),
+					keyPoints: docs.flatMap((doc) => keyPointsOf(c, doc)),
+					analysis: analysisBlocks(docs, c, several),
+					stats: answered.size
+					? [{ label: c.vocabulary?.answeredUnit ?? 'questions answered', value: String(answered.size) }]
+					: [],
+				},
+				vocabularyOf(c),
+			),
+		},
+		{ ...add, meta: undefined },
+	)
 }
 
 /* ── a document ────────────────────────────────────────────────────────── */
 
-export function documentReading(d: DocumentDetail, c: ReadingContext): ReadingView {
+export function documentReading(
+	d: DocumentDetail,
+	c: ReadingContext,
+	add?: ReadingAdditions,
+): ReadingView {
 	const flags: IBFlag[] = []
 	if (!d.keyPointItems.length)
 		flags.push({
@@ -471,19 +547,22 @@ export function documentReading(d: DocumentDetail, c: ReadingContext): ReadingVi
 			hot: true,
 			tip: 'The pipeline produced no key points for this document; it still holds topic memberships.',
 		})
-	return {
-		eyebrow: cap(c.words.nouns.document),
-		title: documentLabel(d),
-		detail: d.entityName,
-		flags,
-		content: buildDocumentContent(
-			{
-				meta: tagLines(d),
-				keyPoints: keyPointsOf(d, false),
-				analysis: analysisBlocks([d], c, false),
-				engaged: d.topics.map((t) => ({ id: topicNodeId(t.topicClusterId), label: t.title })),
-			},
-			vocabularyOf(c),
-		),
-	}
+	return withAdditions(
+		{
+			eyebrow: cap(c.words.nouns.document),
+			title: d.title ?? d.fileName,
+			detail: d.entityName,
+			flags,
+			content: buildDocumentContent(
+				{
+					meta: [...(add?.meta ?? []), ...tagLines(d)],
+					keyPoints: keyPointsOf(c, d),
+					analysis: analysisBlocks([d], c, false),
+					engaged: d.topics.map((t) => ({ id: topicNodeId(t.topicClusterId), label: t.title })),
+				},
+				vocabularyOf(c),
+			),
+		},
+		{ ...add, meta: undefined },
+	)
 }
