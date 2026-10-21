@@ -38,7 +38,7 @@ export function derivedValue(rule: DeriveRule, from: string | undefined): string
 }
 
 /** The profile's derived facets at a granularity, where the run carries a profile. */
-async function derivedFacets(
+export async function derivedFacets(
 	db: CorpusDb,
 	granularity: 'entity' | 'document',
 ): Promise<{ name: string; rule: DeriveRule }[]> {

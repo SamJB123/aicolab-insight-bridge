@@ -64,6 +64,64 @@ describe.skipIf(!file || !existsSync(file))('the explorer tool table', () => {
 		for (const t of topics) expect(t.relevance).toBeGreaterThan(0)
 	})
 
+	it('a facet filter keeps every source holding the value, and passages only of those sources', async () => {
+		const lens = context.words.lens
+		if (!lens) return
+		const sources = z.array(z.object({ source_id: z.string(), lensValue: z.string().nullable() }))
+		const all = sources.parse(await runExplorerTool(db, 'list_sources', { limit: 200 }))
+		const value = all.find((s) => s.lensValue)?.lensValue
+		if (!value) return
+		const byLens = sources.parse(
+			await runExplorerTool(db, 'list_sources', { lens_value: value, limit: 200 }),
+		)
+		const byFacet = sources.parse(
+			await runExplorerTool(db, 'list_sources', { facet: lens, value, limit: 200 }),
+		)
+		// the lens filter reads a source's first lens value; the facet filter keeps a
+		// source holding the value among several, so it keeps at least as many
+		const kept = new Set(byFacet.map((s) => s.source_id))
+		for (const s of byLens) expect(kept.has(s.source_id)).toBe(true)
+		const ids = sqlite.prepare('SELECT id FROM published_chunk ORDER BY id LIMIT 150').all()
+		const nearest: [string, number][] = ids.map((r, i) => [String(r.id), 1 - i / 1000])
+		const passages = z
+			.array(z.object({ source_id: z.string().nullable() }))
+			.parse(
+				await runExplorerTool(
+					db,
+					'search_passages',
+					{ query: 'any', top_k: 50, facet: lens, value },
+					{ nearest },
+				),
+			)
+		for (const p of passages) expect(kept.has(p.source_id ?? '')).toBe(true)
+		// one without the other is refused
+		expect(
+			z
+				.object({ error: z.string() })
+				.safeParse(await runExplorerTool(db, 'list_sources', { facet: lens })).success,
+		).toBe(true)
+	})
+
+	it('a facet the profile derives is listed and pivots like any other', async () => {
+		const [meta] = sqlite.prepare('SELECT profile FROM run_meta WHERE singleton = 1').all()
+		const profile = z
+			.object({ facets: z.array(z.object({ name: z.string(), derive: z.unknown().optional() })) })
+			.safeParse(JSON.parse(String(meta?.profile ?? '{}')))
+		const derived = profile.success
+			? profile.data.facets.filter((f) => f.derive).map((f) => f.name)
+			: []
+		if (!derived.length) return
+		for (const name of derived) {
+			const listed = z
+				.object({ facet: z.string(), tags: z.array(z.object({ tag: z.string() })) })
+				.parse(await runExplorerTool(db, 'list_tags', { category: name }))
+			expect(listed.facet).toBe(name)
+			expect(listed.tags.length).toBeGreaterThan(0)
+			const pivot = await runExplorerTool(db, 'tag_pivot', { category: name })
+			expect(z.object({ error: z.string() }).safeParse(pivot).success).toBe(false)
+		}
+	})
+
 	it('dissent sorts first: the contesting positions lead a topic’s stances', async () => {
 		const scale = context.words.scale
 		if (!scale.contesting.length || context.examples.topicId === null) return

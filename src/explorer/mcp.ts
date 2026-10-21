@@ -90,8 +90,10 @@ export function explorerInstructions(context: ToolContext, extra?: string): stri
 	const { words, overview } = context
 	const { entity, entities, documents } = words.nouns
 	const lens = words.lens ? (words.facets[words.lens]?.heading ?? words.lens).toLowerCase() : null
+	// the standfirst runs on into the counts: its own closing stop would read "record.: 150"
+	const standfirst = words.standfirst?.trim().replace(/[.;:]+$/, '')
 	return (
-		`This connector serves "${words.title}"${words.standfirst ? ` — ${words.standfirst}` : ''}: ${fmt(overview.documents)} ${documents} from ${fmt(overview.entities)} ${entities}, ` +
+		`This connector serves "${words.title}"${standfirst ? ` — ${standfirst}` : ''}: ${fmt(overview.documents)} ${documents} from ${fmt(overview.entities)} ${entities}, ` +
 		`split into ${fmt(overview.chunks)} passages and clustered into ${fmt(overview.clusters - overview.junkConfirmedClusters)} cross-document topics, each synthesised with key points, verbatim quotes, ` +
 		`per-${entity} perspectives and comparative perspectives${lens ? ` by ${lens}` : ''}` +
 		(overview.tagCategories.length

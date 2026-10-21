@@ -38,7 +38,7 @@ import { treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
 import * as x from './data.ts'
 import { STRONG } from './data.ts'
-import { type EffectiveFacets, loadFacetCache } from './facets.ts'
+import { derivedFacets, type EffectiveFacets, loadFacetCache } from './facets.ts'
 import * as pages from './pages.ts'
 import { isKept, keepSources, type ReadScope, textOf, wordsOf } from './scope.ts'
 
@@ -134,9 +134,13 @@ async function documentOwners(c: ToolReadContext) {
 	return { ownerOf: new Map(rows.map((r) => [r.documentId, r.entityUuid])), documentsOf }
 }
 
-/** Every facet the record holds (its assignments, not the profile's declarations), lens first. */
+/**
+ * Every facet the record holds (its assignments, not the profile's declarations)
+ * and every facet the profile derives from one it holds (an era from a year,
+ * resolved by loadFacetCache like any other), lens first.
+ */
 async function readerFacets(db: CorpusDb, words: RunWords) {
-	const [held, declared] = await Promise.all([
+	const [held, declared, derivedForEntities, derivedForDocuments] = await Promise.all([
 		db
 			.selectDistinct({
 				facet: s.facetAssignment.facet,
@@ -144,14 +148,17 @@ async function readerFacets(db: CorpusDb, words: RunWords) {
 			})
 			.from(s.facetAssignment),
 		db.select({ facet: s.facet.facet, noun: s.facet.noun }).from(s.facet),
+		derivedFacets(db, 'entity'),
+		derivedFacets(db, 'document'),
 	])
 	const nounOf = new Map(declared.map((d) => [d.facet, d.noun]))
 	const keys = [
-		...new Set(
-			held
+		...new Set([
+			...held
 				.filter((h) => h.subjectType === 'entity' || h.subjectType === 'document')
 				.map((h) => h.facet),
-		),
+			...[...derivedForEntities, ...derivedForDocuments].map((d) => d.name),
+		]),
 	].filter((key) => !internalFacet(key))
 	return keys
 		.map((key) => ({
@@ -280,6 +287,54 @@ const lensValue = z
 	.optional()
 	.describe('One value of the run’s lens (see corpus_overview `lens.values`)')
 
+/** Narrowing by any facet's value, beside the lens: the facet's key and the value to keep. */
+const facetFilterInput = {
+	facet: z
+		.string()
+		.optional()
+		.describe('A facet key (see list_tags) to narrow by; give `value` with it'),
+	value: z.string().optional().describe('The value of `facet` to keep'),
+}
+
+/** The refusal of a facet filter given only its facet or only its value. */
+const halfFacetFilter = (a: { facet?: string; value?: string }) =>
+	!a.facet !== !a.value ? { error: '`facet` and `value` go together: give both, or neither' } : null
+
+/**
+ * What a facet filter keeps: the sources that hold the value (themselves, or
+ * through one of their documents) and the documents it reaches (a document
+ * that holds it, or every document of a source that does). Facets resolve as
+ * every reader resolves them, a facet the profile derives among them. Null
+ * when the call names no facet (a call naming only one of the two is refused
+ * first: `halfFacetFilter`).
+ */
+async function facetFilter(
+	c: ToolReadContext,
+	a: { facet?: string; value?: string },
+): Promise<{ entities: Set<string>; documents: Set<string> } | null> {
+	if (!a.facet || !a.value) return null
+	const facet = a.facet
+	const [entityFacets, documentFacets, { ownerOf, documentsOf }] = await Promise.all([
+		loadFacetCache(c.db, 'entity', [facet]),
+		loadFacetCache(c.db, 'document', [facet]),
+		documentOwners(c),
+	])
+	const entities = new Set<string>()
+	const documents = new Set<string>()
+	for (const [uuid, facets] of entityFacets)
+		if (facets[facet]?.includes(a.value)) {
+			entities.add(uuid)
+			for (const d of documentsOf.get(uuid) ?? []) documents.add(d)
+		}
+	for (const [documentId, facets] of documentFacets)
+		if (facets[facet]?.includes(a.value)) {
+			documents.add(documentId)
+			const owner = ownerOf.get(documentId)
+			if (owner) entities.add(owner)
+		}
+	return { entities, documents }
+}
+
 /** A tool's input: its parameters' schemas by name. */
 type ToolInput = Record<string, z.ZodType>
 
@@ -401,12 +456,13 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 		title: () => 'Passage search',
 		group: ORIENTATION,
 		description: (t) =>
-			`Search over the ${t.overview.chunks} verbatim passages of every ${t.words.nouns.document}: the most relevant passages with their ${t.words.nouns.document}, ${t.words.nouns.entity}${lensWords(t) ? `, its ${lensWords(t)}` : ''} and the topics each strongly belongs to. Narrow to one ${t.words.nouns.document}, one lens value or one topic.`,
+			`Search over the ${t.overview.chunks} verbatim passages of every ${t.words.nouns.document}: the most relevant passages with their ${t.words.nouns.document}, ${t.words.nouns.entity}${lensWords(t) ? `, its ${lensWords(t)}` : ''} and the topics each strongly belongs to. Narrow to one ${t.words.nouns.document}, one lens value, one value of any facet, or one topic.`,
 		input: {
 			query: z.string().describe('What you are after, in plain words'),
 			top_k: limitOf(50),
 			document_id: z.string().optional().describe('Only passages of this document'),
 			lens_value: lensValue,
+			...facetFilterInput,
 			topic_id: z
 				.number()
 				.int()
@@ -418,15 +474,24 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 			query: 'query',
 			// a narrowed search reads further down the ranking before it narrows
 			topK: (a) =>
-				Math.min(150, (a.top_k ?? 12) * (a.document_id || a.lens_value || a.topic_id ? 5 : 1)),
+				Math.min(
+					150,
+					(a.top_k ?? 12) * (a.document_id || a.lens_value || a.facet || a.topic_id ? 5 : 1),
+				),
 		},
 		read: async (c, a, nearest) => {
 			const topK = a.top_k ?? 12
-			const filtered = !!(a.document_id || a.lens_value || a.topic_id)
-			const ranked = await rankedPassages(c, a.query, filtered ? topK * 5 : topK, nearest)
+			const refused = halfFacetFilter(a)
+			if (refused) return refused
+			const filtered = !!(a.document_id || a.lens_value || a.facet || a.topic_id)
+			const [ranked, kept] = await Promise.all([
+				rankedPassages(c, a.query, filtered ? topK * 5 : topK, nearest),
+				facetFilter(c, a),
+			])
 			return (await passagesOf(c, ranked))
 				.filter((p) => !a.document_id || p.document_id === a.document_id)
 				.filter((p) => !a.lens_value || p.lensValue === a.lens_value)
+				.filter((p) => !kept || kept.documents.has(p.document_id))
 				.filter((p) => !a.topic_id || p.topics.some((t) => t.topic_id === a.topic_id))
 				.slice(0, topK)
 		},
@@ -1075,15 +1140,18 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 		title: (t) => `List ${t.words.nouns.entities}`,
 		group: WHO,
 		description: (t) =>
-			`The ${t.overview.entities} ${t.words.nouns.entities} behind the ${t.words.nouns.documents}: each with its stable id (source_id, for get_source), its facets, its ${t.words.nouns.document} count, how many stances it holds and how many topics it strongly represents. Filter by ${lensWords(t) ?? 'lens value'} or by a fragment of the name. ${notPrevalence(t.words, t.overview.entities)}`,
+			`The ${t.overview.entities} ${t.words.nouns.entities} behind the ${t.words.nouns.documents}: each with its stable id (source_id, for get_source), its facets, its ${t.words.nouns.document} count, how many stances it holds and how many topics it strongly represents. Filter by ${lensWords(t) ?? 'lens value'}, by a value of any facet, or by a fragment of the name. ${notPrevalence(t.words, t.overview.entities)}`,
 		input: {
 			lens_value: lensValue,
+			...facetFilterInput,
 			query: z.string().optional().describe('A fragment of the name or id'),
 			limit: limitOf(200),
 		},
 		examples: () => ({ limit: 25 }),
 		read: async (c, a) => {
-			const [entities, stanceRows, reachRows, inferred] = await Promise.all([
+			const refused = halfFacetFilter(a)
+			if (refused) return refused
+			const [entities, stanceRows, reachRows, inferred, kept] = await Promise.all([
 				x.entities(c.db, c.scope),
 				c.db
 					.select({ entityUuid: s.clusterEntityPerspective.entityUuid })
@@ -1097,6 +1165,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 					.from(s.currentEntityMembership)
 					.where(inArray(s.currentEntityMembership.membershipType, STRONG)),
 				c.db.select({ id: s.entity.id, inferredName: s.entity.inferredName }).from(s.entity),
+				facetFilter(c, a),
 			])
 			const count = (rows: { entityUuid: string }[]) => {
 				const m = new Map<string, number>()
@@ -1110,6 +1179,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 			return entities
 				.map((e) => ({ e, lens: lensValueOf(c.words, e.facets) }))
 				.filter(({ lens }) => !a.lens_value || lens === a.lens_value)
+				.filter(({ e }) => !kept || kept.entities.has(e.entityUuid))
 				.filter(
 					({ e }) =>
 						!needle ||
