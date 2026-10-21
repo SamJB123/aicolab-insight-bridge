@@ -1,6 +1,7 @@
 /* A report's pages — what they draw beyond the site frame's classes
  * (site.css: .view-wrap, .sec, .fig, .door, .grid2). Imported by the pages
- * themselves; layered below any unlayered host CSS, like the Brief's sheet. */
+ * themselves; layered below any unlayered host CSS, like the Brief's sheet —
+ * all but the frame modifiers at the end of this file. */
 @layer reset,
 	ui.tokens,
 	ui.resolver,
@@ -18,10 +19,6 @@
 	}
 
 	/* ── the matrix: the questions' heat map, and the clustering attempts as a plain table ── */
-	.heat-wrap {
-		overflow-x: auto;
-		padding: 1rem;
-	}
 	.heat {
 		border-collapse: collapse;
 		width: 100%;
@@ -118,11 +115,6 @@
 	.heat.attempts tr.committed td {
 		color: var(--color-primary);
 		background: var(--color-primary-soft);
-	}
-
-	/* a page as wide as the frame allows */
-	.view-wide {
-		max-width: var(--page-max);
 	}
 
 	/* ── a row of figures ── */
@@ -542,4 +534,19 @@
 			flex-wrap: wrap;
 		}
 	}
+}
+
+/* Modifiers of the frame's own classes. The frame is unlayered — site.css, or
+ * an app's own copy of it — so a layered rule can never adjust it, and the
+ * apps carry no `.ib-site` to scope to: these sit outside the layers, unscoped,
+ * and win by compound specificity. */
+
+/* a page as wide as the frame allows */
+.view-wrap.view-wide {
+	max-width: var(--page-max);
+}
+/* the matrix scrolls sideways inside its figure, on a tighter pad */
+.fig.heat-wrap {
+	overflow-x: auto;
+	padding: 1rem;
 }
