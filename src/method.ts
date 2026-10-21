@@ -22,6 +22,10 @@
  * Pure strings, no JSX, so a server module can import this without pulling the
  * components in.
  */
+import type { MethodData, MethodStage, RunMethod } from '@aicolab/insight-bridge-contracts/explorer'
+import { facetKind, type Profile } from '@aicolab/insight-bridge-contracts/profile'
+import { type RunConfig, resolvedModels } from '@aicolab/insight-bridge-contracts/run-config'
+import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 
 export type MethodNouns = {
 	/** One source entity, lower case: "submitter", "episode", "source". */
@@ -101,3 +105,246 @@ export function methodCopy(nouns: MethodNouns): MethodCopy {
  * for every corpus at once (the shared /insight-bridge page).
  */
 export const GENERIC_METHOD_COPY: MethodCopy = methodCopy({ entity: 'source', entities: 'sources' })
+
+/* ───────────────────────── a run's Method page, derived ───────────────────────── */
+//
+// WHAT IS DERIVED. The run itself is knowable from its own row: which stages
+// the pipeline ran, under which settings, against which profile, and what each
+// produced. `run_meta.profile` and `run_meta.run_config` carry the intent; the
+// committed `cluster_build` carries what the clustering actually settled on
+// (its `params` are the values that stuck after tuning, which is why they and
+// not the run config's starting values are stated); the counts come from the
+// database at request time. A stage the run's config switched off does not
+// appear, so a reader is told what happened, not what the pipeline can do.
+//
+// WHAT IS AUTHORED is the host's: the collection (which pages were fetched, how
+// the text was recovered, what the source could not give) is not knowable from
+// the run, nor is how the host loaded its site. A host passes those as
+// stages before and after the derived ones, and may add a sentence to the
+// reading-in and the reading stages for what its own records carry.
+//
+// SETTINGS APPEAR WHERE THEY CHANGE THE READING, AND ONLY THOSE: the minimum
+// cluster size decides how many passages make a topic, so it is stated;
+// concurrency and retries decide how fast it ran, so they are not; the
+// clustering's other settings and the membership thresholds are the pipeline's
+// own (the rule at the top of this file).
+//
+// Moved here from the pipeline zone's lib/run-method.ts and Training Data's
+// own copy (2026-10-21); this is the richer of the two, with what was the
+// pipeline's (a scale that measures no agreement) kept.
+
+/** What a host writes of its own collection and site, around the derived account. */
+export interface MethodAuthored {
+	/** Stages before the derived ones: the collection. */
+	before?: MethodStage[]
+	/** A sentence after the reading-in: what the collection records about its sources and documents. */
+	ingest?: string
+	/** A sentence after the reading: what else that reading did for this corpus. */
+	analysis?: string
+	/** How the questions read in a sentence — "the committee's 14 terms of reference". */
+	questions?: string
+	/** Stages after the derived ones: how the site was loaded. */
+	after?: MethodStage[]
+}
+
+const count = (value: number) => value.toLocaleString('en-AU')
+
+/** "a, b and c" — a list a sentence can contain. */
+function sentenceList(items: readonly string[]): string {
+	if (items.length <= 1) return items[0] ?? ''
+	return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
+/**
+ * The stages that actually ran, in the order the pipeline runs them. Every
+ * phase the pipeline can skip is gated on the same config flag the pipeline
+ * gates it on, so this cannot claim a step that did not happen.
+ */
+function stagesOf(
+	profile: Profile,
+	config: RunConfig,
+	d: MethodData,
+	authored: MethodAuthored,
+): MethodStage[] {
+	const p = profile.prompts.params
+	const o = d.overview
+	const c = config.clustering
+	const minClusterSize = d.build?.params.min_cluster_size ?? c.min_cluster_size
+	const attempts = d.build?.tuning?.attempts.length ?? 0
+	const copy = methodCopy({
+		entity: p.entity_noun,
+		entities: p.entity_noun_plural,
+		document: p.document_noun,
+		documents: p.document_noun_plural,
+		scale: `on this run's own scale, ${sentenceList(profile.stance.labels)}`,
+	})
+	const questions = authored.questions ?? `the run's ${count(o.questions)} questions`
+	const then = (sentence: string | undefined) => (sentence ? ` ${sentence}` : '')
+	const stages: MethodStage[] = [...(authored.before ?? [])]
+
+	stages.push({
+		key: 'ingest',
+		title: `Reading in the ${p.document_noun_plural}`,
+		body:
+			`Every ${p.document_noun} was stored whole under its ${p.entity_noun}, its text cut into passages small enough to compare — ` +
+			`${count(o.passages)} of them across ${count(o.documents)} ${p.document_noun_plural} from ${count(o.sources)} ${p.entity_noun_plural} — ` +
+			`and each passage embedded with ${resolvedModels(config).embedding}, which is what makes a search by meaning, and the grouping ` +
+			`below, possible at all.${then(authored.ingest)}`,
+	})
+
+	stages.push({
+		key: 'analysis',
+		title: `Reading each ${p.document_noun} end to end`,
+		body:
+			`A language model read every ${p.document_noun} in full against this run's profile and recorded what it found as key points, ` +
+			`each with the verbatim quotes that support it: ${count(o.keyPoints)} key points and ${count(o.quotes)} quotes. ${copy.evidence} ` +
+			`${o.quotesVerifiedPct}% verify, and a quote that does not is never shown here.` +
+			then(authored.analysis) +
+			(o.questions
+				? ` The same reading put ${questions} to every ${p.document_noun}: ${count(o.answers)} answers were found, each with a position, ` +
+					`key points and quotes. A question left unanswered means no answer was located in the available text, never that a ${p.entity_noun} has no view.`
+				: ''),
+	})
+
+	if (config.entity_review.enabled)
+		stages.push({
+			key: 'entity-review',
+			// "What counts as one", not "who they are": an entity is whatever the
+			// profile says it is, and for a submissions corpus that is a
+			// submission, not a person.
+			title: `Settling what counts as one ${p.entity_noun}`,
+			body:
+				`The names the model inferred were put to a person beside the names the record carries, before anything was counted, so that one ` +
+				`${p.entity_noun} appearing under two spellings is counted once in every figure on this site. The record's name stands; the model's ` +
+				`reading is kept beside it.`,
+		})
+
+	stages.push({
+		key: 'clustering',
+		title: 'Grouping the passages into topics',
+		body:
+			`${copy.clustering} A group had to hold at least ${minClusterSize} passages to count as a topic. ` +
+			(attempts > 1
+				? `The settings were tuned at a review gate: ${attempts} attempts were tried before these were committed (they are listed below). `
+				: c.auto_relax
+					? 'Where those settings found nothing, they were relaxed a step at a time until they did. '
+					: '') +
+			`${copy.membership} ${count(o.topics + o.junkTopics)} topics resulted, over ${count(d.clusteredPassages)} passages.`,
+	})
+
+	if (config.run_synthesis)
+		stages.push({
+			key: 'synthesis',
+			title: 'Writing each topic up and reading positions against it',
+			body:
+				`${copy.positions} ${count(o.stances)} positions were written` +
+				(profile.facets_to_analyse.length
+					? `, and the same was done for each value of ${sentenceList(profile.facets_to_analyse)}: ${count(o.lensRows)} perspectives`
+					: '') +
+				`. A position here records how a ${p.entity_noun} stands against one topic's particular framing, and is never a verdict on the subject in general.`,
+		})
+
+	if (config.junk_review.enabled)
+		stages.push({
+			key: 'junk-review',
+			title: 'Removing the groups that carry nothing',
+			body:
+				`A model flagged topics whose synthesis reported no substantive shared content, and a person confirmed or rejected each flag — and ` +
+				`could confirm a topic the model had not flagged. ` +
+				(o.junkTopics
+					? `${count(o.junkTopics)} ${o.junkTopics === 1 ? 'topic was' : 'topics were'} confirmed and ${o.junkTopics === 1 ? 'is' : 'are'} excluded from every figure on this site.`
+					: 'Nothing was confirmed, so every topic found stands.') +
+				' The flag alone never removes anything.',
+		})
+
+	if (config.hierarchy.enabled)
+		stages.push({
+			key: 'hierarchy',
+			title: 'Offering the topics upward into themes',
+			body:
+				'The topics were grouped again, generation by generation, each generation clustering the one below it until it stopped merging' +
+				(config.hierarchy.max_generations
+					? `, held to ${config.hierarchy.max_generations} generation${config.hierarchy.max_generations === 1 ? '' : 's'}`
+					: '') +
+				(config.hierarchy.force_target ? `, then cut to ${config.hierarchy.target} groups at the top` : '') +
+				`. A topic with no theme above the attachment threshold ${config.hierarchy.attach_orphans ? 'was attached to its nearest theme rather than left alone' : 'stands on its own'}. ` +
+				'This site reads the tree as the run left it, however many generations that turned out to be' +
+				(o.groups
+					? ` — here, ${count(o.groups)} ${o.generations[0]?.labelPlural ?? 'groups'} above the topics, each named by the model from its members.`
+					: ', and where nothing merged the topics simply stand on their own.'),
+		})
+
+	stages.push({
+		key: 'stars',
+		title: 'Placing the topics in a sky',
+		// "Place", never "position": on this page a position is what a source
+		// took against a proposition, and a run with synthesis off has none.
+		body:
+			"Each topic's place in the galaxy was computed once and stored with the run, seeded so it is the same sky every time. That is what " +
+			'lets these pages draw the constellation as plain graphics, with no WebGPU and nothing solved in your browser.',
+	})
+
+	return [...stages, ...(authored.after ?? [])]
+}
+
+/** Which model did what, for the roles that shaped what is on this site. */
+function modelsOf(profile: Profile, config: RunConfig, d: MethodData) {
+	const m = resolvedModels(config)
+	return [
+		{
+			role: `Reading each ${profile.prompts.params.document_noun}${d.overview.questions ? ', answering the questions' : ''}`,
+			model: m.step1,
+		},
+		...(config.run_synthesis ? [{ role: 'Writing the topics up and reading positions', model: m.step2 }] : []),
+		...(config.hierarchy.enabled ? [{ role: 'Naming the themes', model: m.hierarchy_labels }] : []),
+		...(config.junk_review.enabled ? [{ role: 'Flagging empty topics', model: m.junk_review }] : []),
+		{ role: 'Embedding the passages', model: m.embedding },
+		...(m.fallback ? [{ role: 'When a call failed', model: m.fallback }] : []),
+	]
+}
+
+/** A run's Method page: the derived account, around what the host authored, and what the run declared. */
+export function buildMethod(
+	profile: Profile,
+	config: RunConfig,
+	d: MethodData,
+	authored: MethodAuthored = {},
+): RunMethod {
+	const analysed = new Set(profile.facets_to_analyse)
+	return {
+		stages: stagesOf(profile, config, d, authored),
+		models: modelsOf(profile, config, d),
+		scale: {
+			labels: profile.stance.labels,
+			definitions: profile.stance.definitions,
+			guidance: profile.stance.guidance,
+			agreement: profile.stance.agreement,
+		},
+		facets: profile.facets.map((f) => ({
+			key: f.name,
+			noun: f.noun,
+			kind: facetKind(f),
+			granularity: f.granularity,
+			analysed: analysed.has(f.name),
+			// A vocabulary facet's values are listed outright or produced by
+			// bucketing another facet; a `ref` or `tree` vocabulary is neither, and
+			// its concepts belong to the record rather than to this summary.
+			values: f.values ?? f.derive?.buckets.map((b) => b.label) ?? [],
+			derivedFrom: f.derive?.from_facet ?? null,
+			excludedValues: f.excluded_values,
+		})),
+		tasks: profile.analysis_tasks.map((t) => ({
+			id: t.task_id,
+			title: taskTitle(t),
+			description: t.task_description,
+			type: t.task_type,
+		})),
+		glossary: profile.glossary,
+		exclusions: profile.exclusions.analysis.map((rule) => ({ facet: rule.facet, values: rule.values })),
+		attempts: (d.build?.tuning?.attempts ?? []).map((a) => ({
+			minClusterSize: a.min_cluster_size,
+			clusters: a.clusters,
+			noise: a.noise,
+		})),
+	}
+}
