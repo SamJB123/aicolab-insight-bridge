@@ -156,6 +156,7 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 			order: (f.values ?? f.derive?.buckets.map((b) => b.label) ?? []).filter(
 				(v) => !excluded.has(v),
 			),
+			derivedFrom: f.derive?.from_facet ?? null,
 		}
 	}
 	for (const [name, said] of Object.entries(site?.facets ?? {}))
@@ -164,12 +165,14 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 			values: said.values,
 			descriptions: {},
 			order: [],
+			derivedFrom: null,
 		}
 	return {
 		title: site?.title ?? meta.name,
 		eyebrow: site?.eyebrow ?? null,
 		standfirst: site?.standfirst ?? params.corpus_description,
 		source: site?.source ?? null,
+		gathered: site?.gathered ?? null,
 		nouns: {
 			entity: params.entity_noun,
 			entities: params.entity_noun_plural,

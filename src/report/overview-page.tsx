@@ -81,6 +81,23 @@ function OverviewBody(props: {
 		const l = lens()
 		return l ? (w().facets[l]?.order.length ?? 0) : 0
 	}
+	/** The heading of the facet the lens is derived from (an era from a year), when the profile derives it. */
+	const lensFrom = () => {
+		const l = lens()
+		const from = l ? w().facets[l]?.derivedFrom : null
+		return from ? (w().facets[from]?.heading ?? from.replace(/_/g, ' ')) : null
+	}
+	/** The lens's values: a derived lens in its buckets' order (time reads in order), any other by count. */
+	const lensRows = () => {
+		const l = lens()
+		const order = l ? (w().facets[l]?.order ?? []) : []
+		if (!lensFrom() || !order.length) return o().lensValues
+		const rank = (value: string | null) => {
+			const at = value === null ? -1 : order.indexOf(value)
+			return at === -1 ? order.length : at
+		}
+		return [...o().lensValues].sort((a, b) => rank(a.value) - rank(b.value))
+	}
 	/** What a custom analysis task's page holds, by its kind. */
 	const taskDoor = (kind: string) => {
 		const heading = lensHeading()?.toLowerCase()
@@ -230,7 +247,7 @@ function OverviewBody(props: {
 								<BarList
 									labelWidth={150}
 									color="var(--s2)"
-									rows={o().lensValues.map((row) => {
+									rows={lensRows().map((row) => {
 										const l = lens() ?? ''
 										const value = row.value
 										return {
@@ -242,7 +259,9 @@ function OverviewBody(props: {
 									})}
 								/>
 								<p class="fig-note">
-									{`The pipeline's classification of each ${nouns().entity}, on the profile's ${lensVocabulary() ? `${lensVocabulary()}-value` : 'own'} vocabulary.`}
+									{lensFrom()
+										? `Each ${nouns().entity}'s ${heading().toLowerCase()}, derived from its ${lensFrom()?.toLowerCase()} by the profile's ${lensVocabulary()} bands, in their order.`
+										: `The pipeline's classification of each ${nouns().entity}, on the profile's ${lensVocabulary() ? `${lensVocabulary()}-value` : 'own'} vocabulary.`}
 								</p>
 							</div>
 						)}

@@ -33,6 +33,7 @@ const words: RunWords = {
 	eyebrow: null,
 	standfirst: null,
 	source: null,
+	gathered: null,
 	nouns: { entity: 'body', entities: 'bodies', document: 'report', documents: 'reports' },
 	scale: { order: [], supportive: [], contesting: [], unclear: null },
 	lens: null,

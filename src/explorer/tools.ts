@@ -93,7 +93,7 @@ const internalFacet = (key: string) =>
 
 /** The standing caveat on every count of sources. */
 export const notPrevalence = (words: RunWords, sources: number) =>
-	`${cap(words.nouns.entity)} counts are NOT prevalence: these are the ${sources} ${words.nouns.entities} in this record, who chose to take part; they are not a sample of any population. Never read "N ${words.nouns.entities} say X" as a measurement of how common X is.`
+	`${cap(words.nouns.entity)} counts are NOT prevalence: these are the ${sources} ${words.nouns.entities} in this record${words.gathered ? `, ${words.gathered}` : ''}; they are not a sample of any population. Never read "N ${words.nouns.entities} say X" as a measurement of how common X is.`
 
 const TOPIC_ID =
 	'The topic_id (topicClusterId) from find_topics / list_topics / topics_in_supercluster / contested_topics. Stable: a topic keeps it when documents are appended and the corpus is re-clustered.'

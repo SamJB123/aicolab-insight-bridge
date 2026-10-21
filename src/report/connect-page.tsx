@@ -196,8 +196,9 @@ function ConnectBody(props: {
 				<h2 class="sec-h">How to read what comes back</h2>
 				<ul class="ib-report-mcp-steps">
 					<li>
-						<strong>Counts describe this record.</strong> These are the {nouns().entities} who chose
-						to write; "N {nouns().entities} say X" measures the record, never a wider population.
+						<strong>Counts describe this record.</strong> These are the {nouns().entities} in it
+						{s.words.gathered ? `, ${s.words.gathered}` : ''}; "N {nouns().entities} say X" measures
+						the record, never a wider population.
 					</li>
 					<Show when={s.words.scale.order.length}>
 						<li>
