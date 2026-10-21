@@ -11,6 +11,7 @@
  * The pages draw with the site frame's classes (import
  * '@aicolab/insight-bridge/site.css' inside the host's `.ib-site`).
  */
+export { type MethodAdditions, MethodPage } from './method-page.tsx'
 export { type OverviewAdditions, OverviewPage } from './overview-page.tsx'
 export {
 	REPORT_SECTIONS,

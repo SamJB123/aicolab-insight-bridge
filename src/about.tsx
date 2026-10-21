@@ -79,18 +79,18 @@ export function InsightBridgeLede() {
 			{/* The definition sits directly under the host's h1 (which is the tagline)
 			    and answers "what IS this?" before any argument starts. */}
 			<p class="ib-define">
-				Insight Bridge is a pipeline that equips you to wield knowledge you didn’t know you needed, by
-				giving it a structure any question can travel through.
+				Insight Bridge is a pipeline that equips you to wield knowledge you didn’t know you needed,
+				by giving it a structure any question can travel through.
 			</p>
 			<p class="ib-stand">
 				Evidence that could change how something is done goes unused for two reasons: there is too
-				much of it to get across, and reaching it means already speaking the language of the body that
-				produced it. Both costs fall hardest on small organisations, community groups and individual
-				advocates, who have no research staff to absorb them.
+				much of it to get across, and reaching it means already speaking the language of the body
+				that produced it. Both costs fall hardest on small organisations, community groups and
+				individual advocates, who have no research staff to absorb them.
 			</p>
 			<p class="ib-stand">
-				Insight Bridge opens a body of evidence to whoever has a question, and makes what is inside it
-				findable in the words you would actually use.
+				Insight Bridge opens a body of evidence to whoever has a question, and makes what is inside
+				it findable in the words you would actually use.
 			</p>
 		</div>
 	)
@@ -182,9 +182,9 @@ export function InsightBridgeSteps(props: { slug?: string }) {
 				</p>
 				<ul class="ib-case-list">
 					<li>
-						<strong>Six parts</strong>, following the shape of what they had described: mental health,
-						then child safety and shame, then gendered violence, then education, then the machinery
-						that let all of it persist, then what to do about it.
+						<strong>Six parts</strong>, following the shape of what they had described: mental
+						health, then child safety and shame, then gendered violence, then education, then the
+						machinery that let all of it persist, then what to do about it.
 					</li>
 					<li>
 						<strong>Thirteen findings</strong>, each argued from reports it named, quoted and dated,
@@ -195,13 +195,13 @@ export function InsightBridgeSteps(props: { slug?: string }) {
 						put on the record.
 					</li>
 					<li>
-						<strong>Connections between things filed apart</strong>: that a family violence response is
-						suicide prevention, and that exclusion from education and untreated mental illness feed
-						each other.
+						<strong>Connections between things filed apart</strong>: that a family violence response
+						is suicide prevention, and that exclusion from education and untreated mental illness
+						feed each other.
 					</li>
 					<li>
-						<strong>An evidence ledger</strong> of the twenty-three reports it drew on, and a note on
-						how it was assembled.
+						<strong>An evidence ledger</strong> of the twenty-three reports it drew on, and a note
+						on how it was assembled.
 					</li>
 				</ul>
 				<p>
@@ -259,10 +259,10 @@ export function InsightBridgePipeline() {
 			<h2 class="ib-h2">Inside the Insight Bridge pipeline</h2>
 			<p class="ib-sub">How dense information becomes accessible</p>
 			<p class="ib-stand">
-				A body of documents becomes reachable when it has structure, and these seven stages are how it
-				gets built: every document read in full, every passage placed among the passages arguing the
-				same thing, and every source given a position on each of those arguments. They run the same
-				way whichever corpus goes through them.
+				A body of documents becomes reachable when it has structure, and these seven stages are how
+				it gets built: every document read in full, every passage placed among the passages arguing
+				the same thing, and every source given a position on each of those arguments. They run the
+				same way whichever corpus goes through them.
 			</p>
 			<ol class="ib-stages">
 				<For each={STAGES}>
@@ -302,14 +302,14 @@ export function InsightBridgeRespect() {
 		<section class="ib-sec">
 			<h2 class="ib-h2">What Insight Bridge is built to respect</h2>
 			<p class="ib-stand">
-				Three commitments shaped how this pipeline was built. Each one is about whose knowledge counts,
-				and who gets to use it.
+				Three commitments shaped how this pipeline was built. Each one is about whose knowledge
+				counts, and who gets to use it.
 			</p>
 			<ul class="ib-rules">
 				<li>
-					<strong>The detail.</strong> Public purpose work depends on a clear line of sight to what was
-					actually said, and by whom. Every proposition traces back to the passages and the verbatim
-					quotes it was built from, and every source links out to the original.
+					<strong>The detail.</strong> Public purpose work depends on a clear line of sight to what
+					was actually said, and by whom. Every proposition traces back to the passages and the
+					verbatim quotes it was built from, and every source links out to the original.
 				</li>
 				<li>
 					<strong>The minority.</strong> How common a view is in a corpus does not automatically say
@@ -320,8 +320,9 @@ export function InsightBridgeRespect() {
 				</li>
 				<li>
 					<strong>Your judgement.</strong> You bring your own context, priorities, and principles.
-					Insight Bridge equips you to discover what is argued, who argues it, and the specific points
-					they raised. It does not rank sources, score their credibility, or tell you who is right.
+					Insight Bridge equips you to discover what is argued, who argues it, and the specific
+					points they raised. It does not rank sources, score their credibility, or tell you who is
+					right.
 				</li>
 			</ul>
 		</section>
@@ -335,8 +336,12 @@ export type ReadingProps = {
 	 * rules, under `corpusNotesTitle`, so a reader meets the method and the
 	 * particular case in one place. Host markup, host classes; the component only
 	 * supplies the heading and the spacing above it.
+	 *
+	 * A lazy slot, like every ui-solid slot: an element handed over as a prop
+	 * is built again on every read, and reading it once for the Show and once
+	 * to render it misaligned hydration (a key miss on the notes' root).
 	 */
-	corpusNotes?: JSX.Element
+	corpusNotes?: () => JSX.Element
 	/** Heading for the slot. Defaults to "In this corpus". */
 	corpusNotesTitle?: string
 }
@@ -359,13 +364,13 @@ export function InsightBridgeReading(props: ReadingProps) {
 				<li>
 					<strong>Propositions are written from the cluster’s own members.</strong> Because the
 					argument is built from the sources that were grouped together, and positions are read
-					relative to it, a degree of agreement is built into the method. Comparisons between
-					groups carry weight; a corpus-wide agreement rate does not.
+					relative to it, a degree of agreement is built into the method. Comparisons between groups
+					carry weight; a corpus-wide agreement rate does not.
 				</li>
 				<li>
 					<strong>Counts describe the corpus, not the world.</strong> Every corpus here is curated.
-					“N sources say X” measures what was collected and is never a measure of how common X is
-					in the field.
+					“N sources say X” measures what was collected and is never a measure of how common X is in
+					the field.
 				</li>
 				<li>
 					<strong>Clusters differ in how many distinct sources back them.</strong> A long document
@@ -379,10 +384,12 @@ export function InsightBridgeReading(props: ReadingProps) {
 				</li>
 			</ul>
 			<Show when={props.corpusNotes}>
-				<div class="ib-corpus">
-					<h3 class="ib-h3">{props.corpusNotesTitle ?? 'In this corpus'}</h3>
-					{props.corpusNotes}
-				</div>
+				{(notes) => (
+					<div class="ib-corpus">
+						<h3 class="ib-h3">{props.corpusNotesTitle ?? 'In this corpus'}</h3>
+						{notes()()}
+					</div>
+				)}
 			</Show>
 		</section>
 	)
@@ -395,9 +402,9 @@ export function InsightBridgeFamily(props: { slug: string }) {
 			<h2 class="ib-h2">Other corpora on this pipeline</h2>
 			<p class="ib-stand">
 				The same pipeline, the same reading conventions, different bodies of evidence. Each is a
-				separate app with its own corpus and its own MCP server. Because the structure and the reading
-				rules are identical across all of them, a question that starts in one can be carried into
-				another without learning anything new.
+				separate app with its own corpus and its own MCP server. Because the structure and the
+				reading rules are identical across all of them, a question that starts in one can be carried
+				into another without learning anything new.
 			</p>
 			<Show when={others().length} fallback={<p class="ib-note">This is the only one so far.</p>}>
 				<div class="ib-family">
@@ -424,13 +431,14 @@ export function InsightBridgeMcp(props: { connectLink?: JSX.Element }) {
 			<h2 class="ib-h2">Every corpus is available to agents</h2>
 			<p class="ib-stand">
 				Each Insight Bridge app exposes its corpus over the Model Context Protocol, so an agent can
-				work the analysis directly. The shape is consistent across corpora: orient on the whole body,
-				search passages semantically, walk the topic map, open a topic to see its proposition and who
-				stands where, split any topic by a comparative lens, and pull the record for a single source.
+				work the analysis directly. The shape is consistent across corpora: orient on the whole
+				body, search passages semantically, walk the topic map, open a topic to see its proposition
+				and who stands where, split any topic by a comparative lens, and pull the record for a
+				single source.
 			</p>
 			<p class="ib-stand">
-				The tools carry the reading rules in their own descriptions, so an agent is told, at the point
-				of use, that counts are not prevalence and that positions are relative to a framing.
+				The tools carry the reading rules in their own descriptions, so an agent is told, at the
+				point of use, that counts are not prevalence and that positions are relative to a framing.
 			</p>
 			<Show when={props.connectLink}>
 				<p class="ib-note">{props.connectLink}</p>

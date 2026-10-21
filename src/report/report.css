@@ -17,6 +17,122 @@
 		font-size: clamp(2.2rem, 6.4vw, 4.2rem);
 	}
 
+	/* ── the matrix: the questions' heat map, and the clustering attempts as a plain table ── */
+	.heat-wrap {
+		overflow-x: auto;
+		padding: 1rem;
+	}
+	.heat {
+		border-collapse: collapse;
+		width: 100%;
+		min-width: 720px;
+	}
+	.heat th {
+		font-family: var(--font-data);
+		font-size: 10.5px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-base-content-muted);
+		font-weight: 500;
+		text-align: left;
+		padding: 6px 8px;
+		line-height: 1.3;
+	}
+	.heat thead th {
+		vertical-align: bottom;
+		border-bottom: 1px solid var(--color-border-strong);
+		max-width: 110px;
+	}
+	.heat thead th.click {
+		cursor: pointer;
+	}
+	.heat thead th.click:hover,
+	.heat thead th.on {
+		color: var(--color-primary);
+	}
+	.heat tbody th {
+		white-space: nowrap;
+		position: sticky;
+		left: 0;
+		background: var(--color-base-100);
+		z-index: 2;
+	}
+	.heat-n {
+		color: var(--color-base-content-faint);
+		font-size: 9.5px;
+	}
+	.heat-cell {
+		font-family: var(--font-data);
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		text-align: center;
+		padding: 0;
+		border: 1px solid var(--color-base-200);
+		background: color-mix(
+			in oklab,
+			var(--color-primary) calc(var(--pct, 0) * 1%),
+			var(--color-base-300)
+		);
+		color: var(--color-base-content);
+	}
+	.heat-cell > span,
+	.heat-btn {
+		display: block;
+		width: 100%;
+		padding: 8px 6px;
+	}
+	.heat-btn {
+		appearance: none;
+		background: none;
+		border: 1px solid transparent;
+		font: inherit;
+		color: inherit;
+		cursor: pointer;
+	}
+	.heat-btn:hover {
+		border-color: var(--color-base-content);
+	}
+	.heat-cell.on .heat-btn {
+		outline: 2px solid var(--color-base-content);
+		outline-offset: -2px;
+	}
+	@supports (color: contrast-color(red)) {
+		.heat-cell {
+			color: contrast-color(
+				color-mix(in oklab, var(--color-primary) calc(var(--pct, 0) * 1%), var(--color-base-300))
+			);
+		}
+	}
+	.heat.attempts {
+		min-width: 0;
+	}
+	.heat.attempts td {
+		font-family: var(--font-data);
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		padding: 6px 8px;
+		color: var(--color-base-content-muted);
+		border-bottom: 1px solid var(--color-border);
+	}
+	.heat.attempts tr.committed th,
+	.heat.attempts tr.committed td {
+		color: var(--color-primary);
+		background: var(--color-primary-soft);
+	}
+
+	/* a section heading that follows other content */
+	.ib-report-h {
+		margin-top: 2rem;
+	}
+	.ib-report-lede {
+		color: var(--color-base-content-muted);
+		line-height: 1.6;
+		max-width: 68ch;
+	}
+	.ib-report-lede strong {
+		color: var(--color-base-content);
+	}
+
 	/* a topic's title that opens its reading: the door title's type, no button chrome */
 	.ib-report-topic {
 		background: none;
