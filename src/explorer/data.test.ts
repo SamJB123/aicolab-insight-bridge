@@ -31,10 +31,31 @@ import { drizzle } from 'drizzle-orm/node-sqlite'
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as analysis from './analysis.ts'
 import * as x from './data.ts'
+import { derivedValue, loadFacetCache } from './facets.ts'
 import * as pages from './pages.ts'
 import { documentReading, groupReading, sourceReading, topicReading } from './readings.ts'
 
 const file = process.env.EXPLORER_DB
+
+describe('a derived facet', () => {
+	const rule = {
+		from_facet: 'year',
+		unknown_label: 'Unknown',
+		buckets: [
+			{ min: null, max: 2014, label: 'Foundations' },
+			{ min: 2015, max: 2022, label: 'Automation' },
+			{ min: 2026, max: null, label: 'Current' },
+		],
+	}
+	it('places a year in its bucket, open ends included; else the unknown label', () => {
+		expect(derivedValue(rule, '1998')).toBe('Foundations')
+		expect(derivedValue(rule, '2015-03-01')).toBe('Automation')
+		expect(derivedValue(rule, '2031')).toBe('Current')
+		expect(derivedValue(rule, '2024')).toBe('Unknown')
+		expect(derivedValue(rule, 'n.d.')).toBe('Unknown')
+		expect(derivedValue(rule, undefined)).toBe('Unknown')
+	})
+})
 
 describe('a reader’s words as a LIKE pattern', () => {
 	const bytes = (s: string) => new TextEncoder().encode(s).length
@@ -58,6 +79,21 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 	let topics: Awaited<ReturnType<typeof x.topics>>
 	beforeAll(async () => {
 		topics = await x.topics(db)
+	})
+
+	it('every source carries the facets its profile derives, from the facet they come from', async () => {
+		const [meta] = sqlite.prepare('SELECT profile FROM run_meta WHERE singleton = 1').all()
+		const profile = meta?.profile ? JSON.parse(String(meta.profile)) : null
+		const derived: { name: string; derive: Parameters<typeof derivedValue>[0] }[] = (
+			profile?.facets ?? []
+		).filter(
+			(f: { derive?: unknown; granularity?: string }) =>
+				f.derive && (f.granularity ?? 'entity') === 'entity',
+		)
+		const facets = await loadFacetCache(db, 'entity')
+		for (const { name, derive } of derived)
+			for (const values of facets.values())
+				expect(values[name]).toEqual([derivedValue(derive, values[derive.from_facet]?.[0])])
 	})
 
 	it('the overview counts published evidence', async () => {

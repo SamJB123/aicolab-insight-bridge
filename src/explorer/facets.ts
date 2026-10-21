@@ -10,12 +10,53 @@
  */
 
 import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
-import { type CorpusDb, facetAssignment } from '@aicolab/insight-bridge-contracts/schema'
+import type { Profile } from '@aicolab/insight-bridge-contracts/profile'
+import { type CorpusDb, facetAssignment, runMeta } from '@aicolab/insight-bridge-contracts/schema'
 import { asc, desc, eq, sql } from 'drizzle-orm'
 
 export type EffectiveFacets = Record<string, string[]>
 /** v7: the same, with the resolved concept beside each value (null = free facet or unresolved). */
 export type EffectiveConceptFacets = Record<string, { value: string; conceptId: number | null }[]>
+
+/** A facet the profile derives from another (Legal AI's era, from the year). */
+export type DeriveRule = NonNullable<Profile['facets'][number]['derive']>
+
+/**
+ * A derived facet's value from the value it is derived from: a year, read
+ * from its first four characters, placed in its bucket; the rule's unknown
+ * label when there is no year or no bucket holds it. The one definition: the
+ * pipeline's lens step derives with it, and every reader resolves facets with
+ * it (loadConceptFacetCache).
+ */
+export function derivedValue(rule: DeriveRule, from: string | undefined): string {
+	const year = Number.parseInt((from ?? '').slice(0, 4), 10)
+	if (Number.isNaN(year)) return rule.unknown_label
+	const bucket = rule.buckets.find(
+		(b) => (b.min === null || year >= b.min) && (b.max === null || year <= b.max),
+	)
+	return bucket?.label ?? rule.unknown_label
+}
+
+/** The profile's derived facets at a granularity, where the run carries a profile. */
+async function derivedFacets(
+	db: CorpusDb,
+	granularity: 'entity' | 'document',
+): Promise<{ name: string; rule: DeriveRule }[]> {
+	const [table] = await db.all<{ name: string }>(
+		sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_meta'`,
+	)
+	if (!table) return []
+	const [meta] = await db
+		.select({ profile: runMeta.profile })
+		.from(runMeta)
+		.where(eq(runMeta.singleton, 1))
+		.limit(1)
+	return (meta?.profile?.facets ?? []).flatMap((f) =>
+		f.derive && (f.granularity ?? 'entity') === granularity
+			? [{ name: f.name, rule: f.derive }]
+			: [],
+	)
+}
 
 /**
  * subject -> facet -> values (best provenance only; multi-valued within that
@@ -75,6 +116,15 @@ export async function loadConceptFacetCache(
 	const out = new Map<string, EffectiveConceptFacets>()
 	for (const [subject, facets] of best)
 		out.set(subject, Object.fromEntries([...facets].map(([facet, { values }]) => [facet, values])))
+	// a facet the profile derives (era from year) is resolved here for every
+	// subject that holds no value of its own, as the pipeline's lens step did
+	if (subjectType !== 'chunk')
+		for (const { name, rule } of await derivedFacets(db, subjectType))
+			for (const facets of out.values())
+				if (!facets[name]?.length)
+					facets[name] = [
+						{ value: derivedValue(rule, facets[rule.from_facet]?.[0]?.value), conceptId: null },
+					]
 	return out
 }
 
