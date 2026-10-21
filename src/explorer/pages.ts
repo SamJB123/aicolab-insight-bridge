@@ -18,6 +18,7 @@
  */
 
 import type {
+	GalaxyData,
 	GenerationCount,
 	GroupProfile,
 	Landscape,
@@ -36,6 +37,7 @@ import { generationLabel, treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
 import { hierarchy } from './data.ts'
 import { type EffectiveFacets, loadFacetCache } from './facets.ts'
+import { groupNodeId, sourceNodeId, topicNodeId } from './readings.ts'
 
 const n = (v: unknown) => Number(v ?? 0)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
@@ -298,45 +300,48 @@ async function topicFacts(db: CorpusDb, words: RunWords, ids?: number[]) {
 		)
 	const lensValueOf = (entityUuid: string) => lensOf(words, entityFacets.get(entityUuid))
 
-	const topics: TopicProfile[] = topicRows
-		.map((t) => {
-			const mine = stancesOf.get(t.topicClusterId) ?? []
-			const positions = mixOf(mine.map((r) => r.position))
-			const values = new Map<string, number>()
-			for (const r of mine) {
-				const value = lensValueOf(r.entityUuid)
-				if (value !== null) values.set(value, (values.get(value) ?? 0) + 1)
-			}
-			const ranked = [...values].sort((a, b) => b[1] - a[1])
-			const base = tree.baseOfTopic.get(t.topicClusterId)
-			const lineage = base ? tree.ancestorsOf(base.superclusterId) : []
-			return {
-				topicClusterId: t.topicClusterId,
-				title: t.title,
-				lineage,
-				parentId: lineage[0]?.superclusterId ?? null,
-				documents: documentsOf.get(t.topicClusterId)?.size ?? 0,
-				sources: membersOf.get(t.topicClusterId)?.size ?? 0,
-				exemplars: exemplarsOf.get(t.topicClusterId) ?? 0,
-				positions,
-				stances: mine.length,
-				supportivePct: pct(countIn(positions, supportive), mine.length),
-				contestedPct: pct(countIn(positions, contesting), mine.length),
-				lensValueCount: values.size,
-				topLensValue: ranked[0]?.[0] ?? null,
-				singleLensValue: values.size === 1 ? (ranked[0]?.[0] ?? null) : null,
-			}
-		})
-		.sort((a, b) => b.sources - a.sources || a.topicClusterId - b.topicClusterId)
+	const topics: TopicProfile[] = topicRows.map((t) => {
+		const mine = stancesOf.get(t.topicClusterId) ?? []
+		const positions = mixOf(mine.map((r) => r.position))
+		const values = new Map<string, number>()
+		for (const r of mine) {
+			const value = lensValueOf(r.entityUuid)
+			if (value !== null) values.set(value, (values.get(value) ?? 0) + 1)
+		}
+		const ranked = [...values].sort((a, b) => b[1] - a[1])
+		const base = tree.baseOfTopic.get(t.topicClusterId)
+		const lineage = base ? tree.ancestorsOf(base.superclusterId) : []
+		return {
+			topicClusterId: t.topicClusterId,
+			title: t.title,
+			lineage,
+			parentId: lineage[0]?.superclusterId ?? null,
+			documents: documentsOf.get(t.topicClusterId)?.size ?? 0,
+			sources: membersOf.get(t.topicClusterId)?.size ?? 0,
+			exemplars: exemplarsOf.get(t.topicClusterId) ?? 0,
+			positions,
+			stances: mine.length,
+			supportivePct: pct(countIn(positions, supportive), mine.length),
+			contestedPct: pct(countIn(positions, contesting), mine.length),
+			lensValueCount: values.size,
+			topLensValue: ranked[0]?.[0] ?? null,
+			singleLensValue: values.size === 1 ? (ranked[0]?.[0] ?? null) : null,
+		}
+	})
 
 	return { tree, generations, top, topics, membersOf, documentsOf, stancesOf, lensValueOf }
 }
 
-/** Every current topic and every grouping node, with live counts rolled up through the primary tree. */
-export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscape> {
-	const { tree, generations, top, topics, membersOf, documentsOf, stancesOf, lensValueOf } =
-		await topicFacts(db, words)
-	const groups: GroupProfile[] = [...tree.byId.values()]
+/** Every grouping node's profile, rolled up through the primary tree, in the build's node order. */
+function groupsOf({
+	tree,
+	top,
+	membersOf,
+	documentsOf,
+	stancesOf,
+	lensValueOf,
+}: Awaited<ReturnType<typeof topicFacts>>): GroupProfile[] {
+	return [...tree.byId.values()]
 		.filter((node) => node.generation > 0)
 		.map((node) => {
 			const topicIds = tree.topicsUnder(node.superclusterId)
@@ -369,9 +374,209 @@ export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscap
 				).size,
 			}
 		})
-		.sort((a, b) => b.generation - a.generation || b.sources - a.sources)
+}
 
-	return { generations, top, groups, topics }
+/** Every current topic and every grouping node, with live counts rolled up through the primary tree. */
+export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscape> {
+	const facts = await topicFacts(db, words)
+	return {
+		generations: facts.generations,
+		top: facts.top,
+		groups: groupsOf(facts).sort((a, b) => b.generation - a.generation || b.sources - a.sources),
+		topics: facts.topics.sort(
+			(a, b) => b.sources - a.sources || a.topicClusterId - b.topicClusterId,
+		),
+	}
+}
+
+// ---------------------------------------------------------------- the galaxy
+
+/** How strongly a membership grade binds a contributor to a topic, strongest highest. */
+const GRADE_RANK: Readonly<Record<string, number>> = { exemplar: 3, high_value: 2, member: 1 }
+
+/**
+ * The record as a sky (core's GalaxyMap): every grouping node as a container
+ * star by generation, every current topic a star, every contributor with a
+ * STRONG membership (exemplar or high-value — the world-counts rule) as dust
+ * bound to those topics. Stars weigh their reach; a contributor weighs its
+ * strong memberships, its first strongest one primary. Node ids are the
+ * readings' (`g:`, `t:`, `s:` + the contributor's slug), so a node opens the
+ * same reading the drawer does.
+ *
+ * ORDER IS PART OF THE SKY: the layout is seeded and order-sensitive, so every
+ * list is in key order — groups and topics by id, tree edges by parent then
+ * child, contributors by slug and each one's memberships by topic — never in
+ * the order rows happen to sit in a table, which a re-prepare or an import
+ * can change. Any copy of the record draws the same sky, and the bake
+ * (galaxy/stars.ts) reads this same read, so `topic_star` and the live galaxy
+ * agree. `facets` are the contributor facets the dust can be read by; `seed`
+ * is the host's (a corpus keeps one per sky).
+ */
+export async function galaxy(
+	db: CorpusDb,
+	words: RunWords,
+	options: { facets: { key: string; label: string }[]; seed: number },
+): Promise<GalaxyData> {
+	const facts = await topicFacts(db, words)
+	const [h, entityFacets, entityRows, strongRows] = await Promise.all([
+		hierarchy(db),
+		loadFacetCache(db, 'entity'),
+		db
+			.select({ uuid: s.entity.id, entityId: s.entity.entityId, name: s.entity.entityName })
+			.from(s.entity)
+			.orderBy(asc(s.entity.entityId)),
+		db
+			.select({
+				entityUuid: s.currentEntityMembership.entityUuid,
+				topicClusterId: s.currentEntityMembership.topicClusterId,
+				membershipType: s.currentEntityMembership.membershipType,
+			})
+			.from(s.currentEntityMembership)
+			.where(inArray(s.currentEntityMembership.membershipType, ['exemplar', 'high_value'])),
+	])
+	const nouns = words.nouns
+	const lensHeading = words.lens ? (words.facets[words.lens]?.heading ?? words.lens) : null
+	const nodes: GalaxyData['nodes'] = []
+	const edges: GalaxyData['edges'] = []
+
+	const groups = groupsOf(facts).sort((a, b) => a.superclusterId - b.superclusterId)
+	for (const g of groups)
+		nodes.push({
+			id: groupNodeId(g.superclusterId),
+			tier: g.generation,
+			title: g.title,
+			key: g.superclusterId,
+			weight: g.sources,
+			volume: g.documents,
+			mix: g.positions,
+			childCount: g.children,
+			facets: null,
+			flags: [],
+		})
+	const topics = [...facts.topics].sort((a, b) => a.topicClusterId - b.topicClusterId)
+	for (const t of topics)
+		nodes.push({
+			id: topicNodeId(t.topicClusterId),
+			tier: 0,
+			title: t.title,
+			key: t.topicClusterId,
+			weight: t.sources,
+			volume: t.documents,
+			mix: t.positions,
+			childCount: null,
+			facets: null,
+			flags: [
+				...(t.sources === 1
+					? [{ label: `1 ${nouns.entity}`, hot: false, tip: 'Only one contributor' }]
+					: []),
+				...(t.singleLensValue !== null && lensHeading
+					? [{ label: `1 ${lensHeading.toLowerCase()}`, hot: true, tip: null }]
+					: []),
+			],
+		})
+
+	// the tree's edges between nodes drawn here — a group's sub-groups and its
+	// current topics — by parent id, then child id
+	const current = new Set(topics.map((t) => t.topicClusterId))
+	const groupIds = new Set(groups.map((g) => g.superclusterId))
+	for (const e of [...h.edges].sort((a, b) => a.parent - b.parent || a.child - b.child)) {
+		if (!groupIds.has(e.parent)) continue
+		const childNode = facts.tree.byId.get(e.child)
+		const topicId = childNode?.generation === 0 ? childNode.topicClusterId : null
+		const child =
+			topicId !== null && topicId !== undefined
+				? current.has(topicId)
+					? topicNodeId(topicId)
+					: null
+				: groupIds.has(e.child)
+					? groupNodeId(e.child)
+					: null
+		if (child)
+			edges.push({
+				child,
+				parent: groupNodeId(e.parent),
+				isPrimary: e.isPrimary,
+				membershipType: e.membershipType,
+				similarity: e.similarity,
+				softIntensity: null,
+			})
+	}
+
+	// the dust: each contributor with a strong membership (by slug), bound to those topics (by id)
+	const strongOf = new Map<string, typeof strongRows>()
+	for (const m of [...strongRows].sort((a, b) => a.topicClusterId - b.topicClusterId)) {
+		if (!current.has(m.topicClusterId)) continue
+		strongOf.set(m.entityUuid, [...(strongOf.get(m.entityUuid) ?? []), m])
+	}
+	for (const e of entityRows) {
+		const memberships = strongOf.get(e.uuid)
+		if (!memberships?.length) continue
+		const id = sourceNodeId(e.entityId)
+		const values = entityFacets.get(e.uuid)
+		nodes.push({
+			id,
+			tier: -1,
+			title: e.name,
+			key: e.entityId,
+			weight: memberships.length,
+			volume: null,
+			mix: null,
+			childCount: null,
+			facets: Object.fromEntries(
+				options.facets.flatMap((f) => {
+					const value = values?.[f.key]?.[0]
+					return value === undefined ? [] : [[f.key, value]]
+				}),
+			),
+			flags: [],
+		})
+		let best = memberships[0]
+		for (const m of memberships)
+			if ((GRADE_RANK[m.membershipType] ?? 0) > (GRADE_RANK[best?.membershipType ?? ''] ?? 0))
+				best = m
+		for (const m of memberships) {
+			const rank = GRADE_RANK[m.membershipType] ?? 1
+			edges.push({
+				child: id,
+				parent: topicNodeId(m.topicClusterId),
+				isPrimary: m === best,
+				membershipType: m.membershipType,
+				similarity: rank === 3 ? 1 : rank === 2 ? 0.5 : 0.1,
+				softIntensity: null,
+			})
+		}
+	}
+
+	// The galaxy's tiers are layers a reader moves between, so each is named
+	// distinctly: where the generation names repeat (every generation below a
+	// theme is a "group"), each such tier carries its generation number.
+	const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
+	const repeated = (label: string) => facts.generations.filter((g) => g.label === label).length > 1
+	return {
+		tiers: [
+			...facts.generations.map((g) => ({
+				tier: g.generation,
+				label: repeated(g.label) ? `${cap(g.label)} ${g.generation}` : cap(g.label),
+				labelPlural: repeated(g.label)
+					? `${cap(g.labelPlural)} ${g.generation}`
+					: cap(g.labelPlural),
+				weightLabel: null,
+			})),
+			{ tier: 0, label: 'Topic', labelPlural: 'Topics', weightLabel: null },
+			{
+				tier: -1,
+				label: cap(nouns.entity),
+				labelPlural: cap(nouns.entities),
+				weightLabel: 'topics',
+			},
+		],
+		sourceFacets: options.facets,
+		nodes,
+		edges,
+		weightLabel: nouns.entities,
+		mixOrder: words.scale.order,
+		seed: options.seed,
+	}
 }
 
 // ---------------------------------------------------------------- the topic search

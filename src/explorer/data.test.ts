@@ -16,6 +16,7 @@ import { DatabaseSync } from 'node:sqlite'
 import {
 	documentDetailSchema,
 	entityDetailSchema,
+	galaxyDataSchema,
 	groupDetailSchema,
 	landscapeSchema,
 	methodDataSchema,
@@ -129,7 +130,9 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		expect(questions.questions.length).toBe(overview.questions)
 		const [first] = questions.questions
 		if (first) {
-			const detail = questionDetailSchema.parse(await pages.questionDetail(db, words, first.questionId))
+			const detail = questionDetailSchema.parse(
+				await pages.questionDetail(db, words, first.questionId),
+			)
 			expect(detail.byLensValue.reduce((a, v) => a + v.answers.length, 0)).toBe(first.responses)
 		}
 		const method = methodDataSchema.parse(await pages.methodData(db, words))
@@ -142,14 +145,17 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		expect(Array.isArray(await x.vocabularySummary(db))).toBe(true)
 		expect(Array.isArray(await x.questionSummary(db))).toBe(true)
 		expect(Array.isArray(await x.taskResults(db))).toBe(true)
-		const galaxy = await x.galaxy(db, {
-			entityNoun: 'source',
-			entityNounPlural: 'sources',
-			documentNounPlural: 'documents',
-			facets: [],
-			stanceLabels: [],
-			seed: 1,
-		})
+		const galaxy = galaxyDataSchema.parse(
+			await pages.galaxy(db, await x.runWords(db), { facets: [], seed: 1 }),
+		)
 		expect(galaxy.nodes.filter((n) => n.tier === 0).length).toBe(topics.length)
+		// every node an edge names is drawn, and the dust is strong links only
+		const ids = new Set(galaxy.nodes.map((n) => n.id))
+		expect(galaxy.edges.every((e) => ids.has(e.child) && ids.has(e.parent))).toBe(true)
+		expect(
+			galaxy.edges
+				.filter((e) => e.child.startsWith('s:'))
+				.every((e) => e.membershipType === 'exemplar' || e.membershipType === 'high_value'),
+		).toBe(true)
 	})
 })

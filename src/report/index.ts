@@ -13,6 +13,7 @@
  */
 
 export { HeatCell, StatRow } from './figures.tsx'
+export { GalaxyPage, type GalaxyPageProps } from './galaxy-page.tsx'
 export { type MethodAdditions, MethodPage } from './method-page.tsx'
 export { type OverviewAdditions, OverviewPage } from './overview-page.tsx'
 export { QuestionsPage, type QuestionsSelection } from './questions-page.tsx'

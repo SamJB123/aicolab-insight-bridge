@@ -19,6 +19,7 @@
  * NAMED for its destination, plus a uniform "you are here" header.
  */
 
+import { probeWebGpu } from '@aicolab/kolo/webgpu/backend-guard'
 import {
 	BottomNavigation,
 	BottomNavigationCentreContent,
@@ -48,7 +49,6 @@ import {
 	Show,
 	untrack,
 } from 'solid-js'
-import { probeWebGpu } from '@aicolab/kolo/webgpu/backend-guard'
 import { createGalaxyAdapter, type GalaxyConfiguration } from './adapter.ts'
 import { GalaxyDrill } from './chrome/drill.tsx'
 import { GalaxyGatePanel } from './chrome/gate-panel.tsx'
@@ -143,29 +143,35 @@ export function GalaxyMap(props: GalaxyMapProps) {
 	}
 	createEffect(
 		() => props.navigation,
-		(next) => untrack(() => {
-			if (!next || JSON.stringify(next) === JSON.stringify(navigation())) return
-			if (!next.nodeId) {
-				core.reset()
-				return
-			}
-			if (!core.nodeOf(next.nodeId)) return
-			if (navigation().nodeId !== next.nodeId) {
-    core.openNode(next.nodeId, next.documentId ? { documentId: next.documentId, label: 'Document' } : null)
-    return
-   }
-			if (next.documentId && core.document()?.documentId !== next.documentId)
-				core.openDocument({ documentId: next.documentId, label: 'Document' })
-			else if (!next.documentId && core.document()) core.upOneLevel()
-		}),
+		(next) =>
+			untrack(() => {
+				if (!next || JSON.stringify(next) === JSON.stringify(navigation())) return
+				if (!next.nodeId) {
+					core.reset()
+					return
+				}
+				if (!core.nodeOf(next.nodeId)) return
+				if (navigation().nodeId !== next.nodeId) {
+					core.openNode(
+						next.nodeId,
+						next.documentId ? { documentId: next.documentId, label: 'Document' } : null,
+					)
+					return
+				}
+				if (next.documentId && core.document()?.documentId !== next.documentId)
+					core.openDocument({ documentId: next.documentId, label: 'Document' })
+				else if (!next.documentId && core.document()) core.upOneLevel()
+			}),
 	)
- createEffect(
-  () => navigation(),
-  (next, previous) => untrack(() => {
-   if (!previous) return
-   if (JSON.stringify(next) !== JSON.stringify(props.navigation)) props.onNavigationChange?.(next)
-  }),
- )
+	createEffect(
+		() => navigation(),
+		(next, previous) =>
+			untrack(() => {
+				if (!previous) return
+				if (JSON.stringify(next) !== JSON.stringify(props.navigation))
+					props.onNavigationChange?.(next)
+			}),
+	)
 
 	const occlusionHandler = (px: number) => core.setViewportInset(px)
 	const configuration = createMemo(
@@ -311,194 +317,195 @@ export function GalaxyMap(props: GalaxyMapProps) {
 
 	return (
 		<div class={['ib-galaxy', props.class]}>
-			<Show
-				when={supported() !== false}
-				fallback={
-					<GalaxyGatePanel
-						corpusTitle={props.title}
-						posterSrc={props.posterSrc}
-						action={props.gateAction}
-					/>
+			{/* The workspace renders everywhere, server included — navigation,
+			    menu and inspector need no WebGPU, and reading through them works
+			    without it. Only the stage waits on the probe: the engine once
+			    WebGPU is confirmed, the gate in its place where it is missing,
+			    nothing while the verdict is pending (as on the server). */}
+			<WorkspaceShell
+				class="ib-galaxy-workspace"
+				navigation={
+					<WorkspaceNavigation
+						label={`${props.title} navigation`}
+						brand={
+							props.home ? (
+								<button type="button" class="ib-galaxy-home" onClick={() => props.home?.onSelect()}>
+									<span aria-hidden="true">←</span> {props.home.label}
+								</button>
+							) : undefined
+						}
+					>
+						<GalaxyMenu
+							galaxy={galaxy}
+							mode={core.mode()}
+							onMode={(mode) => core.switchMode(mode)}
+							facets={facets}
+							activeFacet={core.lens()}
+							onFacet={(key) => core.setLens(key)}
+							hasSoftScores={hasSoftScores}
+							intensityMode={intensityMode()}
+							onIntensityMode={setIntensityMode}
+							note={props.overviewNote}
+						/>
+					</WorkspaceNavigation>
 				}
-			>
-				<Show when={supported() === true}>
-					<WorkspaceShell
-						class="ib-galaxy-workspace"
-						navigation={
-							<WorkspaceNavigation
-								label={`${props.title} navigation`}
-								brand={
-									props.home ? (
-										<button
-											type="button"
-											class="ib-galaxy-home"
-											onClick={() => props.home?.onSelect()}
-										>
-											<span aria-hidden="true">←</span> {props.home.label}
-										</button>
-									) : undefined
-								}
+				stage={
+					<WorkspaceStage label={`${props.title} galaxy`} class="ib-galaxy-workspace-stage">
+						<Show
+							when={supported() === true}
+							fallback={
+								<Show when={supported() === false}>
+									<GalaxyGatePanel
+										corpusTitle={props.title}
+										posterSrc={props.posterSrc}
+										action={props.gateAction}
+									/>
+								</Show>
+							}
+						>
+							<SceneStage
+								adapter={adapter}
+								configuration={configuration()}
+								events={{}}
+								label={`${props.title} galaxy map`}
+								loadingLabel="Charting the galaxy…"
+								class="ib-galaxy-stage"
 							>
-								<GalaxyMenu
-									galaxy={galaxy}
-									mode={core.mode()}
-									onMode={(mode) => core.switchMode(mode)}
-									facets={facets}
-									activeFacet={core.lens()}
-									onFacet={(key) => core.setLens(key)}
-									hasSoftScores={hasSoftScores}
-									intensityMode={intensityMode()}
-									onIntensityMode={setIntensityMode}
-									note={props.overviewNote}
-								/>
-							</WorkspaceNavigation>
-						}
-						stage={
-							<WorkspaceStage label={`${props.title} galaxy`} class="ib-galaxy-workspace-stage">
-								<SceneStage
-									adapter={adapter}
-									configuration={configuration()}
-									events={{}}
-									label={`${props.title} galaxy map`}
-									loadingLabel="Charting the galaxy…"
-									class="ib-galaxy-stage"
-								>
-									<div class="ib-galaxy-chrome">
-										<div class="ib-galaxy-breadcrumb">
-											<Breadcrumb items={crumbs()} label="Galaxy position" />
-										</div>
-										<div class="ib-galaxy-search">
-											<CommandPaletteTrigger target={paletteId} label="Search the galaxy">
-												Search the galaxy
-											</CommandPaletteTrigger>
-											<CommandPalette
-												id={paletteId}
-												items={paletteItems()}
-												placeholder="Jump to a topic, theme or family…"
-												onSelect={(item) => core.openNode(item.id)}
-											/>
-										</div>
-										<Show when={!core.interacted()}>
-											<div class="ib-galaxy-hint">
-												<StageHint>{props.hint ?? DEFAULT_HINT}</StageHint>
-											</div>
-										</Show>
-										<Show when={hoveredNode()}>
-											{(node) => (
-												<Show when={node().id !== core.reading()?.id}>
-													<div class="ib-galaxy-hover">
-														<WorkspaceStageTooltip
-															label={node().title}
-															detail={`${node().weight} ${weightLabelFor(node().tier)}${
-																node().intensityLabel ? ` · ${node().intensityLabel}` : ''
-															}`}
-														/>
-													</div>
-												</Show>
-											)}
-										</Show>
+								<div class="ib-galaxy-chrome">
+									<div class="ib-galaxy-breadcrumb">
+										<Breadcrumb items={crumbs()} label="Galaxy position" />
 									</div>
-									{props.children}
-								</SceneStage>
-							</WorkspaceStage>
-						}
-						inspector={
-							<ResponsiveInspector
-								label={core.reading()?.title ?? props.title}
-								activeKey={core.reading()?.id ?? null}
-								onOcclusionChange={occlusionHandler}
-								class="ib-galaxy-inspector"
-							>
+									<div class="ib-galaxy-search">
+										<CommandPaletteTrigger target={paletteId} label="Search the galaxy">
+											Search the galaxy
+										</CommandPaletteTrigger>
+										<CommandPalette
+											id={paletteId}
+											items={paletteItems()}
+											placeholder="Jump to a topic, theme or family…"
+											onSelect={(item) => core.openNode(item.id)}
+										/>
+									</div>
+									<Show when={!core.interacted()}>
+										<div class="ib-galaxy-hint">
+											<StageHint>{props.hint ?? DEFAULT_HINT}</StageHint>
+										</div>
+									</Show>
+									<Show when={hoveredNode()}>
+										{(node) => (
+											<Show when={node().id !== core.reading()?.id}>
+												<div class="ib-galaxy-hover">
+													<WorkspaceStageTooltip
+														label={node().title}
+														detail={`${node().weight} ${weightLabelFor(node().tier)}${
+															node().intensityLabel ? ` · ${node().intensityLabel}` : ''
+														}`}
+													/>
+												</div>
+											</Show>
+										)}
+									</Show>
+								</div>
+								{props.children}
+							</SceneStage>
+						</Show>
+					</WorkspaceStage>
+				}
+				inspector={
+					<ResponsiveInspector
+						label={core.reading()?.title ?? props.title}
+						activeKey={core.reading()?.id ?? null}
+						onOcclusionChange={occlusionHandler}
+						class="ib-galaxy-inspector"
+					>
+						<Show
+							when={core.reading()}
+							fallback={
+								<GalaxyDrill
+									galaxy={galaxy}
+									title={props.title}
+									core={core}
+									hoveredId={core.hovered()}
+									upLabel={upLabel()}
+								/>
+							}
+						>
+							{(node) => (
 								<Show
-									when={core.reading()}
+									when={core.document()}
 									fallback={
-										<GalaxyDrill
+										<GalaxyInspectorNode
+											section={props.section}
+											onSectionChange={props.onSectionChange}
 											galaxy={galaxy}
-											title={props.title}
-											core={core}
-											hoveredId={core.hovered()}
-											upLabel={upLabel()}
+											node={node()}
+											content={readerContent}
+											onVisit={(id) => core.openNode(id)}
+											upLabel={upLabel() ?? props.title}
+											onUp={() => core.upOneLevel()}
+											onHoverNode={(id) => core.setHighlight(id)}
+											onOpenDocument={
+												props.loadDocument &&
+												((row) =>
+													core.openDocument({
+														documentId: row.documentId,
+														label: row.label,
+													}))
+											}
 										/>
 									}
 								>
-									{(node) => (
-										<Show
-											when={core.document()}
-											fallback={
-												<GalaxyInspectorNode
-													section={props.section}
-													onSectionChange={props.onSectionChange}
-													galaxy={galaxy}
-													node={node()}
-													content={readerContent}
-													onVisit={(id) => core.openNode(id)}
-													upLabel={upLabel() ?? props.title}
-													onUp={() => core.upOneLevel()}
-													onHoverNode={(id) => core.setHighlight(id)}
-													onOpenDocument={
-														props.loadDocument &&
-														((row) =>
-															core.openDocument({
-																documentId: row.documentId,
-																label: row.label,
-															}))
-													}
-												/>
-											}
-										>
-											{(doc) => (
-												<GalaxyInspectorDocument
-													section={props.section}
-													onSectionChange={props.onSectionChange}
-													title={doc().label}
-													eyebrow={props.documentLabel ?? 'Document'}
-													content={documentContent}
-													upLabel={node().title}
-													onUp={() => core.upOneLevel()}
-													onVisit={(id) => core.openNode(id)}
-													onHoverNode={(id) => core.setHighlight(id)}
-												/>
-											)}
-										</Show>
+									{(doc) => (
+										<GalaxyInspectorDocument
+											section={props.section}
+											onSectionChange={props.onSectionChange}
+											title={doc().label}
+											eyebrow={props.documentLabel ?? 'Document'}
+											content={documentContent}
+											upLabel={node().title}
+											onUp={() => core.upOneLevel()}
+											onVisit={(id) => core.openNode(id)}
+											onHoverNode={(id) => core.setHighlight(id)}
+										/>
 									)}
 								</Show>
-							</ResponsiveInspector>
-						}
-						mobileNavigation={
-							<BottomNavigation
-								label="Galaxy"
-								items={[
-									{
-										id: 'topics' as const,
-										label: tierPlural(0) || 'Topics',
-										icon: () => <span aria-hidden="true">✦</span>,
-									},
-									{
-										id: 'sources' as const,
-										label: tierPlural(-1) || 'Sources',
-										icon: () => <span aria-hidden="true">◍</span>,
-									},
-								]}
-								activeId={core.mode()}
-								onSelect={(id) => core.switchMode(id)}
-								centre={
-									<RadialMenu
-										id={radialId}
-										items={radialItems()}
-										label="Galaxy actions"
-										triggerClass="ib-galaxy-bnav-radial"
-									>
-										<BottomNavigationCentreContent
-											icon={<span aria-hidden="true">✳</span>}
-											label="Actions"
-										/>
-									</RadialMenu>
-								}
-							/>
+							)}
+						</Show>
+					</ResponsiveInspector>
+				}
+				mobileNavigation={
+					<BottomNavigation
+						label="Galaxy"
+						items={[
+							{
+								id: 'topics' as const,
+								label: tierPlural(0) || 'Topics',
+								icon: () => <span aria-hidden="true">✦</span>,
+							},
+							{
+								id: 'sources' as const,
+								label: tierPlural(-1) || 'Sources',
+								icon: () => <span aria-hidden="true">◍</span>,
+							},
+						]}
+						activeId={core.mode()}
+						onSelect={(id) => core.switchMode(id)}
+						centre={
+							<RadialMenu
+								id={radialId}
+								items={radialItems()}
+								label="Galaxy actions"
+								triggerClass="ib-galaxy-bnav-radial"
+							>
+								<BottomNavigationCentreContent
+									icon={<span aria-hidden="true">✳</span>}
+									label="Actions"
+								/>
+							</RadialMenu>
 						}
 					/>
-				</Show>
-			</Show>
+				}
+			/>
 		</div>
 	)
 }
