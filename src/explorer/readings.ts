@@ -24,7 +24,14 @@ import type {
 	RunWords,
 	TopicDetail,
 } from '@aicolab/insight-bridge-contracts/explorer'
-import type { IBFlag, IBNodeContent, IBNodeId, IBPoint, IBQuote } from '../galaxy/types.ts'
+import type {
+	IBFlag,
+	IBNodeContent,
+	IBNodeId,
+	IBNotice,
+	IBPoint,
+	IBQuote,
+} from '../galaxy/types.ts'
 import {
 	type AnalysisBlock,
 	buildContainerContent,
@@ -83,6 +90,12 @@ export interface ReadingAdditions {
 	links?: IBNodeContent['links']
 	stats?: StatChip[]
 	related?: IBNodeContent['related']
+	/**
+	 * The notice a withheld or annotated source's reading opens with, in place
+	 * of the generic one made from the scope's words (High Water's carries the
+	 * custodian, its contact and the way to sign in).
+	 */
+	notice?: IBNotice
 }
 
 /** A reading with an app's additions folded in. */
@@ -101,6 +114,46 @@ const withAdditions = (view: ReadingView, add: ReadingAdditions | undefined): Re
 				},
 			}
 		: view
+
+/** How the reader's scope reads a source's words (the explorer shapes' `withheld` and `notice`). */
+interface SourceWords {
+	withheld?: boolean
+	notice?: string
+}
+
+/**
+ * A source's reading under the scope: a withheld or annotated source's
+ * reading opens with its notice — the app's, else one made from the scope's
+ * words — first among the sections.
+ */
+const withNotice = (
+	view: ReadingView,
+	words: SourceWords,
+	add: ReadingAdditions | undefined,
+): ReadingView => {
+	if (!words.withheld && !words.notice) return view
+	const title = words.withheld ? 'Words withheld' : 'Notice'
+	const notice: IBNotice = add?.notice ?? {
+		tone: words.withheld ? 'withheld' : 'info',
+		title,
+		body: words.notice ?? '',
+	}
+	return {
+		...view,
+		content: {
+			...view.content,
+			sections: [{ kind: 'notice', title: notice.title, notice }, ...view.content.sections],
+		},
+	}
+}
+
+/** A quote as the reader shows it, carrying its source's scope words. */
+const readerQuote = (text: string, source: string | undefined, words: SourceWords): IBQuote => ({
+	text,
+	...(source === undefined ? {} : { source }),
+	...(words.withheld ? { withheld: true } : {}),
+	...(words.notice === undefined || words.withheld ? {} : { notice: words.notice }),
+})
 
 export const topicNodeId = (topicClusterId: number): IBNodeId => `t:${topicClusterId}`
 export const groupNodeId = (superclusterId: number): IBNodeId => `g:${superclusterId}`
@@ -135,28 +188,35 @@ export function looksLikeQuote(q: string, minLen = 50): boolean {
 	return words.filter((w) => /^[a-z]/.test(w)).length >= 3
 }
 
-/** Readable, distinct quotes, preferring a different source for each. */
+/**
+ * Readable, distinct quotes, preferring a different source for each. A
+ * withheld quote is the notice in the words' place: it is never judged as a
+ * sentence, and it is distinct by its source, not its (shared) text.
+ */
 export function pickQuotes(rows: readonly IBQuote[], n = 2): IBQuote[] {
 	const out: IBQuote[] = []
 	const seenSource = new Set<string>()
 	const used = new Set<string>()
+	const keyOf = (r: IBQuote, text: string) => (r.withheld ? `withheld:${r.source ?? ''}` : text)
+	const readable = (r: IBQuote, text: string, minLen: number) =>
+		r.withheld === true || looksLikeQuote(text, minLen)
 	for (const minLen of [60, 45]) {
 		for (const r of rows) {
 			if (out.length >= n) break
 			const text = r.text.trim()
 			const source = r.source ?? ''
-			if (seenSource.has(source) || used.has(text) || !looksLikeQuote(text, minLen)) continue
+			if (seenSource.has(source) || used.has(keyOf(r, text)) || !readable(r, text, minLen)) continue
 			out.push({ ...r, text })
 			seenSource.add(source)
-			used.add(text)
+			used.add(keyOf(r, text))
 		}
 	}
 	for (const r of rows) {
 		if (out.length >= n) break
 		const text = r.text.trim()
-		if (used.has(text) || !looksLikeQuote(text, 45)) continue
+		if (used.has(keyOf(r, text)) || !readable(r, text, 45)) continue
 		out.push({ ...r, text })
-		used.add(text)
+		used.add(keyOf(r, text))
 	}
 	return out
 }
@@ -251,7 +311,7 @@ export function topicReading(
 				positionColor: c.positionColors[p.position],
 				analysis: p.positionAnalysis,
 				quotes: pickQuotes(
-					p.quotes.map((q) => ({ text: q.text, source: source(q.entityName, q.entityUuid) })),
+					p.quotes.map((q) => readerQuote(q.text, source(q.entityName, q.entityUuid), q)),
 				),
 				share: p.facet === lens && stances ? (lensValues.get(label) ?? 0) / stances : undefined,
 			},
@@ -304,7 +364,7 @@ export function topicReading(
 						text: kp.keyPoint,
 						detail: kp.details || undefined,
 						quotes: pickQuotes(
-							kp.quotes.map((q) => ({ text: q.text, source: source(q.entityName, q.entityUuid) })),
+							kp.quotes.map((q) => readerQuote(q.text, source(q.entityName, q.entityUuid), q)),
 						),
 					})),
 					lenses: facetOrder.map((facet) => ({
@@ -430,10 +490,8 @@ function analysisBlocks(
 	c: ReadingContext,
 	withSource: boolean,
 ): AnalysisBlock[] {
-	const quoteOf = (doc: DocumentDetail) => (text: string) => ({
-		text,
-		source: withSource ? documentLabel(c, doc) : undefined,
-	})
+	const quoteOf = (doc: DocumentDetail) => (text: string) =>
+		readerQuote(text, withSource ? documentLabel(c, doc) : undefined, doc)
 	const answers: IBPoint[] = docs.flatMap((doc) =>
 		doc.questionResponses
 			.filter((r) => r.addressed)
@@ -475,7 +533,7 @@ const keyPointsOf = (c: ReadingContext, doc: DocumentDetail): IBPoint[] =>
 		detail: kp.details || undefined,
 		quotes: kp.quotes
 			.filter((q) => q.verified)
-			.map((q) => ({ text: q.text, source: documentLabel(c, doc) })),
+			.map((q) => readerQuote(q.text, documentLabel(c, doc), doc)),
 	}))
 
 /* ── a source ──────────────────────────────────────────────────────────── */
@@ -506,7 +564,7 @@ export function sourceReading(
 	const answered = new Set(
 		docs.flatMap((d) => d.questionResponses.filter((r) => r.addressed).map((r) => r.questionKey)),
 	)
-	return withAdditions(
+	const view = withAdditions(
 		{
 			eyebrow: cap(nouns.entity),
 			title: e.entityName,
@@ -530,7 +588,7 @@ export function sourceReading(
 								.map((q) => q.trim())
 								.filter((q) => looksLikeQuote(q, 40))
 								.slice(0, 2)
-								.map((q) => ({ text: q })),
+								.map((q) => readerQuote(q, undefined, e)),
 						})),
 					engaged: e.topicItems
 						.filter((t) => t.position === null)
@@ -563,6 +621,7 @@ export function sourceReading(
 		},
 		{ ...add, meta: undefined },
 	)
+	return withNotice(view, e, add)
 }
 
 /* ── a document ────────────────────────────────────────────────────────── */
@@ -573,13 +632,14 @@ export function documentReading(
 	add?: ReadingAdditions,
 ): ReadingView {
 	const flags: IBFlag[] = []
-	if (!d.keyPointItems.length)
+	// a withheld document's key points are behind the notice, not missing
+	if (!d.keyPointItems.length && !d.withheld)
 		flags.push({
 			label: 'not analysed',
 			hot: true,
 			tip: 'The pipeline produced no key points for this document; it still holds topic memberships.',
 		})
-	return withAdditions(
+	const view = withAdditions(
 		{
 			eyebrow: cap(c.words.nouns.document),
 			title: d.title ?? d.fileName,
@@ -597,4 +657,5 @@ export function documentReading(
 		},
 		{ ...add, meta: undefined },
 	)
+	return withNotice(view, d, add)
 }

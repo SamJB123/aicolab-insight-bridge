@@ -16,6 +16,7 @@ import {
 	facet as facetTable,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { and, eq, inArray, like, or } from 'drizzle-orm'
+import { isKept } from '../explorer/scope.ts'
 import type {
 	SourceDocument,
 	SourceFacet,
@@ -89,8 +90,7 @@ export async function sourcesData(
 			granularityOf.set(h.facet, h.subjectType)
 	}
 
-	const excluded = config.excludeEntities
-	const record = excluded?.size ? everyone.filter((e) => !excluded.has(e.id)) : everyone
+	const record = everyone.filter((e) => isKept(config.scope, e.id))
 	const inRecord = new Set(record.map((e) => e.id))
 	const grandTotal = record.length
 

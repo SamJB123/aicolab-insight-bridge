@@ -15,7 +15,14 @@ import type {
 import { TextInput } from '@aicolab/ui-solid'
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import { fmt, useReportSurface } from '../surface.tsx'
-import { AnalysisHead, lensWords, MoreButton, usePaged } from './common.tsx'
+import {
+	AnalysisHead,
+	lensWords,
+	MoreButton,
+	usePaged,
+	WordsNotice,
+	wordsClass,
+} from './common.tsx'
 
 export type MetricEntriesLoader = (options: {
 	offset: number
@@ -173,7 +180,7 @@ function EntryRow(props: { m: MetricEntry }) {
 	const s = useReportSurface()
 	const lens = () => lensWords(s)
 	return (
-		<li class="ib-report-an-evidence-row">
+		<li class={['ib-report-an-evidence-row', wordsClass(props.m)]}>
 			<div class="ib-report-an-evidence-who">
 				<button
 					type="button"
@@ -196,10 +203,11 @@ function EntryRow(props: { m: MetricEntry }) {
 				{(a) => (
 					<p class="fig-note">
 						<strong>{a.northStar}</strong>
-						{`: ${a.how}`}
+						{a.how ? `: ${a.how}` : ''}
 					</p>
 				)}
 			</For>
+			<WordsNotice of={props.m} />
 		</li>
 	)
 }

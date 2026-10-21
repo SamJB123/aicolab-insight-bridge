@@ -127,6 +127,9 @@ export interface IBQuote {
 	 * Intellectual Property under a restricted deployment). Renders as a
 	 * notice, never as a quotation. */
 	withheld?: boolean
+	/** A notice shown beside the words (a cultural notice on gated material
+	 * a reader may see); unused when `withheld`, whose text is the notice. */
+	notice?: string
 }
 
 /** A notice the content itself carries — a cultural notice on gated
@@ -233,7 +236,10 @@ export interface IBNodeContent {
 	/** A topic's contributors grouped by grade. The galaxy computes these
 	 * from its graph; a host without a graph (an app's detail sheet)
 	 * supplies them here. */
-	contributors?: Array<{ label: string; rows: Array<{ id: IBNodeId; label: string; detail?: string }> }>
+	contributors?: Array<{
+		label: string
+		rows: Array<{ id: IBNodeId; label: string; detail?: string }>
+	}>
 	/** Cross-links — choosing one flies the camera there. */
 	related?: Array<{ id: IBNodeId; label: string }>
 	/** Outbound links — the original document on its publisher's site. */

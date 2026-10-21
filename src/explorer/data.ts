@@ -54,11 +54,12 @@ import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { SITE_SECTIONS } from '@aicolab/insight-bridge-contracts/site'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
-import { and, asc, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, like, or, type SQL, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
+import { andKept, isKept, keepSources, type ReadScope, textOf, wordsOf } from './scope.ts'
 
 /**
  * The grades every count of the record counts: a source or a passage strongly
@@ -86,6 +87,13 @@ export type {
 }
 
 const n = (v: unknown) => Number(v ?? 0)
+
+/** The source of a facet assignment `a`'s subject (an entity, or a document's or passage's entity), for scoping it. */
+const assignmentSource = sql`COALESCE(CASE a.subject_type
+	WHEN 'entity' THEN a.subject_id
+	WHEN 'document' THEN (SELECT sd.entity_uuid FROM published_document sd WHERE sd.document_id = a.subject_id)
+	WHEN 'chunk' THEN (SELECT sd.entity_uuid FROM published_chunk sc JOIN published_document sd ON sd.document_id = sc.document_id WHERE sc.id = a.subject_id)
+END, '')`
 
 /** Items in groups of `size`, each group one statement's worth of parameters. */
 function inGroups<T>(items: T[], size: number): T[][] {
@@ -166,12 +174,14 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 
 // ---------------------------------------------------------------- overview
 
-export async function overview(db: CorpusDb): Promise<Overview> {
+export async function overview(db: CorpusDb, scope?: ReadScope): Promise<Overview> {
 	const count = async (table: string, where = '') =>
 		n((await db.all<{ n: number }>(sql.raw(`SELECT COUNT(*) AS n FROM ${table} ${where}`)))[0]?.n)
+	const counted = async (query: SQL) => n((await db.all<{ n: number }>(query))[0]?.n)
 	const facetCache = await loadFacetCache(db, 'entity')
 	const facetValues = new Map<string, Map<string, number>>()
-	for (const facets of facetCache.values()) {
+	for (const [entityUuid, facets] of facetCache) {
+		if (!isKept(scope, entityUuid)) continue
 		for (const [facet, values] of Object.entries(facets)) {
 			if (facet === 'entity_name_provenance' || facet === 'llm_entity_name') continue
 			const m = facetValues.get(facet) ?? new Map<string, number>()
@@ -184,7 +194,7 @@ export async function overview(db: CorpusDb): Promise<Overview> {
 		SELECT f.facet AS category,
 			(SELECT COUNT(*) FROM concept k WHERE k.vocabulary_id = f.vocabulary_id) AS tags,
 			(SELECT COUNT(DISTINCT a.subject_id) FROM facet_assignment a
-			 WHERE a.facet = f.facet AND a.concept_id IS NOT NULL) AS documents
+			 WHERE a.facet = f.facet AND a.concept_id IS NOT NULL${andKept(assignmentSource, scope)}) AS documents
 		FROM facet f WHERE f.kind = 'vocabulary' ORDER BY f.facet`)
 	const state = Object.fromEntries(
 		(
@@ -194,15 +204,17 @@ export async function overview(db: CorpusDb): Promise<Overview> {
 		).map((r) => [r.key, r.value]),
 	)
 	return {
-		documents: await count('published_document'),
-		entities: await count('entity'),
-		chunks: await count('published_chunk'),
-		clusteredChunks: n(
-			(
-				await db.all<{ n: number }>(
-					sql`SELECT COUNT(DISTINCT m.chunk_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id`,
-				)
-			)[0]?.n,
+		documents: await counted(
+			sql`SELECT COUNT(*) AS n FROM published_document d WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
+		),
+		entities: await counted(
+			sql`SELECT COUNT(*) AS n FROM entity e WHERE 1 = 1${andKept(sql`e.id`, scope)}`,
+		),
+		chunks: await counted(
+			sql`SELECT COUNT(*) AS n FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
+		),
+		clusteredChunks: await counted(
+			sql`SELECT COUNT(DISTINCT m.chunk_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
 		),
 		clusters: await count('topic_cluster', 'WHERE retired_build_id IS NULL'),
 		junkConfirmedClusters: await count(
@@ -229,7 +241,11 @@ export async function overview(db: CorpusDb): Promise<Overview> {
 }
 
 // ---------------------------------------------------------------- topics
-export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSummary[]> {
+export async function topics(
+	db: CorpusDb,
+	includeJunk = false,
+	scope?: ReadScope,
+): Promise<TopicSummary[]> {
 	// Readers get the view. The review surface (includeJunk) also lists the
 	// live topics a reviewer confirmed as junk, by name, from the table.
 	const rows = includeJunk
@@ -269,7 +285,7 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 			await db
 				.select({ id: s.currentEntityMembership.topicClusterId, n: sql<number>`count(*)` })
 				.from(s.currentEntityMembership)
-				.where(strongSource)
+				.where(and(strongSource, keepSources(s.currentEntityMembership.entityUuid, scope)))
 				.groupBy(s.currentEntityMembership.topicClusterId)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -278,7 +294,7 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 	const docs = new Map(
 		(
 			await db.all<{ id: number; n: number }>(
-				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id WHERE m.membership_type IN ${STRONG} GROUP BY m.topic_cluster_id`,
+				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id WHERE m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY m.topic_cluster_id`,
 			)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -289,6 +305,7 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 			n: sql<number>`count(*)`,
 		})
 		.from(s.clusterEntityPerspective)
+		.where(keepSources(s.clusterEntityPerspective.entityUuid, scope))
 		.groupBy(s.clusterEntityPerspective.topicClusterId, s.clusterEntityPerspective.position)
 	const mix = new Map<number, Record<string, number>>()
 	for (const p of positions) mix.set(p.id, { ...(mix.get(p.id) ?? {}), [p.position]: n(p.n) })
@@ -306,8 +323,12 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 	}))
 }
 
-export async function topicById(db: CorpusDb, topicClusterId: number): Promise<TopicDetail | null> {
-	const summary = (await topics(db, true)).find((t) => t.topicClusterId === topicClusterId)
+export async function topicById(
+	db: CorpusDb,
+	topicClusterId: number,
+	scope?: ReadScope,
+): Promise<TopicDetail | null> {
+	const summary = (await topics(db, true, scope)).find((t) => t.topicClusterId === topicClusterId)
 	if (!summary) return null
 	const tc = summary.topicClusterId
 	// Child rows are reached through their parent's own predicate (a join back to
@@ -438,7 +459,7 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 	}>(sql`
 		SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
 		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
-		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG} GROUP BY d.document_id ORDER BY chunks DESC`)
+		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY d.document_id ORDER BY chunks DESC`)
 	const parents = await db.all<{
 		superclusterId: number
 		title: string | null
@@ -459,59 +480,80 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 		})
 		.from(s.currentEntityMembership)
 		.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
-		.where(and(eq(s.currentEntityMembership.topicClusterId, tc), strongSource))
+		.where(
+			and(
+				eq(s.currentEntityMembership.topicClusterId, tc),
+				strongSource,
+				keepSources(s.currentEntityMembership.entityUuid, scope),
+			),
+		)
 		.orderBy(asc(s.entity.entityName))
 	const tree = treeOf(await hierarchy(db))
 	const base = tree.baseOfTopic.get(tc)
+	// a synthesis keeps every quote's slot: a withheld source's quote reads as the notice, attributed
+	const quoteOf = (q: {
+		text: string
+		entityName: string
+		entityUuid: string
+		rationale: string | null
+	}) => ({
+		text: textOf(scope, q.entityUuid, q.text),
+		entityName: q.entityName,
+		entityUuid: q.entityUuid,
+		rationale: wordsOf(scope, q.entityUuid).withheld ? null : q.rationale,
+		...wordsOf(scope, q.entityUuid),
+	})
 	return {
 		...summary,
 		keyPointItems: kpRows.map((r) => ({
 			keyPoint: r.keyPoint,
 			details: r.details,
 			quotes: kpQuotes
-				.filter((q) => q.kpId === r.clusterKeyPointId)
-				.map((q) => ({
-					text: q.text,
-					entityName: q.entityName,
-					entityUuid: q.entityUuid,
-					rationale: null,
-				})),
+				.filter((q) => q.kpId === r.clusterKeyPointId && isKept(scope, q.entityUuid))
+				.map((q) => quoteOf({ ...q, rationale: null })),
 		})),
-		entityPerspectives: persp.map((p) => ({
-			entityUuid: p.entityUuid,
-			entityId: p.entityId,
-			entityName: p.entityName,
-			title: p.title,
-			description: p.description,
-			position: p.position,
-			positionAnalysis: p.positionAnalysis,
-			keyPoints: perspKp
-				.filter((k) => k.clusterEntityPerspectiveId === p.id)
-				.map((k) => ({
-					keyPoint: k.keyPoint,
-					details: k.details,
-					quotes: perspKpQuotes
-						.filter((q) => q.keyPointId === k.keyPointId)
-						.map((q) => q.quoteText),
-				})),
-			quotes: perspQuotes
-				.filter((q) => q.clusterEntityPerspectiveId === p.id)
-				.map((q) => q.quoteText),
-			facets: facetCache.get(p.entityUuid) ?? {},
-		})),
+		entityPerspectives: persp
+			.filter((p) => isKept(scope, p.entityUuid))
+			.map((p) => {
+				const words = wordsOf(scope, p.entityUuid)
+				const text = (value: string) => (words.withheld ? '' : value)
+				return {
+					entityUuid: p.entityUuid,
+					entityId: p.entityId,
+					entityName: p.entityName,
+					// the stance's title reads the notice; its one-word position stays
+					title: textOf(scope, p.entityUuid, p.title),
+					description: text(p.description),
+					position: p.position,
+					positionAnalysis: text(p.positionAnalysis),
+					keyPoints: words.withheld
+						? []
+						: perspKp
+								.filter((k) => k.clusterEntityPerspectiveId === p.id)
+								.map((k) => ({
+									keyPoint: k.keyPoint,
+									details: k.details,
+									quotes: perspKpQuotes
+										.filter((q) => q.keyPointId === k.keyPointId)
+										.map((q) => q.quoteText),
+								})),
+					quotes: words.withheld
+						? []
+						: perspQuotes
+								.filter((q) => q.clusterEntityPerspectiveId === p.id)
+								.map((q) => q.quoteText),
+					facets: facetCache.get(p.entityUuid) ?? {},
+					...words,
+				}
+			}),
 		facetPerspectives: facetRows.map((r) => ({
 			facet: r.facet,
 			facetValue: r.facetValue,
 			position: r.position,
 			positionAnalysis: r.positionAnalysis,
 			quotes: facetQuotes
-				.filter((q) => q.pid === r.clusterKeyPerspectiveId)
-				.map((q) => ({
-					text: q.text,
-					entityName: q.entityName,
-					entityUuid: q.entityUuid,
-					rationale: q.rationale,
-				})),
+				.filter((q) => q.pid === r.clusterKeyPerspectiveId && isKept(scope, q.entityUuid))
+				.map(quoteOf),
 		})),
 		sourceDocuments: sourceDocs.map((d) => ({ ...d, chunks: n(d.chunks) })),
 		parents: parents.map((p) => ({ ...p, isPrimary: p.isPrimary === 1 })),
@@ -521,18 +563,22 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 }
 
 /** A grouping node: its lineage, its direct sub-groups or topics, and the reach of everything beneath it. */
-export async function groupById(db: CorpusDb, superclusterId: number): Promise<GroupDetail | null> {
+export async function groupById(
+	db: CorpusDb,
+	superclusterId: number,
+	scope?: ReadScope,
+): Promise<GroupDetail | null> {
 	const tree = treeOf(await hierarchy(db))
 	const node = tree.byId.get(superclusterId)
 	if (!node || node.generation === 0) return null
-	const summaries = new Map((await topics(db)).map((t) => [t.topicClusterId, t]))
+	const summaries = new Map((await topics(db, false, scope)).map((t) => [t.topicClusterId, t]))
 	const membership = await db
 		.select({
 			topicClusterId: s.currentEntityMembership.topicClusterId,
 			entityUuid: s.currentEntityMembership.entityUuid,
 		})
 		.from(s.currentEntityMembership)
-		.where(strongSource)
+		.where(and(strongSource, keepSources(s.currentEntityMembership.entityUuid, scope)))
 	const membersOf = new Map<number, Set<string>>()
 	for (const m of membership)
 		membersOf.set(
@@ -552,6 +598,7 @@ export async function groupById(db: CorpusDb, superclusterId: number): Promise<G
 			position: s.clusterEntityPerspective.position,
 		})
 		.from(s.clusterEntityPerspective)
+		.where(keepSources(s.clusterEntityPerspective.entityUuid, scope))
 	const under = new Set(tree.topicsUnder(superclusterId))
 	const positions: Record<string, number> = {}
 	const spreadOf = new Map<number, Map<string, Set<string>>>()
@@ -624,6 +671,7 @@ export async function relatedTopics(
 	db: CorpusDb,
 	topicClusterId: number,
 	limit = 10,
+	scope?: ReadScope,
 ): Promise<RelatedTopic[]> {
 	const pk = (
 		await db
@@ -636,7 +684,13 @@ export async function relatedTopics(
 		await db
 			.select({ e: s.currentEntityMembership.entityUuid })
 			.from(s.currentEntityMembership)
-			.where(and(eq(s.currentEntityMembership.topicClusterId, pk), strongSource))
+			.where(
+				and(
+					eq(s.currentEntityMembership.topicClusterId, pk),
+					strongSource,
+					keepSources(s.currentEntityMembership.entityUuid, scope),
+				),
+			)
 	).map((r) => r.e)
 	if (!own.length) return []
 	const shared = new Map<number, number>()
@@ -647,7 +701,13 @@ export async function relatedTopics(
 				n: sql<number>`count(distinct ${s.currentEntityMembership.entityUuid})`,
 			})
 			.from(s.currentEntityMembership)
-			.where(and(inArray(s.currentEntityMembership.entityUuid, group), strongSource))
+			.where(
+				and(
+					inArray(s.currentEntityMembership.entityUuid, group),
+					strongSource,
+					keepSources(s.currentEntityMembership.entityUuid, scope),
+				),
+			)
 			.groupBy(s.currentEntityMembership.topicClusterId)) {
 			if (r.id !== pk) shared.set(r.id, (shared.get(r.id) ?? 0) + n(r.n))
 		}
@@ -668,8 +728,12 @@ export async function relatedTopics(
 }
 
 // ---------------------------------------------------------------- entities
-export async function entities(db: CorpusDb): Promise<EntitySummary[]> {
-	const rows = await db.select().from(s.entity).orderBy(asc(s.entity.entityName))
+export async function entities(db: CorpusDb, scope?: ReadScope): Promise<EntitySummary[]> {
+	const rows = await db
+		.select()
+		.from(s.entity)
+		.where(keepSources(s.entity.id, scope))
+		.orderBy(asc(s.entity.entityName))
 	const facets = await loadFacetCache(db, 'entity')
 	const docs = new Map(
 		(
@@ -712,7 +776,11 @@ export async function entities(db: CorpusDb): Promise<EntitySummary[]> {
 }
 
 /** A source by its uuid, its `entity_id` slug, or the id of one of its published documents — so prose can cite a source by any of them. */
-export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDetail | null> {
+export async function entityByKey(
+	db: CorpusDb,
+	key: string,
+	scope?: ReadScope,
+): Promise<EntityDetail | null> {
 	const row =
 		(
 			await db
@@ -727,9 +795,10 @@ export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDeta
 				.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
 				.where(eq(s.publishedDocument.documentId, key))
 		)[0]?.entity
-	if (!row) return null
-	const summary = (await entities(db)).find((e) => e.entityUuid === row.id)
+	if (!row || !isKept(scope, row.id)) return null
+	const summary = (await entities(db, scope)).find((e) => e.entityUuid === row.id)
 	if (!summary) return null
+	const words = wordsOf(scope, row.id)
 	const docs = await db
 		.select({
 			documentId: s.publishedDocument.documentId,
@@ -787,6 +856,7 @@ export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDeta
 	const documentFacets = await loadFacetCache(db, 'document')
 	return {
 		...summary,
+		...words,
 		inferredName: row.inferredName ?? summary.facets.llm_entity_name?.[0] ?? null,
 		documentItems: docs.map((d) => ({
 			...d,
@@ -797,21 +867,23 @@ export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDeta
 			const p = persp.find((x) => x.topicClusterId === m.topicClusterId)
 			return {
 				...m,
+				// the one-word position stays; the stance's own words are withheld behind the notice
 				position: p?.position ?? null,
-				positionAnalysis: p?.positionAnalysis ?? null,
-				perspectiveTitle: p?.title ?? null,
-				quotes: p
-					? perspQuotes
-							.filter((q) => q.clusterEntityPerspectiveId === p.clusterEntityPerspectiveId)
-							.map((q) => q.quoteText)
-					: [],
+				positionAnalysis: p && !words.withheld ? p.positionAnalysis : null,
+				perspectiveTitle: p ? textOf(scope, row.id, p.title) : null,
+				quotes:
+					p && !words.withheld
+						? perspQuotes
+								.filter((q) => q.clusterEntityPerspectiveId === p.clusterEntityPerspectiveId)
+								.map((q) => q.quoteText)
+						: [],
 			}
 		}),
 	}
 }
 
 // ---------------------------------------------------------------- documents
-export async function documents(db: CorpusDb): Promise<DocumentSummary[]> {
+export async function documents(db: CorpusDb, scope?: ReadScope): Promise<DocumentSummary[]> {
 	const rows = await db
 		.select({
 			documentId: s.publishedDocument.documentId,
@@ -822,6 +894,7 @@ export async function documents(db: CorpusDb): Promise<DocumentSummary[]> {
 		})
 		.from(s.publishedDocument)
 		.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
+		.where(keepSources(s.entity.id, scope))
 		.orderBy(asc(s.entity.entityName), asc(s.publishedDocument.fileName))
 	const facets = await loadFacetCache(db, 'document')
 	const kp = new Map(
@@ -864,9 +937,14 @@ export async function documents(db: CorpusDb): Promise<DocumentSummary[]> {
 export async function documentById(
 	db: CorpusDb,
 	documentId: string,
+	scope?: ReadScope,
 ): Promise<DocumentDetail | null> {
-	const summary = (await documents(db)).find((d) => d.documentId === documentId)
+	const summary = (await documents(db, scope)).find((d) => d.documentId === documentId)
 	if (!summary) return null
+	// a withheld source's document keeps its facts (what it answered, its tags' names, its topics);
+	// every text of its own is emptied, and the document carries the notice once
+	const words = wordsOf(scope, summary.entityUuid)
+	const own = (value: string) => (words.withheld ? '' : value)
 	const kpRows = await db
 		.select()
 		.from(s.publishedKeyPoint)
@@ -1033,48 +1111,58 @@ export async function documentById(
 		.join(' ')
 	return {
 		...summary,
-		keyPointItems: kpRows.map((k) => ({
-			keyPoint: k.keyPoint,
-			details: k.details,
-			quotes: kpQuotes
-				.filter((q) => q.keyPointId === k.keyPointId)
-				.map((q) => ({ text: q.quote, verified: q.verified !== 0 })),
-		})),
-		tags: tags.map((t) => ({ ...t, isPrimary: t.isPrimary === 1 })),
+		...words,
+		keyPointItems: words.withheld
+			? []
+			: kpRows.map((k) => ({
+					keyPoint: k.keyPoint,
+					details: k.details,
+					quotes: kpQuotes
+						.filter((q) => q.keyPointId === k.keyPointId)
+						.map((q) => ({ text: q.quote, verified: q.verified !== 0 })),
+				})),
+		tags: tags.map((t) => ({ ...t, context: own(t.context), isPrimary: t.isPrimary === 1 })),
 		questionResponses: qr.map((r) => ({
 			questionKey: r.questionKey,
 			questionText: r.questionText,
 			addressed: r.addressed === 1,
+			// the answer's one-word position stays, as on the question's own page
 			position: r.position,
-			keyPoints: qrKp
-				.filter((k) => k.questionResponseId === r.id)
-				.map((k) => ({
-					keyPoint: k.keyPoint,
-					details: k.details,
-					quotes: qrQuotes
-						.filter((q) => q.questionResponseKeyPointId === k.questionResponseKeyPointId)
-						.map((q) => q.quote),
-				})),
+			keyPoints: words.withheld
+				? []
+				: qrKp
+						.filter((k) => k.questionResponseId === r.id)
+						.map((k) => ({
+							keyPoint: k.keyPoint,
+							details: k.details,
+							quotes: qrQuotes
+								.filter((q) => q.questionResponseKeyPointId === k.questionResponseKeyPointId)
+								.map((q) => q.quote),
+						})),
 		})),
 		criteria: criteria.map((c) => ({
 			topic: c.topic,
 			subtopic: c.subtopic,
-			keyPoint: c.keyPoint,
-			details: c.details,
-			quotes: criteriaQuotes.filter((q) => q.criterionAnalysisId === c.id).map((q) => q.quote),
+			keyPoint: own(c.keyPoint),
+			details: own(c.details),
+			quotes: words.withheld
+				? []
+				: criteriaQuotes.filter((q) => q.criterionAnalysisId === c.id).map((q) => q.quote),
 		})),
 		metrics: metricRows.map((m) => ({
 			metricType: m.metricType,
 			metricName: m.metricName,
 			explicitness: m.explicitness,
-			metricDescription: m.metricDescription,
-			requirements: metricReqs.filter((r) => r.metricId === m.id).map((r) => r.requirement),
+			metricDescription: own(m.metricDescription),
+			requirements: words.withheld
+				? []
+				: metricReqs.filter((r) => r.metricId === m.id).map((r) => r.requirement),
 			northStars: metricStars
 				.filter((x) => x.metricId === m.id)
-				.map((x) => ({ northStar: x.northStar, how: x.how })),
+				.map((x) => ({ northStar: x.northStar, how: own(x.how) })),
 		})),
 		topics: topicRows.map((t) => ({ ...t, chunks: n(t.chunks) })),
-		text,
+		text: own(text),
 	}
 }
 
@@ -1082,6 +1170,7 @@ export async function findDocuments(
 	db: CorpusDb,
 	query: string,
 	limit = 15,
+	scope?: ReadScope,
 ): Promise<FoundDocument[]> {
 	const pattern = `%${query.replace(/[%_]/g, '')}%`
 	return db
@@ -1094,10 +1183,13 @@ export async function findDocuments(
 		.from(s.publishedDocument)
 		.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
 		.where(
-			or(
-				like(s.publishedDocument.documentTitle, pattern),
-				like(s.publishedDocument.fileName, pattern),
-				like(s.entity.entityName, pattern),
+			and(
+				or(
+					like(s.publishedDocument.documentTitle, pattern),
+					like(s.publishedDocument.fileName, pattern),
+					like(s.entity.entityName, pattern),
+				),
+				keepSources(s.entity.id, scope),
 			),
 		)
 		.limit(limit)
@@ -1224,6 +1316,7 @@ function findConcept<
 export async function vocabularySummary(
 	db: CorpusDb,
 	options: { facet?: string } = {},
+	scope?: ReadScope,
 ): Promise<TagCategorySummary[]> {
 	const facets = await db
 		.select({
@@ -1259,7 +1352,7 @@ export async function vocabularySummary(
 		}>(sql`
 			SELECT cl.ancestor_id AS concept_id, COUNT(DISTINCT a.subject_id) AS subjects, SUM(a.is_primary) AS primaries, a.relevance, COUNT(*) AS n
 			FROM facet_assignment a JOIN concept_closure cl ON cl.descendant_id = a.concept_id
-			WHERE a.facet = ${f.facet} GROUP BY cl.ancestor_id, a.relevance`)
+			WHERE a.facet = ${f.facet}${andKept(assignmentSource, scope)} GROUP BY cl.ancestor_id, a.relevance`)
 		const byConcept = new Map<
 			number,
 			{ subjects: number; primaries: number; relevance: Record<string, number> }
@@ -1274,7 +1367,7 @@ export async function vocabularySummary(
 		const distinct = await db.all<{ concept_id: number; subjects: number }>(sql`
 			SELECT cl.ancestor_id AS concept_id, COUNT(DISTINCT a.subject_id) AS subjects
 			FROM facet_assignment a JOIN concept_closure cl ON cl.descendant_id = a.concept_id
-			WHERE a.facet = ${f.facet} GROUP BY cl.ancestor_id`)
+			WHERE a.facet = ${f.facet}${andKept(assignmentSource, scope)} GROUP BY cl.ancestor_id`)
 		for (const r of distinct) {
 			const cur = byConcept.get(r.concept_id) ?? { subjects: 0, primaries: 0, relevance: {} }
 			cur.subjects = n(r.subjects)
@@ -1309,8 +1402,8 @@ export async function vocabularySummary(
 }
 
 /** The former tagSummary: vocabulary facets at document granularity (what tagging tasks write). */
-export async function tagSummary(db: CorpusDb): Promise<TagCategorySummary[]> {
-	return (await vocabularySummary(db)).filter((v) => v.granularity === 'document')
+export async function tagSummary(db: CorpusDb, scope?: ReadScope): Promise<TagCategorySummary[]> {
+	return (await vocabularySummary(db, {}, scope)).filter((v) => v.granularity === 'document')
 }
 
 /**
@@ -1323,6 +1416,7 @@ export async function subjectsForConcept(
 	db: CorpusDb,
 	ref: string,
 	facet: string | null = null,
+	scope?: ReadScope,
 ): Promise<TagDocument[]> {
 	const facets = await db
 		.select({
@@ -1352,15 +1446,16 @@ export async function subjectsForConcept(
 			isPrimary: number
 			derived: number
 			context: string | null
+			sourceUuid: string
 		}>(sql`
 			SELECT a.subject_id AS subjectId, a.subject_type AS subjectType, d.document_title AS title, d.file_name AS fileName,
 			       COALESCE(e.entity_name, e2.entity_name) AS entityName, a.relevance, a.is_primary AS isPrimary,
-			       CASE WHEN cl.depth > 0 THEN 1 ELSE 0 END AS derived, a.context
+			       CASE WHEN cl.depth > 0 THEN 1 ELSE 0 END AS derived, a.context, ${assignmentSource} AS sourceUuid
 			FROM facet_assignment a JOIN concept_closure cl ON cl.descendant_id = a.concept_id AND cl.ancestor_id = ${target.conceptId}
 			LEFT JOIN published_document d ON a.subject_type = 'document' AND d.document_id = a.subject_id
 			LEFT JOIN entity e ON d.entity_uuid = e.id
 			LEFT JOIN entity e2 ON a.subject_type = 'entity' AND e2.id = a.subject_id
-			WHERE a.facet = ${f.facet} AND (a.subject_type <> 'document' OR d.document_id IS NOT NULL)
+			WHERE a.facet = ${f.facet} AND (a.subject_type <> 'document' OR d.document_id IS NOT NULL)${andKept(assignmentSource, scope)}
 			ORDER BY a.is_primary DESC, a.relevance, entityName`)
 		const seen = new Set<string>()
 		for (const r of rows) {
@@ -1376,8 +1471,9 @@ export async function subjectsForConcept(
 				relevance: r.relevance ?? '',
 				isPrimary: r.isPrimary === 1,
 				derived: r.derived === 1,
-				context: r.context ?? '',
+				context: textOf(scope, r.sourceUuid, r.context ?? ''),
 				facet: f.facet,
+				...wordsOf(scope, r.sourceUuid),
 			})
 		}
 	}
@@ -1389,8 +1485,9 @@ export async function documentsForTag(
 	db: CorpusDb,
 	tagPath: string,
 	category: string | null = null,
+	scope?: ReadScope,
 ): Promise<TagDocument[]> {
-	return (await subjectsForConcept(db, tagPath, category)).filter(
+	return (await subjectsForConcept(db, tagPath, category, scope)).filter(
 		(r) => r.subjectType === 'document',
 	)
 }
@@ -1471,7 +1568,7 @@ export async function conceptDetail(db: CorpusDb, facetName: string, ref: string
 	}
 }
 
-export async function questionSummary(db: CorpusDb): Promise<QuestionSummary[]> {
+export async function questionSummary(db: CorpusDb, scope?: ReadScope): Promise<QuestionSummary[]> {
 	const qs = await db
 		.select()
 		.from(s.question)
@@ -1491,6 +1588,7 @@ export async function questionSummary(db: CorpusDb): Promise<QuestionSummary[]> 
 			eq(s.publishedQuestionResponse.documentId, s.publishedDocument.documentId),
 		)
 		.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
+		.where(keepSources(s.entity.id, scope))
 	return qs.map((q) => {
 		const mine = rows.filter((r) => r.questionId === q.questionId)
 		return {
@@ -1514,10 +1612,12 @@ export async function questionSummary(db: CorpusDb): Promise<QuestionSummary[]> 
 // ---------------------------------------------------------------- custom analysis (task results)
 /** Corpus-wide results per custom-analysis task PRESENT in the store, one rollup shape per task
  *  type (contracts/explorer.ts taskResultRowSchema), over published documents. */
-export async function taskResults(db: CorpusDb): Promise<TaskResultRow[]> {
+export async function taskResults(db: CorpusDb, scope?: ReadScope): Promise<TaskResultRow[]> {
+	const kept = andKept(sql`d.entity_uuid`, scope)
 	const tasks = await db.all<{ taskId: string; taskType: string; documents: number }>(sql`
 		SELECT dca.task_id AS taskId, dca.task_type AS taskType, COUNT(DISTINCT dca.document_id) AS documents
 		FROM doc_custom_analysis dca JOIN published_document d ON d.document_id = dca.document_id
+		WHERE 1 = 1${kept}
 		GROUP BY dca.task_id, dca.task_type ORDER BY dca.task_id`)
 	const results: TaskResultRow[] = []
 	for (const t of tasks) {
@@ -1541,7 +1641,7 @@ export async function taskResults(db: CorpusDb): Promise<TaskResultRow[]> {
 				SELECT a.facet AS category, a.facet_value AS path, COUNT(DISTINCT a.subject_id) AS documents, SUM(a.is_primary) AS primaries
 				FROM facet_assignment a JOIN doc_custom_analysis dca ON dca.custom_analysis_id = a.custom_analysis_id
 				JOIN published_document d ON d.document_id = dca.document_id
-				WHERE dca.task_id = ${t.taskId} GROUP BY a.facet, a.facet_value ORDER BY a.facet, a.facet_value`)
+				WHERE dca.task_id = ${t.taskId}${kept} GROUP BY a.facet, a.facet_value ORDER BY a.facet, a.facet_value`)
 			const byCategory = new Map<
 				string,
 				{ path: string; documents: number; primaryDocuments: number }[]
@@ -1561,8 +1661,9 @@ export async function taskResults(db: CorpusDb): Promise<TaskResultRow[]> {
 			}>(sql`
 				SELECT q.question_key AS questionKey, q.question_text AS questionText, COUNT(*) AS responses, SUM(qr.addressed) AS addressed
 				FROM published_question_response qr JOIN doc_custom_analysis dca ON dca.custom_analysis_id = qr.custom_analysis_id
+				JOIN published_document d ON d.document_id = dca.document_id
 				JOIN question q ON q.question_id = qr.question_id
-				WHERE dca.task_id = ${t.taskId} GROUP BY qr.question_id ORDER BY q.ordinal, q.question_key`)
+				WHERE dca.task_id = ${t.taskId}${kept} GROUP BY qr.question_id ORDER BY q.ordinal, q.question_key`)
 			row.questions = qRows.map((r) => ({
 				questionKey: r.questionKey,
 				questionText: r.questionText,
@@ -1575,7 +1676,7 @@ export async function taskResults(db: CorpusDb): Promise<TaskResultRow[]> {
 				FROM criterion_analysis ca JOIN doc_custom_analysis dca ON dca.custom_analysis_id = ca.custom_analysis_id
 				JOIN published_document d ON d.document_id = dca.document_id
 				JOIN analysis_subtopic st ON st.analysis_subtopic_id = ca.analysis_subtopic_id JOIN analysis_topic tt ON tt.analysis_topic_id = st.analysis_topic_id
-				WHERE dca.task_id = ${t.taskId} GROUP BY st.analysis_subtopic_id ORDER BY tt.topic_name, st.subtopic_name`)
+				WHERE dca.task_id = ${t.taskId}${kept} GROUP BY st.analysis_subtopic_id ORDER BY tt.topic_name, st.subtopic_name`)
 			const byTopic = new Map<string, { subtopic: string; documents: number }[]>()
 			for (const r of cRows)
 				byTopic.set(r.topic, [
@@ -1588,7 +1689,7 @@ export async function taskResults(db: CorpusDb): Promise<TaskResultRow[]> {
 				SELECT m.metric_type AS metricType, m.metric_name AS metricName, COUNT(DISTINCT dca.document_id) AS documents
 				FROM metric m JOIN doc_custom_analysis dca ON dca.custom_analysis_id = m.custom_analysis_id
 				JOIN published_document d ON d.document_id = dca.document_id
-				WHERE dca.task_id = ${t.taskId} GROUP BY m.metric_type, m.metric_name ORDER BY m.metric_type, m.metric_name`)
+				WHERE dca.task_id = ${t.taskId}${kept} GROUP BY m.metric_type, m.metric_name ORDER BY m.metric_type, m.metric_name`)
 			row.metrics = mRows.map((r) => ({
 				metricType: r.metricType,
 				metricName: r.metricName,
@@ -1641,28 +1742,41 @@ export async function hierarchy(db: CorpusDb): Promise<Hierarchy> {
 }
 
 // ---------------------------------------------------------------- search (text)
-export async function searchText(db: CorpusDb, query: string, limit = 20): Promise<TextHit[]> {
+export async function searchText(
+	db: CorpusDb,
+	query: string,
+	limit = 20,
+	scope?: ReadScope,
+): Promise<TextHit[]> {
 	const pattern = `%${query.replace(/[%_]/g, ' ').trim()}%`
-	return db.all(sql`
-		SELECT c.id AS chunkId, d.document_id AS documentId, d.document_title AS title, d.file_name AS fileName, e.entity_name AS entityName, c.text
+	const rows = await db.all<TextHit & { entityUuid: string }>(sql`
+		SELECT c.id AS chunkId, d.document_id AS documentId, d.document_title AS title, d.file_name AS fileName, e.entity_name AS entityName, e.id AS entityUuid, c.text
 		FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
-		WHERE c.text LIKE ${pattern} LIMIT ${limit}`)
+		WHERE c.text LIKE ${pattern}${andKept(sql`e.id`, scope)} LIMIT ${limit}`)
+	// a withheld source's hit stays, its passage read as the notice
+	return rows.map(({ entityUuid, ...hit }) => ({
+		...hit,
+		text: textOf(scope, entityUuid, hit.text),
+		...wordsOf(scope, entityUuid),
+	}))
 }
 
 /** Hydrate chunk ids (semantic search hits) with provenance and topic membership. */
 export async function hydrateChunks(
 	db: CorpusDb,
 	chunkIds: string[],
+	scope?: ReadScope,
 ): Promise<Omit<SearchHit, 'score'>[]> {
 	const out: Omit<SearchHit, 'score'>[] = []
 	for (const group of inGroups(chunkIds, 80)) {
-		const rows = await db
+		const found = await db
 			.select({
 				chunkId: s.publishedChunk.id,
 				documentId: s.publishedDocument.documentId,
 				title: s.publishedDocument.documentTitle,
 				fileName: s.publishedDocument.fileName,
 				entityName: s.entity.entityName,
+				entityUuid: s.entity.id,
 				text: s.publishedChunk.text,
 			})
 			.from(s.publishedChunk)
@@ -1671,7 +1785,12 @@ export async function hydrateChunks(
 				eq(s.publishedChunk.documentId, s.publishedDocument.documentId),
 			)
 			.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
-			.where(inArray(s.publishedChunk.id, group))
+			.where(and(inArray(s.publishedChunk.id, group), keepSources(s.entity.id, scope)))
+		const rows = found.map(({ entityUuid, ...hit }) => ({
+			...hit,
+			text: textOf(scope, entityUuid, hit.text),
+			...wordsOf(scope, entityUuid),
+		}))
 		const memberships = await db
 			.select({
 				chunkId: s.currentChunkMembership.chunkId,

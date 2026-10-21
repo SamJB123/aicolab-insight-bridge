@@ -56,9 +56,9 @@ import { DEFAULT_READING_SORT, ReadingSortControl, sortRows } from './sort-contr
 import './reader.css'
 
 export interface ReadingProps {
- /** Optional host-owned section title for shareable readings. */
- section?: string
- onSectionChange?: (section: string) => void
+	/** Optional host-owned section title for shareable readings. */
+	section?: string
+	onSectionChange?: (section: string) => void
 	/** Tier or kind name above the title — 'Topic', 'Submitter', 'Family'. */
 	eyebrow?: string
 	title: string
@@ -87,7 +87,11 @@ export interface ReadingProps {
 	class?: string
 }
 
-function MixBar(props: { mix: Record<string, number> | undefined; order?: string[]; colors?: Record<string, string> }) {
+function MixBar(props: {
+	mix: Record<string, number> | undefined
+	order?: string[]
+	colors?: Record<string, string>
+}) {
 	const segments = () => {
 		const mix = props.mix
 		if (!mix) return []
@@ -107,7 +111,10 @@ function MixBar(props: { mix: Record<string, number> | undefined; order?: string
 			<div class="ib-reader-mix" role="img" aria-label="Stance mix">
 				<For each={segments()}>
 					{(segment) => (
-						<span style={{ 'inline-size': `${segment.share}%`, background: segment.color }} title={segment.key} />
+						<span
+							style={{ 'inline-size': `${segment.share}%`, background: segment.color }}
+							title={segment.key}
+						/>
 					)}
 				</For>
 			</div>
@@ -122,6 +129,9 @@ function Quotes(props: { quotes: IBQuote[] | undefined }) {
 				<blockquote class={{ 'ib-reader-withheld': quote.withheld === true }}>
 					{quote.text}
 					<Show when={quote.source}>{(source) => <cite>{source()}</cite>}</Show>
+					<Show when={quote.withheld !== true && quote.notice}>
+						{(notice) => <small class="ib-reader-quote-notice">{notice()}</small>}
+					</Show>
 				</blockquote>
 			)}
 		</For>
@@ -134,7 +144,10 @@ function NoticeSection(props: { notice: IBNotice }) {
 	return (
 		<Callout
 			as="aside"
-			class={{ 'ib-reader-notice': true, 'ib-reader-notice-withheld': props.notice.tone === 'withheld' }}
+			class={{
+				'ib-reader-notice': true,
+				'ib-reader-notice-withheld': props.notice.tone === 'withheld',
+			}}
 			colorBase={props.notice.tone === 'withheld' ? 'warning' : 'info'}
 			variant="soft"
 			band={() => props.notice.title}
@@ -190,13 +203,26 @@ function PointsSection(props: { points: IBPoint[]; label: string }) {
  * `strength` of 3 inks them all, weaker levels fade the outer arcs. The
  * accessible name comes from the row's badge text. */
 function SignalIcon(props: { strength: 1 | 2 | 3; label: string }) {
-	const arcs = ['M8.4 15.2 A 5.1 5.1 0 0 1 15.6 15.2', 'M5.6 12.4 A 9.1 9.1 0 0 1 18.4 12.4', 'M2.8 9.6 A 13.1 13.1 0 0 1 21.2 9.6']
+	const arcs = [
+		'M8.4 15.2 A 5.1 5.1 0 0 1 15.6 15.2',
+		'M5.6 12.4 A 9.1 9.1 0 0 1 18.4 12.4',
+		'M2.8 9.6 A 13.1 13.1 0 0 1 21.2 9.6',
+	]
 	return (
 		<svg class="ib-reader-signal" viewBox="0 0 24 24" role="img" aria-label={props.label}>
 			<title>{props.label}</title>
 			<circle cx="12" cy="19" r="1.9" fill="currentColor" />
 			<For each={arcs}>
-				{(d, at) => <path d={d} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity={at() < props.strength ? 1 : 0.22} />}
+				{(d, at) => (
+					<path
+						d={d}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						opacity={at() < props.strength ? 1 : 0.22}
+					/>
+				)}
 			</For>
 		</svg>
 	)
@@ -204,7 +230,10 @@ function SignalIcon(props: { strength: 1 | 2 | 3; label: string }) {
 
 function FacetBadge(props: { badge: string; badgeColor?: string }) {
 	return (
-		<span class="ib-reader-badge" style={props.badgeColor ? { background: props.badgeColor, color: '#fff' } : undefined}>
+		<span
+			class="ib-reader-badge"
+			style={props.badgeColor ? { background: props.badgeColor, color: '#fff' } : undefined}
+		>
 			{props.badge}
 		</span>
 	)
@@ -212,7 +241,11 @@ function FacetBadge(props: { badge: string; badgeColor?: string }) {
 
 /** Actionable child-node rows with the reader's A–Z/reach ordering — never
  * pre-ranked (the Respect principles). */
-function NodesSection(props: { section: Extract<IBContentSection, { kind: 'nodes' }>; onVisit: (id: IBNodeId) => void; onHoverNode?: (id: IBNodeId | null) => void }) {
+function NodesSection(props: {
+	section: Extract<IBContentSection, { kind: 'nodes' }>
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+}) {
 	const [sort, setSort] = createSignal(DEFAULT_READING_SORT)
 	const rows = createMemo(() =>
 		sortRows(
@@ -229,7 +262,14 @@ function NodesSection(props: { section: Extract<IBContentSection, { kind: 'nodes
 			</div>
 			<RichList label={props.section.title}>
 				<For each={rows()}>
-					{(row) => <RichListItem title={row.label} description={row.detail} onSelect={() => props.onVisit(row.id)} onHoverChange={(hovering) => props.onHoverNode?.(hovering ? row.id : null)} />}
+					{(row) => (
+						<RichListItem
+							title={row.label}
+							description={row.detail}
+							onSelect={() => props.onVisit(row.id)}
+							onHoverChange={(hovering) => props.onHoverNode?.(hovering ? row.id : null)}
+						/>
+					)}
 				</For>
 			</RichList>
 		</>
@@ -253,8 +293,12 @@ function FacetsSection(props: {
 	onHoverNode?: (id: IBNodeId | null) => void
 	visitLabel: (row: IBFacetRow) => string
 }) {
-	const analysed = createMemo(() => props.section.rows.filter((row) => row.analysis || (row.quotes?.length ?? 0) > 0))
-	const plain = createMemo(() => props.section.rows.filter((row) => !(row.analysis || (row.quotes?.length ?? 0) > 0)))
+	const analysed = createMemo(() =>
+		props.section.rows.filter((row) => row.analysis || (row.quotes?.length ?? 0) > 0),
+	)
+	const plain = createMemo(() =>
+		props.section.rows.filter((row) => !(row.analysis || (row.quotes?.length ?? 0) > 0)),
+	)
 	const [allPlain, setAllPlain] = createSignal(false)
 	const visiblePlain = createMemo(() => {
 		const rows = plain()
@@ -280,9 +324,14 @@ function FacetsSection(props: {
 								summary={() => (
 									<span class="ib-reader-acc-summary">
 										<span class="ib-reader-acc-label">{row.label}</span>
-										<Show when={row.badge}>{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}</Show>
+										<Show when={row.badge}>
+											{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
+										</Show>
 										<Show when={row.share !== undefined}>
-											<span class="ib-reader-acc-share" title={`${Math.round((row.share ?? 0) * 100)}% of the written stances`}>
+											<span
+												class="ib-reader-acc-share"
+												title={`${Math.round((row.share ?? 0) * 100)}% of the written stances`}
+											>
 												<Meter value={(row.share ?? 0) * 100} max={100} />
 											</span>
 										</Show>
@@ -295,7 +344,13 @@ function FacetsSection(props: {
 									<Quotes quotes={row.quotes} />
 									<Show when={row.id}>
 										{(id) => (
-											<button type="button" class="ib-reader-chip" onClick={() => props.onVisit(id())} onPointerEnter={() => props.onHoverNode?.(id())} onPointerLeave={() => props.onHoverNode?.(null)}>
+											<button
+												type="button"
+												class="ib-reader-chip"
+												onClick={() => props.onVisit(id())}
+												onPointerEnter={() => props.onHoverNode?.(id())}
+												onPointerLeave={() => props.onHoverNode?.(null)}
+											>
 												{props.visitLabel(row)}
 											</button>
 										)}
@@ -307,7 +362,12 @@ function FacetsSection(props: {
 				</Accordion>
 			</Show>
 			<Show when={plain().length > 0}>
-				<RichList label={props.section.title} titleSize="var(--t-sm)" titleInk="var(--color-base-content-muted)" rowPadBlock="0.35rem">
+				<RichList
+					label={props.section.title}
+					titleSize="var(--t-sm)"
+					titleInk="var(--color-base-content-muted)"
+					rowPadBlock="0.35rem"
+				>
 					<For each={visiblePlain()}>
 						{(row) => (
 							<RichListItem
@@ -320,7 +380,14 @@ function FacetsSection(props: {
 								trailing={
 									row.signal !== undefined || row.badge !== undefined || row.share !== undefined ? (
 										<span class="ib-reader-trailing">
-											<Show when={row.signal} fallback={<Show when={row.badge}>{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}</Show>}>
+											<Show
+												when={row.signal}
+												fallback={
+													<Show when={row.badge}>
+														{(badge) => <FacetBadge badge={badge()} badgeColor={row.badgeColor} />}
+													</Show>
+												}
+											>
 												{(signal) => <SignalIcon strength={signal()} label={row.badge ?? ''} />}
 											</Show>
 											<Show when={row.share !== undefined}>
@@ -334,7 +401,11 @@ function FacetsSection(props: {
 					</For>
 				</RichList>
 				<Show when={plain().length > PLAIN_ROWS_CAP}>
-					<button type="button" class="ib-reader-show-all" onClick={() => setAllPlain((expanded) => !expanded)}>
+					<button
+						type="button"
+						class="ib-reader-show-all"
+						onClick={() => setAllPlain((expanded) => !expanded)}
+					>
 						{allPlain() ? 'Show fewer ▴' : `Show all ${plain().length} ▾`}
 					</button>
 				</Show>
@@ -352,15 +423,35 @@ function SectionBody(props: {
 }) {
 	const section = props.section
 	if (section.kind === 'notice') return <NoticeSection notice={section.notice} />
-	if (section.kind === 'points') return <PointsSection points={section.points} label={section.title} />
-	if (section.kind === 'nodes') return <NodesSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
-	if (section.kind === 'facets') return <FacetsSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} visitLabel={props.visitLabel} />
+	if (section.kind === 'points')
+		return <PointsSection points={section.points} label={section.title} />
+	if (section.kind === 'nodes')
+		return (
+			<NodesSection section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
+		)
+	if (section.kind === 'facets')
+		return (
+			<FacetsSection
+				section={section}
+				onVisit={props.onVisit}
+				onHoverNode={props.onHoverNode}
+				visitLabel={props.visitLabel}
+			/>
+		)
 	if (section.kind === 'documents') {
 		// Multi-document entities: rows open the DOCUMENT READING level
 		// (settled 2026-08-16) when the host supplies onOpenDocument.
 		return (
 			<RichList label={section.title}>
-				<For each={section.rows}>{(row) => <RichListItem title={row.label} description={row.detail} onSelect={props.onOpenDocument && (() => props.onOpenDocument?.(row))} />}</For>
+				<For each={section.rows}>
+					{(row) => (
+						<RichListItem
+							title={row.label}
+							description={row.detail}
+							onSelect={props.onOpenDocument && (() => props.onOpenDocument?.(row))}
+						/>
+					)}
+				</For>
 			</RichList>
 		)
 	}
@@ -387,12 +478,22 @@ function SectionBody(props: {
 	)
 }
 
-function JumpChips(props: { entries: Array<{ id: IBNodeId; label: string }>; onVisit: (id: IBNodeId) => void; onHoverNode?: (id: IBNodeId | null) => void }) {
+function JumpChips(props: {
+	entries: Array<{ id: IBNodeId; label: string }>
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+}) {
 	return (
 		<div class="ib-reader-related">
 			<For each={props.entries}>
 				{(entry) => (
-					<button type="button" class="ib-reader-chip" onClick={() => props.onVisit(entry.id)} onPointerEnter={() => props.onHoverNode?.(entry.id)} onPointerLeave={() => props.onHoverNode?.(null)}>
+					<button
+						type="button"
+						class="ib-reader-chip"
+						onClick={() => props.onVisit(entry.id)}
+						onPointerEnter={() => props.onHoverNode?.(entry.id)}
+						onPointerLeave={() => props.onHoverNode?.(null)}
+					>
 						{entry.label}
 					</button>
 				)}
@@ -413,8 +514,8 @@ const STACKED_SECTIONS_MAX = 2
  * chosen section is remembered against the sections array itself, so a new
  * reading starts on its first section without any reactive write. */
 function ReaderSections(props: {
- section?: string
- onSectionChange?: (section: string) => void
+	section?: string
+	onSectionChange?: (section: string) => void
 	sections: IBContentSection[]
 	onVisit: (id: IBNodeId) => void
 	onHoverNode?: (id: IBNodeId | null) => void
@@ -432,20 +533,34 @@ function ReaderSections(props: {
 			<For each={notices()}>
 				{(section) => (
 					<section class="ib-reader-section" aria-label={section.title}>
-						<SectionBody section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={props.visitLabel} />
+						<SectionBody
+							section={section}
+							onVisit={props.onVisit}
+							onHoverNode={props.onHoverNode}
+							onOpenDocument={props.onOpenDocument}
+							visitLabel={props.visitLabel}
+						/>
 					</section>
 				)}
 			</For>
 			<Show when={body().length > 0}>
-				<PickedSections section={props.section} onSectionChange={props.onSectionChange} sections={body()} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={props.visitLabel} />
+				<PickedSections
+					section={props.section}
+					onSectionChange={props.onSectionChange}
+					sections={body()}
+					onVisit={props.onVisit}
+					onHoverNode={props.onHoverNode}
+					onOpenDocument={props.onOpenDocument}
+					visitLabel={props.visitLabel}
+				/>
 			</Show>
 		</>
 	)
 }
 
 function PickedSections(props: {
- section?: string
- onSectionChange?: (section: string) => void
+	section?: string
+	onSectionChange?: (section: string) => void
 	sections: IBContentSection[]
 	onVisit: (id: IBNodeId) => void
 	onHoverNode?: (id: IBNodeId | null) => void
@@ -455,10 +570,10 @@ function PickedSections(props: {
 	const [picked, setPicked] = createSignal<{ of: IBContentSection[]; id: string } | null>(null)
 	const activeId = createMemo(() => {
 		if (props.onSectionChange) {
-   const at = props.sections.findIndex(section => section.title === props.section)
-   return String(Math.max(0, at))
-  }
-  const pick = picked()
+			const at = props.sections.findIndex((section) => section.title === props.section)
+			return String(Math.max(0, at))
+		}
+		const pick = picked()
 		return pick && pick.of === props.sections ? pick.id : '0'
 	})
 	const active = createMemo(() => props.sections[Number(activeId())] ?? props.sections[0])
@@ -470,19 +585,31 @@ function PickedSections(props: {
 					{(section) => (
 						<section class="ib-reader-section">
 							<Rule label={section.title} />
-							<SectionBody section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={props.visitLabel} />
+							<SectionBody
+								section={section}
+								onVisit={props.onVisit}
+								onHoverNode={props.onHoverNode}
+								onOpenDocument={props.onOpenDocument}
+								visitLabel={props.visitLabel}
+							/>
 						</section>
 					)}
 				</For>
 			}
 		>
 			<div class="ib-reader-tabs">
-				<SelectControl aria-label="Reading section" value={activeId()} onChange={(event) => {
-     setPicked({ of: props.sections, id: event.currentTarget.value })
-     const section = props.sections[Number(event.currentTarget.value)]
-     if (section) props.onSectionChange?.(section.title)
-    }}>
-					<For each={props.sections}>{(section, at) => <option value={String(at())}>{section.title}</option>}</For>
+				<SelectControl
+					aria-label="Reading section"
+					value={activeId()}
+					onChange={(event) => {
+						setPicked({ of: props.sections, id: event.currentTarget.value })
+						const section = props.sections[Number(event.currentTarget.value)]
+						if (section) props.onSectionChange?.(section.title)
+					}}
+				>
+					<For each={props.sections}>
+						{(section, at) => <option value={String(at())}>{section.title}</option>}
+					</For>
 				</SelectControl>
 			</div>
 			{/* KEYED: SectionBody reads its section once at creation (it branches
@@ -491,7 +618,13 @@ function PickedSections(props: {
 			<Show when={active()} keyed>
 				{(section) => (
 					<section class="ib-reader-section" aria-label={section.title}>
-						<SectionBody section={section} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={props.visitLabel} />
+						<SectionBody
+							section={section}
+							onVisit={props.onVisit}
+							onHoverNode={props.onHoverNode}
+							onOpenDocument={props.onOpenDocument}
+							visitLabel={props.visitLabel}
+						/>
 					</section>
 				)}
 			</Show>
@@ -499,7 +632,11 @@ function PickedSections(props: {
 	)
 }
 
-function Contributors(props: { groups: NonNullable<IBNodeContent['contributors']>; onVisit: (id: IBNodeId) => void; onHoverNode?: (id: IBNodeId | null) => void }) {
+function Contributors(props: {
+	groups: NonNullable<IBNodeContent['contributors']>
+	onVisit: (id: IBNodeId) => void
+	onHoverNode?: (id: IBNodeId | null) => void
+}) {
 	return (
 		<section class="ib-reader-section">
 			<Rule label="Contributors" />
@@ -508,7 +645,16 @@ function Contributors(props: { groups: NonNullable<IBNodeContent['contributors']
 					{(group, at) => (
 						<AccordionItem summary={`${group.label} (${group.rows.length})`} open={at() === 0}>
 							<RichList label={group.label}>
-								<For each={group.rows}>{(row) => <RichListItem title={row.label} description={row.detail} onSelect={() => props.onVisit(row.id)} onHoverChange={(hovering) => props.onHoverNode?.(hovering ? row.id : null)} />}</For>
+								<For each={group.rows}>
+									{(row) => (
+										<RichListItem
+											title={row.label}
+											description={row.detail}
+											onSelect={() => props.onVisit(row.id)}
+											onHoverChange={(hovering) => props.onHoverNode?.(hovering ? row.id : null)}
+										/>
+									)}
+								</For>
 							</RichList>
 						</AccordionItem>
 					)}
@@ -531,14 +677,20 @@ export function Reading(props: ReadingProps) {
 					</button>
 				)}
 			</Show>
-			<InspectorHeader eyebrow={props.eyebrow ? <Eyebrow>{props.eyebrow}</Eyebrow> : undefined} title={props.title}>
+			<InspectorHeader
+				eyebrow={props.eyebrow ? <Eyebrow>{props.eyebrow}</Eyebrow> : undefined}
+				title={props.title}
+			>
 				<Show when={props.detail}>{(detail) => <p class="ib-reader-detail">{detail()}</p>}</Show>
 				<MixBar mix={props.mix} order={props.mixOrder} colors={props.mixColors} />
 				<Show when={(props.flags?.length ?? 0) > 0}>
 					<div class="ib-reader-flags">
 						<For each={props.flags}>
 							{(flag) => (
-								<span class={['ib-reader-flag', { 'ib-reader-flag-hot': flag.hot === true }]} title={flag.tip}>
+								<span
+									class={['ib-reader-flag', { 'ib-reader-flag-hot': flag.hot === true }]}
+									title={flag.tip}
+								>
 									{flag.label}
 								</span>
 							)}
@@ -546,7 +698,11 @@ export function Reading(props: ReadingProps) {
 					</div>
 				</Show>
 			</InspectorHeader>
-			<Errored fallback={(err) => <p class="ib-reader-error">{`${props.errorLabel ?? "Couldn't load this reading"}: ${String(err())}`}</p>}>
+			<Errored
+				fallback={(err) => (
+					<p class="ib-reader-error">{`${props.errorLabel ?? "Couldn't load this reading"}: ${String(err())}`}</p>
+				)}
+			>
 				<Loading fallback={<p class="ib-reader-pending">Reading the record…</p>}>
 					{(() => {
 						const value = props.content()
@@ -555,7 +711,9 @@ export function Reading(props: ReadingProps) {
 								{(content) => (
 									<>
 										<div class="ib-reader-head">
-											<Show when={content().lede}>{(lede) => <p class="ib-reader-lede">{lede()}</p>}</Show>
+											<Show when={content().lede}>
+												{(lede) => <p class="ib-reader-lede">{lede()}</p>}
+											</Show>
 											<Show when={(content().stats?.length ?? 0) > 0}>
 												<div class="ib-reader-stats">
 													<For each={content().stats}>
@@ -571,7 +729,13 @@ export function Reading(props: ReadingProps) {
 												<div class="ib-reader-flags">
 													<For each={content().flags}>
 														{(flag) => (
-															<span class={['ib-reader-flag', { 'ib-reader-flag-hot': flag.hot === true }]} title={flag.tip}>
+															<span
+																class={[
+																	'ib-reader-flag',
+																	{ 'ib-reader-flag-hot': flag.hot === true },
+																]}
+																title={flag.tip}
+															>
 																{flag.label}
 															</span>
 														)}
@@ -579,19 +743,44 @@ export function Reading(props: ReadingProps) {
 												</div>
 											</Show>
 										</div>
-										<ReaderSections section={props.section} onSectionChange={props.onSectionChange} sections={content().sections} onVisit={props.onVisit} onHoverNode={props.onHoverNode} onOpenDocument={props.onOpenDocument} visitLabel={visitLabel()} />
-										<Show when={props.contributors ?? content().contributors}>{(groups) => <Contributors groups={groups()} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />}</Show>
+										<ReaderSections
+											section={props.section}
+											onSectionChange={props.onSectionChange}
+											sections={content().sections}
+											onVisit={props.onVisit}
+											onHoverNode={props.onHoverNode}
+											onOpenDocument={props.onOpenDocument}
+											visitLabel={visitLabel()}
+										/>
+										<Show when={props.contributors ?? content().contributors}>
+											{(groups) => (
+												<Contributors
+													groups={groups()}
+													onVisit={props.onVisit}
+													onHoverNode={props.onHoverNode}
+												/>
+											)}
+										</Show>
 										<Show when={(content().related?.length ?? 0) > 0}>
 											<section class="ib-reader-section">
 												<Rule label="Related" />
-												<JumpChips entries={content().related ?? []} onVisit={props.onVisit} onHoverNode={props.onHoverNode} />
+												<JumpChips
+													entries={content().related ?? []}
+													onVisit={props.onVisit}
+													onHoverNode={props.onHoverNode}
+												/>
 											</section>
 										</Show>
 										<Show when={(content().links?.length ?? 0) > 0}>
 											<div class="ib-reader-links">
 												<For each={content().links}>
 													{(link) => (
-														<a class="ib-reader-chip" href={link.href} target="_blank" rel="noreferrer">
+														<a
+															class="ib-reader-chip"
+															href={link.href}
+															target="_blank"
+															rel="noreferrer"
+														>
 															{link.label} ↗
 														</a>
 													)}

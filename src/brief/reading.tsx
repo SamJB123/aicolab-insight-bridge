@@ -28,6 +28,9 @@ export function Quote(props: { q: NonNullable<ReadingPoint['quote']> }) {
 					<span class="ib-bp-rq-meta">{props.q.detail}</span>
 				</Show>
 			</footer>
+			<Show when={props.q.withheld !== true && props.q.notice}>
+				{(notice) => <p class="ib-bp-notice">{notice()}</p>}
+			</Show>
 		</blockquote>
 	)
 }
@@ -173,7 +176,15 @@ export function Pushback(props: {
 			<ul class="ib-bp-pb">
 				<For each={props.rows}>
 					{(r) => (
-						<li class={['ib-bp-pb-row', { 'is-active': props.hover?.active() === r.topicId, 'ib-bp-pb-withheld': r.withheld === true }]}>
+						<li
+							class={[
+								'ib-bp-pb-row',
+								{
+									'is-active': props.hover?.active() === r.topicId,
+									'ib-bp-pb-withheld': r.withheld === true,
+								},
+							]}
+						>
 							<div class="ib-bp-pb-head">
 								<SourceChip id={r.entityId} name={r.name} detail={r.detail} />
 								<Show when={r.detail}>
@@ -185,6 +196,9 @@ export function Pushback(props: {
 								</span>
 							</div>
 							<p class="ib-bp-pb-title">{r.title}</p>
+							<Show when={r.withheld !== true && r.notice}>
+								{(notice) => <p class="ib-bp-notice">{notice()}</p>}
+							</Show>
 							<Show when={!props.single}>
 								<p class="ib-bp-pb-on">
 									on <TopicChip d={props.d} id={r.topicId} hover={props.hover} />
@@ -264,8 +278,8 @@ export function ChapterReadingView(props: {
 										<section class="ib-bp-reading-sec">
 											<h4 class="ib-bp-reading-h">Who says what, by {f.label}</h4>
 											<p class="ib-bp-reading-note">
-												Each {f.label}'s overall position on the topic's claim, as the pipeline
-												read that {f.label}'s {s.vocabulary.sources} together.
+												Each {f.label}'s overall position on the topic's claim, as the pipeline read
+												that {f.label}'s {s.vocabulary.sources} together.
 											</p>
 											<FacetMatrix
 												d={props.d}

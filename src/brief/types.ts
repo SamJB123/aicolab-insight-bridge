@@ -146,6 +146,8 @@ export interface ReadingQuote {
 	 * (a contributor whose content the app gates — Indigenous Cultural and
 	 * Intellectual Property under a restricted deployment). */
 	withheld?: boolean
+	/** The scope's notice: the text standing in when `withheld`, else shown beside the words. */
+	notice?: string
 }
 
 export interface ReadingPoint {
@@ -178,6 +180,8 @@ export interface Pushback {
 	/** The stance's text is withheld (see `ReadingQuote.withheld`); the
 	 * contributor and its position label stay. */
 	withheld?: boolean
+	/** The scope's notice (see `ReadingQuote.notice`). */
+	notice?: string
 }
 
 export interface ChapterReading {

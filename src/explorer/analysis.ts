@@ -19,6 +19,12 @@
  * Every count is over the task's own documents that are published; a
  * document's lens value is its source's. The lens is the run's
  * (`RunWords.lens`), in its own order, the unclassified last.
+ *
+ * Every read takes the reader's scope (scope.ts): an excluded source's
+ * documents are not the task's here, so they fall out of every count; a
+ * withheld source's documents stay in every count, with their scores, values
+ * and metric names, but their findings, evidence, descriptions and
+ * requirements read the notice.
  */
 import type {
 	AnalysisPage,
@@ -46,6 +52,7 @@ import { z } from 'zod'
 import { questionClause } from '../world/schema.ts'
 import { loadFacetCache } from './facets.ts'
 import { lensOf, lensRank, questionDetail } from './pages.ts'
+import { andKept, keepSources, type ReadScope, wordsOf } from './scope.ts'
 
 const n = (v: unknown) => Number(v ?? 0)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
@@ -94,11 +101,23 @@ interface AnalysedDocument extends EvidenceSource {
 	entityUuid: string
 }
 
+/** A finding's words as its source's scope reads them: withheld, the notice alone. */
+const findingWords = (
+	doc: AnalysedDocument,
+	text: { keyPoint: string; details: string; quotes: string[] },
+) => (doc.withheld ? { keyPoint: doc.notice ?? '', details: '', quotes: [] } : text)
+
 /**
- * The task's published documents (by its ledger rows), each with whose it is
- * and its lens value; the lens's values with their documents and sources.
+ * The task's published documents (by its ledger rows) in the reader's scope,
+ * each with whose it is, its lens value and how its source's words read; the
+ * lens's values with their documents and sources.
  */
-async function analysedBy(db: CorpusDb, words: RunWords, taskId: string) {
+async function analysedBy(
+	db: CorpusDb,
+	words: RunWords,
+	taskId: string,
+	scope: ReadScope | undefined,
+) {
 	const [rows, entityFacets] = await Promise.all([
 		db
 			.select({
@@ -117,7 +136,7 @@ async function analysedBy(db: CorpusDb, words: RunWords, taskId: string) {
 				eq(s.publishedDocument.documentId, s.docCustomAnalysis.documentId),
 			)
 			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
-			.where(eq(s.docCustomAnalysis.taskId, taskId)),
+			.where(and(eq(s.docCustomAnalysis.taskId, taskId), keepSources(s.entity.id, scope))),
 		loadFacetCache(db, 'entity'),
 	])
 	const byAnalysis = new Map<number, AnalysedDocument>()
@@ -131,6 +150,7 @@ async function analysedBy(db: CorpusDb, words: RunWords, taskId: string) {
 			entityName: r.entityName,
 			entityUuid: r.entityUuid,
 			lensValue: lensOf(words, entityFacets.get(r.entityUuid)),
+			...wordsOf(scope, r.entityUuid),
 		}
 		byAnalysis.set(r.customAnalysisId, doc)
 		byDocument.set(r.documentId, doc)
@@ -176,11 +196,16 @@ const reportTask = (
 })
 
 /** Every custom analysis the run performed, in its profile's order: the pages the analysis section lists. */
-export async function analysisTasks(db: CorpusDb, words: RunWords): Promise<ReportTask[]> {
+export async function analysisTasks(
+	db: CorpusDb,
+	words: RunWords,
+	scope?: ReadScope,
+): Promise<ReportTask[]> {
 	const [rows, meta] = await Promise.all([
 		db.all<{ taskId: string; taskType: string; documents: number }>(sql`
 			SELECT dca.task_id AS taskId, dca.task_type AS taskType, COUNT(DISTINCT dca.document_id) AS documents
 			FROM doc_custom_analysis dca JOIN published_document d ON d.document_id = dca.document_id
+			WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}
 			GROUP BY dca.task_id, dca.task_type`),
 		db
 			.select({ profile: s.runMeta.profile })
@@ -211,27 +236,28 @@ export async function analysisPage(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
+	scope?: ReadScope,
 ): Promise<AnalysisPage | null> {
-	const kind = words.tasks[taskId]?.type ?? (await analysedBy(db, words, taskId)).kind
+	const kind = words.tasks[taskId]?.type ?? (await analysedBy(db, words, taskId, scope)).kind
 	switch (kind) {
 		case 'metadata_tagging': {
-			const overview = await taggingOverview(db, words, taskId)
+			const overview = await taggingOverview(db, words, taskId, scope)
 			return overview && { kind, overview }
 		}
 		case 'question_response': {
-			const overview = await questionsOverview(db, words, taskId)
+			const overview = await questionsOverview(db, words, taskId, scope)
 			return overview && { kind, overview }
 		}
 		case 'perspective_analysis': {
-			const overview = await perspectiveOverview(db, words, taskId)
+			const overview = await perspectiveOverview(db, words, taskId, scope)
 			return overview && { kind, overview }
 		}
 		case 'criteria_assessment': {
-			const overview = await assessmentOverview(db, words, taskId)
+			const overview = await assessmentOverview(db, words, taskId, scope)
 			return overview && { kind, overview }
 		}
 		case 'metrics_evaluation': {
-			const overview = await metricsOverview(db, words, taskId)
+			const overview = await metricsOverview(db, words, taskId, scope)
 			return overview && { kind, overview }
 		}
 		default:
@@ -292,25 +318,35 @@ export const analysisDrillSchema = z.discriminatedUnion('kind', [
 export type AnalysisDrill = z.infer<typeof analysisDrillSchema>
 
 /** A drill-down's answer, by its request's kind (the page parses it against the contract's shape). */
-export async function analysisDrill(db: CorpusDb, words: RunWords, request: AnalysisDrill) {
+export async function analysisDrill(
+	db: CorpusDb,
+	words: RunWords,
+	request: AnalysisDrill,
+	scope?: ReadScope,
+) {
 	switch (request.kind) {
 		case 'tagDocuments':
-			return tagDocuments(db, words, request.taskId, request.category, request.path, request)
+			return tagDocuments(db, words, request.taskId, request.category, request.path, request, scope)
 		case 'questionDetail':
-			return questionDetail(db, words, request.questionId)
+			return questionDetail(db, words, request.questionId, scope)
 		case 'perspectiveFindings':
-			return perspectiveFindings(db, words, request.taskId, request.criterionId, request)
+			return perspectiveFindings(db, words, request.taskId, request.criterionId, request, scope)
 		case 'assessedDocuments':
-			return assessedDocuments(db, words, request.taskId, request)
+			return assessedDocuments(db, words, request.taskId, request, scope)
 		case 'metricEntries':
-			return metricEntries(db, words, request.taskId, request)
+			return metricEntries(db, words, request.taskId, request, scope)
 	}
 }
 
 /** The task's own documents and declaration, or null when the run never performed it. */
-async function taskFrame(db: CorpusDb, words: RunWords, taskId: string) {
+async function taskFrame(
+	db: CorpusDb,
+	words: RunWords,
+	taskId: string,
+	scope: ReadScope | undefined,
+) {
 	const [frame, declaration] = await Promise.all([
-		analysedBy(db, words, taskId),
+		analysedBy(db, words, taskId, scope),
 		declarationOf(db, taskId),
 	])
 	const kind = frame.kind ?? (declaration ? declaration.task_type : null)
@@ -387,8 +423,9 @@ export async function taggingOverview(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
+	scope?: ReadScope,
 ): Promise<TaggingOverview | null> {
-	const frame = await taskFrame(db, words, taskId)
+	const frame = await taskFrame(db, words, taskId, scope)
 	if (frame?.task.kind !== 'metadata_tagging') return null
 	const rows = await db.all<{
 		documentId: string
@@ -499,8 +536,9 @@ export async function tagDocuments(
 	category: string,
 	path: string,
 	options: Paging & { lensValue?: string | null } = {},
+	scope?: ReadScope,
 ): Promise<TagDocuments | null> {
-	const frame = await analysedBy(db, words, taskId)
+	const frame = await analysedBy(db, words, taskId, scope)
 	if (!frame.kind) return null
 	const rows = await db.all<{
 		documentId: string
@@ -537,7 +575,7 @@ export async function tagDocuments(
 							tag: r.value,
 							relevance: r.relevance,
 							isPrimary: r.isPrimary === 1,
-							context: r.context,
+							context: doc.withheld ? (doc.notice ?? '') : r.context,
 						},
 					]
 				: []
@@ -558,6 +596,8 @@ const evidence = (doc: AnalysedDocument): EvidenceSource => ({
 	entityId: doc.entityId,
 	entityName: doc.entityName,
 	lensValue: doc.lensValue,
+	...(doc.withheld ? { withheld: doc.withheld } : {}),
+	...(doc.notice === undefined ? {} : { notice: doc.notice }),
 })
 
 // ---------------------------------------------------------------- questions
@@ -567,8 +607,9 @@ export async function questionsOverview(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
+	scope?: ReadScope,
 ): Promise<QuestionsOverview | null> {
-	const frame = await taskFrame(db, words, taskId)
+	const frame = await taskFrame(db, words, taskId, scope)
 	if (frame?.task.kind !== 'question_response') return null
 	const [questions, answers, keyPoints] = await Promise.all([
 		db
@@ -588,8 +629,9 @@ export async function questionsOverview(
 			SELECT r.question_id AS questionId, COUNT(*) AS keyPoints
 			FROM published_question_response_key_point k
 			JOIN published_question_response r ON r.question_response_id = k.question_response_id
+			JOIN published_document d ON d.document_id = r.document_id
 			JOIN question q ON q.question_id = r.question_id
-			WHERE q.task_id = ${taskId}
+			WHERE q.task_id = ${taskId}${andKept(sql`d.entity_uuid`, scope)}
 			GROUP BY r.question_id`),
 	])
 	// the task's sources: whose documents it read
@@ -729,8 +771,9 @@ export async function perspectiveOverview(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
+	scope?: ReadScope,
 ): Promise<PerspectiveOverview | null> {
-	const frame = await taskFrame(db, words, taskId)
+	const frame = await taskFrame(db, words, taskId, scope)
 	if (frame?.task.kind !== 'perspective_analysis') return null
 	const rows = (await criterionRows(db, taskId)).filter((r) =>
 		frame.byAnalysis.has(r.customAnalysisId),
@@ -770,8 +813,9 @@ export async function perspectiveFindings(
 	taskId: string,
 	criterionId: number,
 	options: Paging & { lensValue?: string | null; query?: string } = {},
+	scope?: ReadScope,
 ): Promise<PerspectiveFindings | null> {
-	const frame = await analysedBy(db, words, taskId)
+	const frame = await analysedBy(db, words, taskId, scope)
 	if (!frame.kind) return null
 	const rows = (await criterionRows(db, taskId)).filter((r) =>
 		frame.byAnalysis.has(r.customAnalysisId),
@@ -788,8 +832,10 @@ export async function perspectiveFindings(
 			mine.map((r) => r.id),
 		)
 		mine = mine.filter((r) => {
-			const t = texts.get(r.id)
+			const raw = texts.get(r.id)
 			const doc = frame.byAnalysis.get(r.customAnalysisId)
+			// a withheld finding is searched as it reads: its source's name and the notice
+			const t = doc && raw ? findingWords(doc, raw) : undefined
 			return (
 				!!t &&
 				`${t.keyPoint}\n${t.details}\n${t.quotes.join('\n')}\n${doc?.entityName ?? ''}`
@@ -830,12 +876,12 @@ export async function perspectiveFindings(
 					findingId: r.id,
 					item: r.item,
 					criterionId: r.criterionId,
-					...text,
+					...findingWords(doc, text),
 					alongside: siblings
 						.filter((x) => x.customAnalysisId === r.customAnalysisId && x.item === r.item)
 						.flatMap((x) => {
 							const t = texts.get(x.id)
-							return t ? [{ criterionId: x.criterionId, ...t }] : []
+							return t ? [{ criterionId: x.criterionId, ...findingWords(doc, t) }] : []
 						}),
 				},
 			]
@@ -861,8 +907,9 @@ export async function assessmentOverview(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
+	scope?: ReadScope,
 ): Promise<AssessmentOverview | null> {
-	const frame = await taskFrame(db, words, taskId)
+	const frame = await taskFrame(db, words, taskId, scope)
 	if (frame?.task.kind !== 'criteria_assessment') return null
 	const rows = (await criterionRows(db, taskId)).filter((r) =>
 		frame.byAnalysis.has(r.customAnalysisId),
@@ -936,8 +983,9 @@ export async function assessedDocuments(
 		lensValue?: string | null
 		cell?: { xCriterion: number; x: number; yCriterion: number; y: number }
 	} = {},
+	scope?: ReadScope,
 ): Promise<AssessedDocuments | null> {
-	const frame = await analysedBy(db, words, taskId)
+	const frame = await analysedBy(db, words, taskId, scope)
 	if (!frame.kind) return null
 	const rows = (await criterionRows(db, taskId)).filter((r) =>
 		frame.byAnalysis.has(r.customAnalysisId),
@@ -983,9 +1031,7 @@ export async function assessedDocuments(
 					scores: mine.map((r) => ({
 						criterionId: r.criterionId,
 						score: r.score,
-						keyPoint: texts.get(r.id)?.keyPoint ?? '',
-						details: texts.get(r.id)?.details ?? '',
-						quotes: texts.get(r.id)?.quotes ?? [],
+						...findingWords(doc, texts.get(r.id) ?? { keyPoint: '', details: '', quotes: [] }),
 					})),
 				},
 			]
@@ -1028,8 +1074,9 @@ export async function metricsOverview(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
+	scope?: ReadScope,
 ): Promise<MetricsOverview | null> {
-	const frame = await taskFrame(db, words, taskId)
+	const frame = await taskFrame(db, words, taskId, scope)
 	if (frame?.task.kind !== 'metrics_evaluation') return null
 	const { metrics, alignments } = await metricRows(db, taskId)
 	const live = metrics.filter((m) => frame.byAnalysis.has(m.customAnalysisId))
@@ -1090,8 +1137,9 @@ export async function metricEntries(
 	words: RunWords,
 	taskId: string,
 	options: Paging & { name?: string; northStar?: string; lensValue?: string | null } = {},
+	scope?: ReadScope,
 ): Promise<MetricEntries | null> {
-	const frame = await analysedBy(db, words, taskId)
+	const frame = await analysedBy(db, words, taskId, scope)
 	if (!frame.kind) return null
 	const { metrics, alignments } = await metricRows(db, taskId)
 	const alignmentsOf = new Map<number, { northStar: string; how: string }[]>()
@@ -1138,9 +1186,12 @@ export async function metricEntries(
 					name: m.name,
 					type: m.type,
 					explicitness: m.explicitness,
-					description: m.description,
-					requirements: requirementsOf.get(m.metricId) ?? [],
-					alignments: alignmentsOf.get(m.metricId) ?? [],
+					// withheld: the metric keeps its name, type and north stars; its words read the notice
+					description: doc.withheld ? (doc.notice ?? '') : m.description,
+					requirements: doc.withheld ? [] : (requirementsOf.get(m.metricId) ?? []),
+					alignments: (alignmentsOf.get(m.metricId) ?? []).map((a) =>
+						doc.withheld ? { northStar: a.northStar, how: '' } : a,
+					),
 				},
 			]
 		}),

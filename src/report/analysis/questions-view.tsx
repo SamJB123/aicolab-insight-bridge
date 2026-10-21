@@ -15,7 +15,15 @@ import type {
 import { Segmented } from '@aicolab/ui-solid'
 import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js'
 import { documentLabelOf, fmt, useReportSurface } from '../surface.tsx'
-import { AnalysisHead, LensKey, LensStrip, lensWords, pctOf } from './common.tsx'
+import {
+	AnalysisHead,
+	LensKey,
+	LensStrip,
+	lensWords,
+	pctOf,
+	WordsNotice,
+	wordsClass,
+} from './common.tsx'
 
 export type QuestionDetailLoader = (questionId: number) => Promise<QuestionDetail | null>
 
@@ -186,7 +194,7 @@ function QuestionReader(props: { question: QuestionMeta; questionDetail: Questio
 function AnswerCard(props: { a: QuestionAnswer }) {
 	const s = useReportSurface()
 	return (
-		<li class="ib-report-an-answer">
+		<li class={['ib-report-an-answer', wordsClass(props.a)]}>
 			<div class="ib-report-an-evidence-who">
 				<button
 					type="button"
@@ -205,6 +213,7 @@ function AnswerCard(props: { a: QuestionAnswer }) {
 				</small>
 			</div>
 			<p class="ib-report-an-position">{props.a.position}</p>
+			<WordsNotice of={props.a} />
 			<Show when={props.a.keyPoints.length}>
 				<details class="ib-report-an-points">
 					<summary>{`${props.a.keyPoints.length} key point${props.a.keyPoints.length === 1 ? '' : 's'}`}</summary>

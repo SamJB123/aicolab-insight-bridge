@@ -193,6 +193,15 @@
 			border-inline-start-color: var(--color-warning, #b8860b);
 			color: var(--color-base-content-muted);
 		}
+		/* A notice beside a quote's words (the gate open): upright, quiet, in
+		   the info colour, under the cite. */
+		.ib-reader-point .ib-reader-quote-notice {
+			display: block;
+			margin-block-start: 0.2rem;
+			font-style: normal;
+			font-size: var(--t-2xs);
+			color: color-mix(in oklab, var(--color-info, #2563eb) 75%, var(--color-base-content));
+		}
 
 		/* The content's own notice — the design system's callout, scaled to the
 		   reading. The band carries the title; the body the why and the who. */

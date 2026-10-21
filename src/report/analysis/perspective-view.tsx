@@ -16,7 +16,16 @@ import type {
 import { SelectControl, TextInput } from '@aicolab/ui-solid'
 import { createSignal, For, Show } from 'solid-js'
 import { fmt, useReportSurface } from '../surface.tsx'
-import { AnalysisHead, LensKey, LensStrip, lensWords, MoreButton, usePaged } from './common.tsx'
+import {
+	AnalysisHead,
+	LensKey,
+	LensStrip,
+	lensWords,
+	MoreButton,
+	usePaged,
+	WordsNotice,
+	wordsClass,
+} from './common.tsx'
 
 export type PerspectiveFindingsLoader = (
 	criterionId: number,
@@ -151,8 +160,9 @@ function FindingCard(props: { f: PerspectiveFinding; textOf: (criterionId: numbe
 	const s = useReportSurface()
 	const lens = () => lensWords(s)
 	return (
-		<li class="ib-report-an-finding">
+		<li class={['ib-report-an-finding', wordsClass(props.f)]}>
 			<p class="ib-report-an-finding-head">{props.f.keyPoint}</p>
+			<WordsNotice of={props.f} />
 			<p>{props.f.details}</p>
 			<For each={props.f.quotes}>
 				{(quote) => <blockquote class="ib-report-an-quote">{quote}</blockquote>}

@@ -37,6 +37,7 @@ import { questionClause } from '../world/schema.ts'
 import { hierarchy, STRONG } from './data.ts'
 import { type EffectiveFacets, loadFacetCache } from './facets.ts'
 import { groupNodeId, sourceNodeId, topicNodeId } from './readings.ts'
+import { andKept, keepSources, type ReadScope, textOf, wordsOf } from './scope.ts'
 
 const n = (v: unknown) => Number(v ?? 0)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
@@ -77,7 +78,7 @@ const generationsOf = (tree: ReturnType<typeof treeOf>): GenerationCount[] => {
 }
 
 /** Every stance on a current topic (or on those `ids` names): who, which topic, which position. */
-const currentStances = (db: CorpusDb, ids?: number[]) =>
+const currentStances = (db: CorpusDb, ids: number[] | undefined, scope: ReadScope | undefined) =>
 	db
 		.select({
 			topicClusterId: s.clusterEntityPerspective.topicClusterId,
@@ -89,10 +90,15 @@ const currentStances = (db: CorpusDb, ids?: number[]) =>
 			s.currentTopic,
 			eq(s.currentTopic.topicClusterId, s.clusterEntityPerspective.topicClusterId),
 		)
-		.where(ids ? inArray(s.currentTopic.topicClusterId, ids) : undefined)
+		.where(
+			and(
+				ids ? inArray(s.currentTopic.topicClusterId, ids) : undefined,
+				keepSources(s.clusterEntityPerspective.entityUuid, scope),
+			),
+		)
 
 /** Each current topic's (or each of those `ids` names) strong documents. */
-const strongDocuments = (db: CorpusDb, ids?: number[]) =>
+const strongDocuments = (db: CorpusDb, ids: number[] | undefined, scope: ReadScope | undefined) =>
 	db
 		.selectDistinct({
 			topicClusterId: s.currentChunkMembership.topicClusterId,
@@ -100,12 +106,22 @@ const strongDocuments = (db: CorpusDb, ids?: number[]) =>
 		})
 		.from(s.currentChunkMembership)
 		.innerJoin(s.publishedChunk, eq(s.publishedChunk.id, s.currentChunkMembership.chunkId))
+		.innerJoin(s.publishedDocument, eq(s.publishedDocument.documentId, s.publishedChunk.documentId))
 		.where(
 			and(
 				inArray(s.currentChunkMembership.membershipType, STRONG),
 				ids ? inArray(s.currentChunkMembership.topicClusterId, ids) : undefined,
+				keepSources(s.publishedDocument.entityUuid, scope),
 			),
 		)
+
+/** The current strong memberships (of those `ids` names), the scope's sources only. */
+const strongMemberships = (ids: number[] | undefined, scope: ReadScope | undefined) =>
+	and(
+		inArray(s.currentEntityMembership.membershipType, STRONG),
+		ids ? inArray(s.currentEntityMembership.topicClusterId, ids) : undefined,
+		keepSources(s.currentEntityMembership.entityUuid, scope),
+	)
 
 // ---------------------------------------------------------------- the overview
 
@@ -117,9 +133,11 @@ export async function reportOverview(
 	db: CorpusDb,
 	words: RunWords,
 	options: { documentFacet?: string } = {},
+	scope?: ReadScope,
 ): Promise<ReportOverview> {
 	const supportive = new Set(words.scale.supportive)
 	const hard = new Set(words.scale.contesting.slice(-2))
+	const kept = andKept(sql`d.entity_uuid`, scope)
 	const [
 		entityFacets,
 		documentFacets,
@@ -139,7 +157,7 @@ export async function reportOverview(
 	] = await Promise.all([
 		loadFacetCache(db, 'entity'),
 		loadFacetCache(db, 'document'),
-		currentStances(db),
+		currentStances(db, undefined, scope),
 		words.lens
 			? db
 					.select({ position: s.clusterKeyPerspective.position })
@@ -150,32 +168,33 @@ export async function reportOverview(
 					)
 					.where(eq(s.clusterKeyPerspective.facet, words.lens))
 			: Promise.resolve([]),
-		db.$count(s.entity),
+		db.$count(s.entity, keepSources(s.entity.id, scope)),
 		db
 			.select({
 				documentId: s.publishedDocument.documentId,
 				entityUuid: s.publishedDocument.entityUuid,
 			})
-			.from(s.publishedDocument),
+			.from(s.publishedDocument)
+			.where(keepSources(s.publishedDocument.entityUuid, scope)),
 		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
 		db.all<{ passages: number; keyPoints: number; quotes: number; verified: number }>(sql`
-			SELECT (SELECT COUNT(*) FROM published_chunk) AS passages,
-				(SELECT COUNT(*) FROM published_key_point) AS keyPoints,
-				(SELECT COUNT(*) FROM published_key_quote) AS quotes,
-				(SELECT COUNT(*) FROM published_key_quote_verification WHERE verified = 1) AS verified`),
+			SELECT (SELECT COUNT(*) FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${kept}) AS passages,
+				(SELECT COUNT(*) FROM published_key_point k JOIN published_document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS keyPoints,
+				(SELECT COUNT(*) FROM published_key_quote q JOIN published_key_point k ON k.key_point_id = q.key_point_id JOIN published_document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS quotes,
+				(SELECT COUNT(*) FROM published_key_quote_verification v JOIN published_key_quote q ON q.key_quote_id = v.key_quote_id JOIN published_key_point k ON k.key_point_id = q.key_point_id JOIN published_document d ON d.document_id = k.document_id WHERE v.verified = 1${kept}) AS verified`),
 		db.$count(s.currentTopic),
 		db.$count(
 			s.topicCluster,
 			sql`${s.topicCluster.retiredBuildId} IS NULL AND ${s.topicCluster.junkStatus} = 'confirmed'`,
 		),
-		db.$count(s.currentEntityMembership, inArray(s.currentEntityMembership.membershipType, STRONG)),
+		db.$count(s.currentEntityMembership, strongMemberships(undefined, scope)),
 		db
 			.select({
 				topicClusterId: s.currentEntityMembership.topicClusterId,
 				sources: countDistinct(s.currentEntityMembership.entityUuid),
 			})
 			.from(s.currentEntityMembership)
-			.where(inArray(s.currentEntityMembership.membershipType, STRONG))
+			.where(strongMemberships(undefined, scope))
 			.groupBy(s.currentEntityMembership.topicClusterId),
 		hierarchy(db),
 		db.$count(s.question),
@@ -192,9 +211,13 @@ export async function reportOverview(
 	const total = counts[0]
 	const analysed = new Set(analysedDocs.map((d) => d.documentId))
 	const ownerOf = new Map(docRows.map((d) => [d.documentId, d.entityUuid]))
+	// an excluded source's document is not in docRows, so its answers fall away here
+	const answers = answerRows.filter((r) => ownerOf.has(r.documentId))
 
 	const byLens = new Map<string | null, number>()
-	const entityIds = (await db.select({ id: s.entity.id }).from(s.entity)).map((e) => e.id)
+	const entityIds = (
+		await db.select({ id: s.entity.id }).from(s.entity).where(keepSources(s.entity.id, scope))
+	).map((e) => e.id)
 	for (const id of entityIds) {
 		const value = lensOf(words, entityFacets.get(id))
 		byLens.set(value, (byLens.get(value) ?? 0) + 1)
@@ -247,9 +270,8 @@ export async function reportOverview(
 			.sort((a, b) => b.sources - a.sources || rank(a.value) - rank(b.value)),
 		singleSourceTopics: reach.filter((r) => n(r.sources) === 1).length,
 		questions: questionCount,
-		answers: answerRows.length,
-		answeringSources: new Set(answerRows.map((r) => ownerOf.get(r.documentId)).filter(Boolean))
-			.size,
+		answers: answers.length,
+		answeringSources: new Set(answers.map((r) => ownerOf.get(r.documentId))).size,
 	}
 }
 
@@ -259,7 +281,12 @@ export async function reportOverview(
  * The current topics' profiles — every one, or only those `ids` names — and
  * the per-topic facts the grouping nodes roll up.
  */
-async function topicFacts(db: CorpusDb, words: RunWords, ids?: number[]) {
+async function topicFacts(
+	db: CorpusDb,
+	words: RunWords,
+	ids: number[] | undefined,
+	scope: ReadScope | undefined,
+) {
 	const supportive = new Set(words.scale.supportive)
 	const contesting = new Set(words.scale.contesting)
 	const [h, entityFacets, topicRows, memberRows, stances, strong] = await Promise.all([
@@ -276,14 +303,9 @@ async function topicFacts(db: CorpusDb, words: RunWords, ids?: number[]) {
 				membershipType: s.currentEntityMembership.membershipType,
 			})
 			.from(s.currentEntityMembership)
-			.where(
-				and(
-					inArray(s.currentEntityMembership.membershipType, STRONG),
-					ids ? inArray(s.currentEntityMembership.topicClusterId, ids) : undefined,
-				),
-			),
-		currentStances(db, ids),
-		strongDocuments(db, ids),
+			.where(strongMemberships(ids, scope)),
+		currentStances(db, ids, scope),
+		strongDocuments(db, ids, scope),
 	])
 	const tree = treeOf(h)
 	const generations = generationsOf(tree)
@@ -386,8 +408,12 @@ function groupsOf({
 }
 
 /** Every current topic and every grouping node, with live counts rolled up through the primary tree. */
-export async function landscape(db: CorpusDb, words: RunWords): Promise<Landscape> {
-	const facts = await topicFacts(db, words)
+export async function landscape(
+	db: CorpusDb,
+	words: RunWords,
+	scope?: ReadScope,
+): Promise<Landscape> {
+	const facts = await topicFacts(db, words, undefined, scope)
 	return {
 		generations: facts.generations,
 		top: facts.top,
@@ -425,8 +451,9 @@ export async function galaxy(
 	db: CorpusDb,
 	words: RunWords,
 	options: { facets: { key: string; label: string }[]; seed: number },
+	scope?: ReadScope,
 ): Promise<GalaxyData> {
-	const facts = await topicFacts(db, words)
+	const facts = await topicFacts(db, words, undefined, scope)
 	const [h, entityFacets, entityRows, strongRows] = await Promise.all([
 		hierarchy(db),
 		loadFacetCache(db, 'entity'),
@@ -441,7 +468,7 @@ export async function galaxy(
 				membershipType: s.currentEntityMembership.membershipType,
 			})
 			.from(s.currentEntityMembership)
-			.where(inArray(s.currentEntityMembership.membershipType, STRONG)),
+			.where(strongMemberships(undefined, scope)),
 	])
 	const nouns = words.nouns
 	const lensHeading = words.lens ? (words.facets[words.lens]?.heading ?? words.lens) : null
@@ -605,6 +632,7 @@ export async function topicSearch(
 	words: RunWords,
 	scores: ReadonlyMap<string, number>,
 	limit = 24,
+	scope?: ReadScope,
 ): Promise<TopicHit[]> {
 	const chunkIds = [...scores.keys()]
 	const batches: string[][] = []
@@ -619,7 +647,17 @@ export async function topicSearch(
 						softScore: s.currentChunkMembership.softScore,
 					})
 					.from(s.currentChunkMembership)
-					.where(inArray(s.currentChunkMembership.chunkId, batch)),
+					.innerJoin(s.publishedChunk, eq(s.publishedChunk.id, s.currentChunkMembership.chunkId))
+					.innerJoin(
+						s.publishedDocument,
+						eq(s.publishedDocument.documentId, s.publishedChunk.documentId),
+					)
+					.where(
+						and(
+							inArray(s.currentChunkMembership.chunkId, batch),
+							keepSources(s.publishedDocument.entityUuid, scope),
+						),
+					),
 			),
 		)
 	).flat()
@@ -646,6 +684,7 @@ export async function topicSearch(
 		db,
 		words,
 		ranked.map(([id]) => id),
+		scope,
 	)
 	const byId = new Map(topics.map((t) => [t.topicClusterId, t]))
 	return ranked.flatMap(([id, score]) => {
@@ -661,6 +700,7 @@ export async function questionDetail(
 	db: CorpusDb,
 	words: RunWords,
 	questionId: number,
+	scope?: ReadScope,
 ): Promise<QuestionDetail | null> {
 	const [q] = await db
 		.select()
@@ -689,7 +729,10 @@ export async function questionDetail(
 			)
 			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
 			.where(
-				sql`${s.publishedQuestionResponse.questionId} = ${questionId} AND ${s.publishedQuestionResponse.addressed} = 1`,
+				and(
+					sql`${s.publishedQuestionResponse.questionId} = ${questionId} AND ${s.publishedQuestionResponse.addressed} = 1`,
+					keepSources(s.entity.id, scope),
+				),
 			),
 		db
 			.select({
@@ -734,12 +777,25 @@ export async function questionDetail(
 	const quotesOf = new Map<number, string[]>()
 	for (const r of quotes)
 		quotesOf.set(r.keyPointId, [...(quotesOf.get(r.keyPointId) ?? []), r.quote])
+	// an answer's source decides how its words read: a withheld answer keeps its
+	// position and one key point reading the notice, no details, no quotes
+	const sourceOf = new Map(rows.map((r) => [r.id, r.entityUuid]))
+	const keptPoints = keyPoints.filter((k) => sourceOf.has(k.responseId))
 	const keyPointsOf = new Map<number, { keyPoint: string; details: string; quotes: string[] }[]>()
-	for (const k of keyPoints)
+	for (const k of keptPoints) {
+		const entityUuid = sourceOf.get(k.responseId)
+		const withheld = wordsOf(scope, entityUuid).withheld === true
+		const held = keyPointsOf.get(k.responseId) ?? []
+		if (withheld && held.length) continue
 		keyPointsOf.set(k.responseId, [
-			...(keyPointsOf.get(k.responseId) ?? []),
-			{ keyPoint: k.keyPoint, details: k.details, quotes: quotesOf.get(k.id) ?? [] },
+			...held,
+			{
+				keyPoint: textOf(scope, entityUuid, k.keyPoint),
+				details: withheld ? '' : k.details,
+				quotes: withheld ? [] : (quotesOf.get(k.id) ?? []),
+			},
 		])
+	}
 	const byValue = new Map<string | null, QuestionDetail['byLensValue'][number]['answers']>()
 	for (const r of rows) {
 		const value = lensOf(words, entityFacets.get(r.entityUuid))
@@ -756,6 +812,7 @@ export async function questionDetail(
 				documentFacets: documentFacets.get(r.documentId) ?? {},
 				position: r.position,
 				keyPoints: keyPointsOf.get(r.id) ?? [],
+				...wordsOf(scope, r.entityUuid),
 			},
 		])
 	}
@@ -769,7 +826,7 @@ export async function questionDetail(
 			ordinal: q.ordinal,
 			sources: new Set(rows.map((r) => r.entityUuid)).size,
 			responses: rows.length,
-			keyPoints: keyPoints.length,
+			keyPoints: keptPoints.length,
 		},
 		byLensValue: [...byValue]
 			.map(([value, answers]) => ({
@@ -783,9 +840,13 @@ export async function questionDetail(
 // ---------------------------------------------------------------- the method's facts
 
 /** What the method page states that the run's own row does not: the counts, the junk, the unread, the committed build. */
-export async function methodData(db: CorpusDb, words: RunWords): Promise<MethodData> {
+export async function methodData(
+	db: CorpusDb,
+	words: RunWords,
+	scope?: ReadScope,
+): Promise<MethodData> {
 	const [overview, junk, docRows, analysedDocs, builds, clustered] = await Promise.all([
-		reportOverview(db, words),
+		reportOverview(db, words, {}, scope),
 		db
 			.select({
 				topicClusterId: s.topicCluster.topicClusterId,
@@ -806,7 +867,8 @@ export async function methodData(db: CorpusDb, words: RunWords): Promise<MethodD
 				name: s.entity.entityName,
 			})
 			.from(s.publishedDocument)
-			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid)),
+			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
+			.where(keepSources(s.entity.id, scope)),
 		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
 		db
 			.select({
@@ -823,7 +885,8 @@ export async function methodData(db: CorpusDb, words: RunWords): Promise<MethodD
 			.limit(1),
 		db.all<{ passages: number }>(sql`
 			SELECT COUNT(DISTINCT m.chunk_id) AS passages
-			FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id`),
+			FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id
+			JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`),
 	])
 	const analysed = new Set(analysedDocs.map((d) => d.documentId))
 	return {

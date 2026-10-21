@@ -188,5 +188,25 @@ export function usePaged<K, T, R extends { total: number }>(
 	}
 }
 
+/** How the reader's scope reads a source's words: withheld (its texts are the notice), or shown with a notice. */
+export interface SourceWords {
+	withheld?: boolean
+	notice?: string
+}
+
+/** A source's row class under the scope: a withheld row reads as a notice, not as the source's words. */
+export const wordsClass = (words: SourceWords) => ({
+	'ib-report-an-withheld': words.withheld === true,
+})
+
+/** The notice shown beside a source's words when the scope shows them with one (a withheld row's texts are already the notice). */
+export function WordsNotice(props: { of: SourceWords }) {
+	return (
+		<Show when={props.of.withheld !== true && props.of.notice}>
+			{(notice) => <p class="ib-report-an-notice">{notice()}</p>}
+		</Show>
+	)
+}
+
 /** A value's share as a whole percentage. */
 export const pctOf = (part: number, whole: number) => (whole ? Math.round((100 * part) / whole) : 0)

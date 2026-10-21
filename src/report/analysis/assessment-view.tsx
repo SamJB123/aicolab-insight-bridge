@@ -18,7 +18,14 @@ import type {
 import { Button, SelectControl } from '@aicolab/ui-solid'
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import { fmt, useReportSurface } from '../surface.tsx'
-import { AnalysisHead, lensWords, MoreButton, usePaged } from './common.tsx'
+import {
+	AnalysisHead,
+	lensWords,
+	MoreButton,
+	usePaged,
+	WordsNotice,
+	wordsClass,
+} from './common.tsx'
 
 export type AssessedDocumentsLoader = (options: {
 	offset: number
@@ -312,7 +319,7 @@ function RankedDocument(props: {
 		return c ? rangeOf(c) : ([0, 1] as [number, number])
 	}
 	return (
-		<li class="ib-report-an-ranked-doc">
+		<li class={['ib-report-an-ranked-doc', wordsClass(props.d)]}>
 			<div class="ib-report-an-evidence-who">
 				<button
 					type="button"
@@ -349,6 +356,7 @@ function RankedDocument(props: {
 					)}
 				</For>
 			</ul>
+			<WordsNotice of={props.d} />
 			<details class="ib-report-an-points">
 				<summary>Reasoning and evidence</summary>
 				<For each={props.d.scores}>

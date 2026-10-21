@@ -131,8 +131,14 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		for (const g of land.groups) expect(g.topics).toBeGreaterThan(0)
 		const tasks = await analysis.analysisTasks(db, words)
 		const questionTask = tasks.find((t) => t.kind === 'question_response')
-		expect(questionTask).toBeDefined()
-		if (!questionTask) return
+		const method = methodDataSchema.parse(await pages.methodData(db, words))
+		expect(method.junk.length).toBe(overview.junkTopics)
+		expect(method.unanalysed.length).toBe(overview.unanalysedDocuments)
+		// a run that put no questions to its documents counts none
+		if (!questionTask) {
+			expect(overview.questions).toBe(0)
+			return
+		}
 		const questions = questionsOverviewSchema.parse(
 			await analysis.questionsOverview(db, words, questionTask.taskId),
 		)
@@ -145,9 +151,6 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 			)
 			expect(detail.byLensValue.reduce((a, v) => a + v.answers.length, 0)).toBe(first.responses)
 		}
-		const method = methodDataSchema.parse(await pages.methodData(db, words))
-		expect(method.junk.length).toBe(overview.junkTopics)
-		expect(method.unanalysed.length).toBe(overview.unanalysedDocuments)
 	})
 
 	it('search, vocabularies, questions, task results and the galaxy answer', async () => {

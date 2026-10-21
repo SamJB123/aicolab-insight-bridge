@@ -926,6 +926,20 @@
 		background: var(--color-base-200);
 		border-radius: 0 6px 6px 0;
 	}
+	/* A withheld source's row: its texts are the notice standing in for its
+	   words, so they read upright and muted under a warning-coloured rule. */
+	.ib-report-an-withheld {
+		border-inline-start: 3px solid var(--color-warning, #b8860b);
+		padding-inline-start: 0.6rem;
+		color: var(--color-base-content-muted);
+		font-style: normal;
+	}
+	/* A notice shown beside a source's words (the scope shows them with one). */
+	.ib-report-an-notice {
+		margin: 0.2rem 0;
+		font-size: 0.8rem;
+		color: color-mix(in oklab, var(--color-info, #2563eb) 75%, var(--color-base-content));
+	}
 	.ib-report-an-points summary {
 		cursor: pointer;
 		font-size: 0.86rem;

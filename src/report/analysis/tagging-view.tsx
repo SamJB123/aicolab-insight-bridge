@@ -26,6 +26,8 @@ import {
 	MoreButton,
 	pctOf,
 	usePaged,
+	WordsNotice,
+	wordsClass,
 } from './common.tsx'
 
 export type TagDocumentsLoader = (
@@ -296,7 +298,7 @@ function TaggedDocumentRow(props: { d: TaggedDocument; value: TaggedValue }) {
 			? null
 			: props.d.tag.slice(props.value.path.length).replace(/^\s*›\s*/, '')
 	return (
-		<li class="ib-report-an-evidence-row">
+		<li class={['ib-report-an-evidence-row', wordsClass(props.d)]}>
 			<div class="ib-report-an-evidence-who">
 				<button
 					type="button"
@@ -317,6 +319,7 @@ function TaggedDocumentRow(props: { d: TaggedDocument; value: TaggedValue }) {
 			</div>
 			<Show when={deeper()}>{(leaf) => <p class="ib-report-an-leaf">{leaf()}</p>}</Show>
 			<Show when={props.d.context}>{(c) => <p class="ib-report-an-context">{c()}</p>}</Show>
+			<WordsNotice of={props.d} />
 			<p class="fig-note">{props.d.documentTitle ?? props.d.fileName}</p>
 		</li>
 	)

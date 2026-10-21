@@ -691,6 +691,14 @@
 			font-style: normal;
 			color: var(--color-base-content-muted);
 		}
+		/* A notice shown beside a source's words (the gate open): a quiet line
+		   under the quote or stance, upright, in the info colour. */
+		.ib-bp-notice {
+			margin: 0.3rem 0 0;
+			font-size: 0.78rem;
+			font-style: normal;
+			color: color-mix(in oklab, var(--color-info, #2563eb) 75%, var(--color-base-content));
+		}
 		.ib-bp-rq-src {
 			margin-top: 0.3rem;
 			display: flex;

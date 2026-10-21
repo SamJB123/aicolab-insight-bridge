@@ -31,6 +31,7 @@ import {
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { eq, inArray } from 'drizzle-orm'
+import { isKept, type ReadScope, textOf, wordsOf } from '../explorer/scope.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import type {
@@ -136,22 +137,12 @@ export interface BriefConfig {
 	 */
 	facets?: Record<string, FacetHint>
 	/**
-	 * Contributors to leave out of every figure — a corpus that collapses
-	 * duplicate lodgements passes the copies here. Computed by the app from
-	 * whatever it knows; the reading layer only needs the set.
+	 * The reader's scope (explorer/scope.ts), as every core read takes it:
+	 * excluded contributors leave every figure (a corpus that collapses
+	 * duplicate lodgements); withheld ones stay in every figure while their
+	 * quotes and stance explanations read the notice, attributed.
 	 */
-	excludeEntities?: ReadonlySet<string>
-	/**
-	 * Contributors whose TEXT is withheld but who stay in every figure — a
-	 * corpus gating Indigenous Cultural and Intellectual Property passes the
-	 * gated contributors here (by entity uuid). Their quotes and stance
-	 * explanations are replaced by `withheldText`, attributed; their reach,
-	 * stances and position labels count as anyone's. Distinct from
-	 * `excludeEntities`, which removes a contributor altogether.
-	 */
-	withholdEntities?: ReadonlySet<string>
-	/** The one-line notice that stands in for withheld text. */
-	withheldText?: string
+	scope?: ReadScope
 	/**
 	 * The run's position scale. Defaults to the pipeline's stance scale
 	 * (Supports … Opposes); a corpus whose clustering wrote a different one
@@ -159,8 +150,6 @@ export interface BriefConfig {
 	 */
 	positions?: PositionScale
 }
-
-const DEFAULT_WITHHELD_TEXT = 'This contributor’s words are withheld from this reading.'
 
 const pct = (n: number, d: number) => Math.round((100 * n) / (d || 1))
 const countIn = (mix: Record<string, number>, set: ReadonlySet<string>) =>
@@ -282,8 +271,7 @@ export async function briefData(db: CorpusDb, config: BriefConfig): Promise<Brie
 		valuesOf.set(a.subjectId, byFacet)
 	}
 	const names = new Map(entityRows.map((e) => [e.id, e]))
-	const excluded = config.excludeEntities
-	const kept = (uuid: string) => !excluded?.has(uuid)
+	const kept = (uuid: string) => isKept(config.scope, uuid)
 	const detailOf = (uuid: string) => {
 		const v = valuesOf.get(uuid)
 		if (!v) return null
@@ -605,9 +593,7 @@ export async function chapterReading(
 		valuesOf.set(a.subjectId, byFacet)
 	}
 	const names = new Map(entityRows.map((e) => [e.id, e]))
-	const kept = (uuid: string) => !config.excludeEntities?.has(uuid)
-	const withheld = (uuid: string) => config.withholdEntities?.has(uuid) === true
-	const withheldText = config.withheldText ?? DEFAULT_WITHHELD_TEXT
+	const kept = (uuid: string) => isKept(config.scope, uuid)
 	const detailOf = (uuid: string) => {
 		const v = valuesOf.get(uuid)
 		if (!v) return null
@@ -658,20 +644,13 @@ export async function chapterReading(
 			details: k.details ?? '',
 			quote:
 				q && e
-					? withheld(q.entityUuid)
-						? {
-								text: withheldText,
-								source: e.entityName,
-								entityId: e.entityId,
-								detail: detailOf(q.entityUuid),
-								withheld: true,
-							}
-						: {
-								text: q.text,
-								source: e.entityName,
-								entityId: e.entityId,
-								detail: detailOf(q.entityUuid),
-							}
+					? {
+							text: textOf(config.scope, q.entityUuid, q.text),
+							source: e.entityName,
+							entityId: e.entityId,
+							detail: detailOf(q.entityUuid),
+							...wordsOf(config.scope, q.entityUuid),
+						}
 					: null,
 		}
 	})
@@ -693,7 +672,7 @@ export async function chapterReading(
 	}
 	const pushback: Pushback[] = contestRows
 		.filter((r) => contesting.has(r.position) && kept(r.entityUuid) && names.has(r.entityUuid))
-		.map((r) => {
+		.map((r): Pushback | null => {
 			const e = names.get(r.entityUuid)
 			if (!e) return null
 			const row = {
@@ -703,9 +682,10 @@ export async function chapterReading(
 				detail: detailOf(r.entityUuid),
 				position: r.position,
 			}
-			return withheld(r.entityUuid)
-				? { ...row, title: withheldText, analysis: '', withheld: true }
-				: { ...row, title: r.title, analysis: r.analysis ?? '' }
+			const words = wordsOf(config.scope, r.entityUuid)
+			return words.withheld
+				? { ...row, ...words, title: textOf(config.scope, r.entityUuid, r.title), analysis: '' }
+				: { ...row, ...words, title: r.title, analysis: r.analysis ?? '' }
 		})
 		.filter((x): x is Pushback => x !== null)
 		.sort((a, b) => rank(a.position) - rank(b.position) || a.name.localeCompare(b.name))

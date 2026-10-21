@@ -10,6 +10,7 @@
  * oversight body want different chrome — and that arrives as a render prop.
  */
 import type { FacetSpec } from '../brief/types.ts'
+import type { ReadScope } from '../explorer/scope.ts'
 
 export type { FacetSpec }
 
@@ -26,8 +27,8 @@ export interface SourcesConfig {
 	sort?: Array<{ facet: string; desc?: boolean }>
 	/** Rows per page. Default 40. */
 	pageSize?: number
-	/** Contributors to leave out — a corpus that collapses duplicates. */
-	excludeEntities?: ReadonlySet<string>
+	/** The reader's scope (explorer/scope.ts): its excluded contributors are left out of the record. */
+	scope?: ReadScope
 }
 
 /** One value of one facet, with how many contributors hold it. */
