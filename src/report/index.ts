@@ -12,6 +12,13 @@
  * '@aicolab/insight-bridge/site.css' inside the host's `.ib-site`).
  */
 
+export {
+	type ConnectAccess,
+	type ConnectAdditions,
+	type ConnectClients,
+	ConnectPage,
+	type CopilotClient,
+} from './connect-page.tsx'
 export { HeatCell, StatRow } from './figures.tsx'
 export { GalaxyPage, type GalaxyPageProps } from './galaxy-page.tsx'
 export { type MethodAdditions, MethodPage } from './method-page.tsx'

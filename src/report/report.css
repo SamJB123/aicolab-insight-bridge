@@ -518,6 +518,217 @@
 			flex-wrap: wrap;
 		}
 	}
+
+	/* ── Connect: the connector card, the client guides and the tool console ── */
+	.ib-report-mcp-connect,
+	.ib-report-mcp-runner {
+		background: var(--color-base-100);
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+		corner-shape: superellipse(2.2);
+		min-inline-size: 0;
+	}
+	.ib-report-mcp-connect {
+		padding: 1.4rem 1.5rem;
+	}
+	.ib-report-mcp-runner {
+		padding: 1.2rem 1.3rem;
+	}
+	.ib-report-mcp-copy {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.7rem;
+		align-items: center;
+		margin: 0 0 0.8rem;
+	}
+	.ib-report-mcp-connect > .ib-report-mcp-copy {
+		padding-bottom: 1rem;
+		border-bottom: 1px solid var(--color-border);
+		margin-bottom: 1rem;
+	}
+	.ib-report-mcp-connect a,
+	.ib-report-mcp-steps a {
+		color: var(--color-primary-2, var(--color-primary));
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 2px;
+	}
+	.ib-report-mcp-label,
+	.ib-report-mcp-req-h,
+	.ib-report-mcp-group-h {
+		font-family: var(--font-data);
+		font-size: 10.5px;
+		text-transform: uppercase;
+		letter-spacing: 0.09em;
+		color: var(--color-base-content-faint);
+	}
+	.ib-report-mcp-value {
+		justify-self: start;
+		max-inline-size: 100%;
+		font-family: var(--font-data);
+		font-size: 13.5px;
+		color: var(--color-primary-2, var(--color-primary));
+		background: var(--color-base-300);
+		border: 1px solid var(--color-border-strong);
+		border-radius: 7px;
+		padding: 6px 11px;
+		overflow-wrap: anywhere;
+	}
+	.ib-report-mcp-steps {
+		margin: 0;
+		padding-left: 1.2rem;
+		list-style: disc;
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		color: var(--color-base-content-muted);
+		font-size: 0.92rem;
+		line-height: 1.5;
+	}
+	ol.ib-report-mcp-steps {
+		list-style: decimal;
+	}
+	.ib-report-mcp-steps li::marker {
+		color: var(--color-base-content-faint);
+		font-family: var(--font-data);
+		font-size: 0.85em;
+	}
+	.ib-report-mcp-steps strong {
+		color: var(--color-base-content);
+	}
+	.ib-report-mcp-steps em,
+	.ib-report-mcp-try em {
+		color: var(--color-primary-2, var(--color-primary));
+		font-style: italic;
+	}
+	.ib-report-mcp-clients {
+		margin: 1rem 0 0.4rem;
+	}
+	.ib-report-mcp-clients .ib-report-mcp-steps {
+		margin-bottom: 0.6rem;
+	}
+	.ib-report-mcp-try {
+		margin: 0.9rem 0 0.3rem;
+		color: var(--color-base-content-muted);
+		font-size: 0.94rem;
+		max-width: 74ch;
+	}
+	.ib-report-mcp-tester {
+		display: grid;
+		grid-template-columns: 300px minmax(0, 1fr);
+		gap: 1.1rem;
+		align-items: start;
+	}
+	@media (max-width: 860px) {
+		.ib-report-mcp-tester {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+	.ib-report-mcp-toollist {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		max-height: 640px;
+		overflow-y: auto;
+		padding-right: 0.3rem;
+		min-inline-size: 0;
+	}
+	.ib-report-mcp-group-h {
+		margin: 0 0 0.4rem;
+		font-size: 10px;
+		letter-spacing: 0.1em;
+	}
+	.ib-report-mcp-tool {
+		display: block;
+		width: 100%;
+		text-align: left;
+		font: inherit;
+		color: inherit;
+		background: var(--color-base-100);
+		border: 1px solid var(--color-border);
+		border-radius: 9px;
+		padding: 0.6rem 0.75rem;
+		cursor: pointer;
+		margin-bottom: 0.35rem;
+		transition:
+			border-color 0.13s,
+			background 0.13s;
+	}
+	.ib-report-mcp-tool:hover {
+		border-color: var(--color-border-strong);
+	}
+	.ib-report-mcp-tool:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 1px;
+	}
+	.ib-report-mcp-tool.ib-report-mcp-tool-on {
+		border-color: var(--color-primary);
+		background: var(--color-primary-soft);
+	}
+	.ib-report-mcp-tool-n {
+		display: block;
+		font-family: var(--font-data);
+		font-size: 12.5px;
+		color: var(--color-base-content);
+	}
+	.ib-report-mcp-tool-d {
+		display: block;
+		font-size: 11.5px;
+		color: var(--color-base-content-muted);
+		margin-top: 0.2rem;
+		line-height: 1.35;
+	}
+	.ib-report-mcp-runner-h {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.6rem;
+	}
+	.ib-report-mcp-runner-name {
+		font-family: var(--font-data);
+		font-size: 15px;
+		color: var(--color-primary-2, var(--color-primary));
+		overflow-wrap: anywhere;
+		min-inline-size: 0;
+	}
+	.ib-report-mcp-fields {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		gap: 0.7rem;
+		margin: 1rem 0;
+	}
+	.ib-report-mcp-req-h {
+		margin: 0.9rem 0 0.4rem;
+		font-size: 10px;
+	}
+	.ib-report-mcp-pre {
+		background: var(--color-base-200);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		padding: 0.8rem 0.9rem;
+		font-family: var(--font-data);
+		font-size: 12px;
+		line-height: 1.5;
+		color: var(--color-base-content);
+		margin: 0 0 0.4rem;
+		max-height: 460px;
+		overflow: auto;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.ib-report-mcp-pre code {
+		font-family: var(--font-data);
+		white-space: pre-wrap;
+	}
+	.ib-report-mcp-pre-req {
+		color: var(--color-base-content-muted);
+		font-size: 11.5px;
+	}
+	.ib-report-mcp-pre-err {
+		color: var(--color-error);
+		border-color: var(--color-error);
+	}
 }
 
 /* Modifiers of the frame's own classes. The frame is unlayered — site.css, or

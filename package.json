@@ -31,6 +31,7 @@
 		"./galaxy/from-data": "./src/galaxy/from-data.ts",
 		"./galaxy/stars": "./src/galaxy/stars.ts",
 		"./galaxy/types": "./src/galaxy/types.ts",
+		"./mcp-tools": "./src/mcp-tools.ts",
 		"./method": "./src/method.ts",
 		"./reader": "./src/reader/index.ts",
 		"./report": "./src/report/index.ts",
