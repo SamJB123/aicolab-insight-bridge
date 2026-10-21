@@ -20,6 +20,8 @@
 		".": "./src/index.ts",
 		"./brief": "./src/brief/index.ts",
 		"./corpora": "./src/corpora.ts",
+		"./explorer": "./src/explorer/data.ts",
+		"./explorer/facets": "./src/explorer/facets.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",
 		"./galaxy": "./src/galaxy/index.ts",
