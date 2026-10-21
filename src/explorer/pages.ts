@@ -32,6 +32,7 @@ import type {
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { and, asc, countDistinct, eq, inArray, sql } from 'drizzle-orm'
+import { cap } from '../grammar.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
 import { hierarchy, STRONG } from './data.ts'
@@ -586,7 +587,6 @@ export async function galaxy(
 	// The galaxy's tiers are layers a reader moves between, so each is named
 	// distinctly: where the generation names repeat (every generation below a
 	// theme is a "group"), each such tier carries its generation number.
-	const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 	const repeated = (label: string) => facts.generations.filter((g) => g.label === label).length > 1
 	return {
 		tiers: [

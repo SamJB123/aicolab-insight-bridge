@@ -18,6 +18,7 @@ import { Eyebrow } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { InsightBridgeReading } from '../about.tsx'
+import { withArticle } from '../grammar.ts'
 import {
 	cap,
 	fmt,
@@ -239,21 +240,32 @@ function MethodBody(props: {
 					</div>
 				</Show>
 
-				<h3 class="sec-h ib-report-h">Which model did what</h3>
-				<p class="sec-sub">
-					Named because it matters: the reading, the writing-up and the grouping were done by these,
-					and a different model would have produced a different record.
-				</p>
-				<div class="defs">
-					<For each={m().models}>
-						{(role) => (
-							<>
-								<div class="def-t">{role.model}</div>
-								<div class="def-b">{role.role}</div>
-							</>
-						)}
-					</For>
-				</div>
+				{/* a run that recorded no settings names no models (buildMethod): the page says so once, where they would be */}
+				<Show
+					when={m().models.length}
+					fallback={
+						<p class="sec-sub">
+							This run kept no record of the models or settings it ran with, so this page names none
+							of them. Everything else here is read from the run itself.
+						</p>
+					}
+				>
+					<h3 class="sec-h ib-report-h">Which model did what</h3>
+					<p class="sec-sub">
+						Named because it matters: the reading, the writing-up and the grouping were done by
+						these, and a different model would have produced a different record.
+					</p>
+					<div class="defs">
+						<For each={m().models}>
+							{(role) => (
+								<>
+									<div class="def-t">{role.model}</div>
+									<div class="def-b">{role.role}</div>
+								</>
+							)}
+						</For>
+					</div>
+				</Show>
 
 				<div class="chips">
 					<For
@@ -378,7 +390,7 @@ function RunNotes(props: {
 			<Show when={props.data.overview.questions}>
 				<p>
 					<strong>Questions are answered per document.</strong>
-					{` A ${nouns().entity} with more than one document may answer a question twice; a question's page counts a ${nouns().entity} once. An unanswered question means no answer was located in the available text, never that a ${nouns().entity} has no view.`}
+					{` ${cap(withArticle(nouns().entity))} with more than one document may answer a question twice; a question's page counts ${withArticle(nouns().entity)} once. An unanswered question means no answer was located in the available text, never that ${withArticle(nouns().entity)} has no view.`}
 				</p>
 			</Show>
 			<Show when={props.additions?.notes}>{(notes) => <>{notes()()}</>}</Show>

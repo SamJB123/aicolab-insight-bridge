@@ -100,6 +100,7 @@ import type { AnySQLiteColumn, SQLiteTable, SQLiteViewWithSelection } from 'driz
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
 import { loadFacetCache } from '../explorer/facets.ts'
 import { isKept, keepSources, type ReadScope, wordsOf } from '../explorer/scope.ts'
+import { cap } from '../grammar.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import {
 	MEMBERSHIP_GRADES,
@@ -276,7 +277,6 @@ const grouped = <T, K>(rows: readonly T[], key: (row: T) => K): Map<K, T[]> => {
 
 const num = (value: unknown): number => (value == null ? 0 : Number(value))
 const text = (value: unknown): string | null => (typeof value === 'string' ? value : null)
-const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 const STRONG: readonly string[] = MEMBERSHIP_GRADES
 const isStrong = (grade: string): grade is (typeof MEMBERSHIP_GRADES)[number] =>
 	STRONG.includes(grade)

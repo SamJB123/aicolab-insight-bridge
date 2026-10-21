@@ -32,6 +32,7 @@ import type {
 	IBPoint,
 	IBQuote,
 } from '../galaxy/types.ts'
+import { cap } from '../grammar.ts'
 import {
 	type AnalysisBlock,
 	buildContainerContent,
@@ -223,7 +224,6 @@ export function pickQuotes(rows: readonly IBQuote[], n = 2): IBQuote[] {
 
 /* ── words ─────────────────────────────────────────────────────────────── */
 
-const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 const plural = (word: string) => (word.endsWith('s') ? word : `${word}s`)
 
 const headingOf = (c: ReadingContext, facet: string) => c.words.facets[facet]?.heading ?? cap(facet)

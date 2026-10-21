@@ -34,6 +34,7 @@ import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { asc, eq, inArray, like, or } from 'drizzle-orm'
 import { z } from 'zod'
+import { cap, withArticle } from '../grammar.ts'
 import { treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
 import * as x from './data.ts'
@@ -84,7 +85,6 @@ export interface ExplorerToolHost {
 
 /* ───────────────────────── words and ranks ───────────────────────── */
 
-const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
 /** Facets that are the pipeline's own bookkeeping, never a reader's facet. */
 const INTERNAL_FACETS: ReadonlySet<string> = new Set(['entity_name_provenance', 'llm_entity_name'])
@@ -1057,7 +1057,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 
 	/* ── who ── */
 	lens_profile: tool({
-		title: (t) => `Profile a ${lensWords(t) ?? 'lens value'}`,
+		title: (t) => `Profile ${withArticle(lensWords(t) ?? 'lens value')}`,
 		group: WHO,
 		description: (t) =>
 			`Everything one ${lensWords(t)} value does across the record: which ${t.words.nouns.entities} it holds, its position mix and how often it contests, the topics it engages most, and the topics it DOMINATES (60% or more of all stances on them) — where one ${lensWords(t)} speaks effectively unopposed. ${notPrevalence(t.words, t.overview.entities)}`,
@@ -1205,7 +1205,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 	}),
 
 	get_source: tool({
-		title: (t) => `Profile a ${t.words.nouns.entity}`,
+		title: (t) => `Profile ${withArticle(t.words.nouns.entity)}`,
 		group: WHO,
 		description: (t) =>
 			`Profile of one ${t.words.nouns.entity} — by its source_id, its uuid or a fragment of its name: its facets, its ${t.words.nouns.documents}, every topic it is strongly linked to with its position and framing there.`,
@@ -1265,7 +1265,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 	}),
 
 	get_document: tool({
-		title: (t) => `Get a ${t.words.nouns.document}`,
+		title: (t) => `Get ${withArticle(t.words.nouns.document)}`,
 		group: DOCUMENTS,
 		description: (t) =>
 			`Full analysis of one ${t.words.nouns.document} by document_id (or a source_id, which returns its first ${t.words.nouns.document}): its facets, key points with verbatim quotes, tags, question answers, criteria findings, metrics, the topics its passages fell into and — with include_text — its full extracted text.`,
@@ -1300,7 +1300,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 		title: () => 'List values of a facet',
 		group: FACETS,
 		description: (t) =>
-			`One facet of the record with its ${t.words.nouns.entity} count per value — ${t.facets.map((f) => f.label).join(', ')}. A ${t.words.nouns.document} facet counts the ${t.words.nouns.entities} who wrote those ${t.words.nouns.documents}. ${notPrevalence(t.words, t.overview.entities)}`,
+			`One facet of the record with its ${t.words.nouns.entity} count per value — ${t.facets.map((f) => f.label).join(', ')}. ${cap(withArticle(t.words.nouns.document))} facet counts the ${t.words.nouns.entities} who wrote those ${t.words.nouns.documents}. ${notPrevalence(t.words, t.overview.entities)}`,
 		input: { category: z.string().describe('A facet, by key or heading (see the description)') },
 		examples: (t) => ({ category: t.facets[0]?.label }),
 		when: (t) => t.facets.length > 0,
@@ -1586,7 +1586,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 					...(r.withheld ? { withheld: true } : {}),
 					...(r.notice === undefined ? {} : { notice: r.notice }),
 				})),
-				note: `An answer is per ${c.words.nouns.document}; a ${c.words.nouns.entity} with several may answer more than once.${matching.length > kept.length ? ` ${matching.length - kept.length} further answers match — raise \`limit\` or narrow by lens value.` : ''}`,
+				note: `An answer is per ${c.words.nouns.document}; ${withArticle(c.words.nouns.entity)} with several may answer more than once.${matching.length > kept.length ? ` ${matching.length - kept.length} further answers match — raise \`limit\` or narrow by lens value.` : ''}`,
 			}
 		},
 	}),

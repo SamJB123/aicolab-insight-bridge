@@ -81,4 +81,4 @@ export function ReportSurfaceProvider(props: { surface: ReportSurface; children:
 }
 
 export const fmt = (v: number) => v.toLocaleString('en-AU')
-export const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
+export { cap } from '../grammar.ts'

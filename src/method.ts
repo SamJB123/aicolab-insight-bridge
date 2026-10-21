@@ -28,6 +28,7 @@ import type { MethodData, MethodStage, RunMethod } from '@aicolab/insight-bridge
 import { facetKind, type Profile } from '@aicolab/insight-bridge-contracts/profile'
 import { type RunConfig, resolvedModels } from '@aicolab/insight-bridge-contracts/run-config'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
+import { withArticle } from './grammar.ts'
 
 export type MethodNouns = {
 	/** One source entity, lower case: "submitter", "episode", "source". */
@@ -76,7 +77,7 @@ export function methodCopy(nouns: MethodNouns): MethodCopy {
 			`own, and the rare topic that only one ${entity} carries is flagged as such.`,
 		membership:
 			`Each passage, and each ${entity}, is then placed against every topic at a graded strength ` +
-			`(exemplar, high-value, member), so a ${entity} that touches a topic in passing is recorded as ` +
+			`(exemplar, high-value, member), so ${withArticle(entity)} that touches a topic in passing is recorded as ` +
 			`well as the ${entities} that define it, and a passage can belong to more than one topic.`,
 		positions:
 			`Each topic is written up as a proposition with key points, and every exemplar and high-value ` +
@@ -158,6 +159,20 @@ function sentenceList(items: readonly string[]): string {
 }
 
 /**
+ * Whether the run recorded the settings it ran with. A run lifted from a store
+ * that never kept them (the Python pipeline's db/lift_legacy.py) has a build
+ * whose clustering parameters are "not recorded" and a run config that holds
+ * only its name: its models and settings are unknown, and the config's
+ * defaults are never stated as the run's.
+ */
+const settingsRecorded = (d: MethodData): boolean =>
+	!d.build || recordedClusteringParams(d.build.params) !== null
+
+/** A facet as a sentence names it: the profile's noun for it, else its name in words. */
+const facetNoun = (profile: Profile, name: string): string =>
+	profile.facets.find((f) => f.name === name)?.noun ?? name.replace(/_/g, ' ')
+
+/**
  * The stages that actually ran, in the order the pipeline runs them. Every
  * phase the pipeline can skip is gated on the same config flag the pipeline
  * gates it on, so this cannot claim a step that did not happen.
@@ -193,7 +208,7 @@ function stagesOf(
 		body:
 			`Every ${p.document_noun} was stored whole under its ${p.entity_noun}, its text cut into passages small enough to compare — ` +
 			`${count(o.passages)} of them across ${count(o.documents)} ${p.document_noun_plural} from ${count(o.sources)} ${p.entity_noun_plural} — ` +
-			`and each passage embedded with ${resolvedModels(config).embedding}, which is what makes a search by meaning, and the grouping ` +
+			`and each passage embedded${settingsRecorded(d) ? ` with ${resolvedModels(config).embedding}` : ''}, which is what makes a search by meaning, and the grouping ` +
 			`below, possible at all.${then(authored.ingest)}`,
 	})
 
@@ -207,11 +222,11 @@ function stagesOf(
 			then(authored.analysis) +
 			(o.questions
 				? ` The same reading put ${questions} to every ${p.document_noun}: ${count(o.answers)} answers were found, each with a position, ` +
-					`key points and quotes. A question left unanswered means no answer was located in the available text, never that a ${p.entity_noun} has no view.`
+					`key points and quotes. A question left unanswered means no answer was located in the available text, never that ${withArticle(p.entity_noun)} has no view.`
 				: ''),
 	})
 
-	if (config.entity_review.enabled)
+	if (settingsRecorded(d) && config.entity_review.enabled)
 		stages.push({
 			key: 'entity-review',
 			// "What counts as one", not "who they are": an entity is whatever the
@@ -240,19 +255,20 @@ function stagesOf(
 			`${copy.membership} ${count(o.topics + o.junkTopics)} topics resulted, over ${count(d.clusteredPassages)} passages.`,
 	})
 
-	if (config.run_synthesis)
+	if (settingsRecorded(d) ? config.run_synthesis : o.stances > 0)
 		stages.push({
 			key: 'synthesis',
 			title: 'Writing each topic up and reading positions against it',
 			body:
 				`${copy.positions} ${count(o.stances)} positions were written` +
 				(profile.facets_to_analyse.length
-					? `, and the same was done for each value of ${sentenceList(profile.facets_to_analyse)}: ${count(o.lensRows)} perspectives`
+					? `, and the same was done for each value of ${sentenceList(profile.facets_to_analyse.map((name) => facetNoun(profile, name)))}: ${count(o.lensRows)} perspectives`
 					: '') +
-				`. A position here records how a ${p.entity_noun} stands against one topic's particular framing, and is never a verdict on the subject in general.`,
+				`. A position here records how ${withArticle(p.entity_noun)} stands against one topic's particular framing, and is never a verdict on the subject in general.`,
 		})
 
-	if (config.junk_review.enabled)
+	// a run that recorded no settings recorded no review either: its topics stand as found
+	if (settingsRecorded(d) && config.junk_review.enabled)
 		stages.push({
 			key: 'junk-review',
 			title: 'Removing the groups that carry nothing',
@@ -265,7 +281,15 @@ function stagesOf(
 				' The flag alone never removes anything.',
 		})
 
-	if (config.hierarchy.enabled)
+	if (!settingsRecorded(d) && o.groups)
+		stages.push({
+			key: 'hierarchy',
+			title: 'Offering the topics upward into themes',
+			body:
+				'The topics were grouped again, generation by generation, each generation clustering the one below it; the settings it ran with were not recorded. ' +
+				`This site reads the tree as the run left it — here, ${count(o.groups)} ${o.generations[0]?.labelPlural ?? 'groups'} above the topics, each named by the model from its members.`,
+		})
+	if (settingsRecorded(d) && config.hierarchy.enabled)
 		stages.push({
 			key: 'hierarchy',
 			title: 'Offering the topics upward into themes',
@@ -297,8 +321,9 @@ function stagesOf(
 	return [...stages, ...(authored.after ?? [])]
 }
 
-/** Which model did what, for the roles that shaped what is on this site. */
+/** Which model did what, for the roles that shaped what is on this site; none for a run that recorded no settings. */
 function modelsOf(profile: Profile, config: RunConfig, d: MethodData) {
+	if (!settingsRecorded(d)) return []
 	const m = resolvedModels(config)
 	return [
 		{

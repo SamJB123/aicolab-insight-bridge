@@ -57,6 +57,7 @@ import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { and, asc, desc, eq, inArray, isNull, like, or, type SQL, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { cap } from '../grammar.ts'
 import { treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
@@ -144,7 +145,6 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 		)
 	const site = meta.site
 	const params = profile.prompts.params
-	const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
 	const facets: RunWords['facets'] = {}
 	for (const f of profile.facets) {
 		const said = site?.facets[f.name]
