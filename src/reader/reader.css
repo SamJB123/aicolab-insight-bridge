@@ -185,9 +185,6 @@
 			letter-spacing: 0.06em;
 			color: var(--color-base-content-faint);
 		}
-		.ib-reader-point .ib-reader-chip {
-			margin-block-start: 0.5rem;
-		}
 
 		/* A withheld quote: the notice standing in for the words. Upright, not
 		   a quotation; the rule and the cite keep its place in the list. */
@@ -285,6 +282,10 @@
 		.ib-reader-chip:focus-visible {
 			outline: 2px solid var(--color-ring);
 			outline-offset: 2px;
+		}
+		/* a chip under a key point sits clear of the point's text */
+		.ib-reader-point .ib-reader-chip {
+			margin-block-start: 0.5rem;
 		}
 
 		.ib-reader-show-all {
