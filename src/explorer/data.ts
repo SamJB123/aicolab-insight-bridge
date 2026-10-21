@@ -89,6 +89,17 @@ export type {
 
 const n = (v: unknown) => Number(v ?? 0)
 
+/** Rows by a key, each group in the rows' own order. */
+function groupBy<T, K>(rows: readonly T[], key: (row: T) => K): Map<K, T[]> {
+	const out = new Map<K, T[]>()
+	for (const row of rows) {
+		const held = out.get(key(row))
+		if (held) held.push(row)
+		else out.set(key(row), [row])
+	}
+	return out
+}
+
 /** The source of a facet assignment `a`'s subject (an entity, or a document's or passage's entity), for scoping it. */
 const assignmentSource = sql`COALESCE(CASE a.subject_type
 	WHEN 'entity' THEN a.subject_id
@@ -504,13 +515,19 @@ export async function topicById(
 		rationale: wordsOf(scope, q.entityUuid).withheld ? null : q.rationale,
 		...wordsOf(scope, q.entityUuid),
 	})
+	// child rows by their parent, once: a wide topic holds thousands of each
+	const kpQuotesOf = groupBy(kpQuotes, (q) => q.kpId)
+	const perspKpOf = groupBy(perspKp, (k) => k.clusterEntityPerspectiveId)
+	const perspKpQuotesOf = groupBy(perspKpQuotes, (q) => q.keyPointId)
+	const perspQuotesOf = groupBy(perspQuotes, (q) => q.clusterEntityPerspectiveId)
+	const facetQuotesOf = groupBy(facetQuotes, (q) => q.pid)
 	return {
 		...summary,
 		keyPointItems: kpRows.map((r) => ({
 			keyPoint: r.keyPoint,
 			details: r.details,
-			quotes: kpQuotes
-				.filter((q) => q.kpId === r.clusterKeyPointId && isKept(scope, q.entityUuid))
+			quotes: (kpQuotesOf.get(r.clusterKeyPointId) ?? [])
+				.filter((q) => isKept(scope, q.entityUuid))
 				.map((q) => quoteOf({ ...q, rationale: null })),
 		})),
 		entityPerspectives: persp
@@ -529,20 +546,12 @@ export async function topicById(
 					positionAnalysis: text(p.positionAnalysis),
 					keyPoints: words.withheld
 						? []
-						: perspKp
-								.filter((k) => k.clusterEntityPerspectiveId === p.id)
-								.map((k) => ({
-									keyPoint: k.keyPoint,
-									details: k.details,
-									quotes: perspKpQuotes
-										.filter((q) => q.keyPointId === k.keyPointId)
-										.map((q) => q.quoteText),
-								})),
-					quotes: words.withheld
-						? []
-						: perspQuotes
-								.filter((q) => q.clusterEntityPerspectiveId === p.id)
-								.map((q) => q.quoteText),
+						: (perspKpOf.get(p.id) ?? []).map((k) => ({
+								keyPoint: k.keyPoint,
+								details: k.details,
+								quotes: (perspKpQuotesOf.get(k.keyPointId) ?? []).map((q) => q.quoteText),
+							})),
+					quotes: words.withheld ? [] : (perspQuotesOf.get(p.id) ?? []).map((q) => q.quoteText),
 					facets: facetCache.get(p.entityUuid) ?? {},
 					...words,
 				}
@@ -552,8 +561,8 @@ export async function topicById(
 			facetValue: r.facetValue,
 			position: r.position,
 			positionAnalysis: r.positionAnalysis,
-			quotes: facetQuotes
-				.filter((q) => q.pid === r.clusterKeyPerspectiveId && isKept(scope, q.entityUuid))
+			quotes: (facetQuotesOf.get(r.clusterKeyPerspectiveId) ?? [])
+				.filter((q) => isKept(scope, q.entityUuid))
 				.map(quoteOf),
 		})),
 		sourceDocuments: sourceDocs.map((d) => ({ ...d, chunks: n(d.chunks) })),
