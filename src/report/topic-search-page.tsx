@@ -13,7 +13,7 @@
 import type { TopicHit } from '@aicolab/insight-bridge-contracts/explorer'
 import { Eyebrow } from '@aicolab/ui-solid'
 import { createEffect, createSignal, For, onSettled, Show, untrack } from 'solid-js'
-import { type ReportSurface, ReportSurfaceContext, useReportSurface } from './surface.tsx'
+import { type ReportSurface, ReportSurfaceProvider, useReportSurface } from './surface.tsx'
 import './report.css'
 
 export function TopicSearchPage(props: {
@@ -27,14 +27,14 @@ export function TopicSearchPage(props: {
 	surface: ReportSurface
 }) {
 	return (
-		<ReportSurfaceContext value={props.surface}>
+		<ReportSurfaceProvider surface={props.surface}>
 			<TopicSearchBody
 				query={props.query}
 				onQuery={props.onQuery}
 				search={props.search}
 				placeholder={props.placeholder}
 			/>
-		</ReportSurfaceContext>
+		</ReportSurfaceProvider>
 	)
 }
 

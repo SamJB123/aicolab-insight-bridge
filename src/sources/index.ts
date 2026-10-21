@@ -14,7 +14,7 @@
  */
 export { sourcesData, sourcesSearchValidator } from './data.ts'
 export { SourcesPage } from './sources-page.tsx'
-export { SourcesSurfaceContext, useSourcesSurface } from './surface.tsx'
+export { SourcesSurfaceContext, SourcesSurfaceProvider, useSourcesSurface } from './surface.tsx'
 export type {
 	DerivedFacet,
 	FacetSpec,

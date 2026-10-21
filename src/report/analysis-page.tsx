@@ -21,7 +21,7 @@ import { type MetricEntriesLoader, MetricsView } from './analysis/metrics-view.t
 import { type PerspectiveFindingsLoader, PerspectiveView } from './analysis/perspective-view.tsx'
 import { type QuestionDetailLoader, QuestionsView } from './analysis/questions-view.tsx'
 import { type TagDocumentsLoader, TaggingView } from './analysis/tagging-view.tsx'
-import { type ReportSurface, ReportSurfaceContext } from './surface.tsx'
+import { type ReportSurface, ReportSurfaceProvider } from './surface.tsx'
 import './report.css'
 
 /** What the page asks its host for when the reader opens something. */
@@ -69,7 +69,7 @@ export function AnalysisPage(props: {
 	surface: ReportSurface
 }) {
 	return (
-		<ReportSurfaceContext value={props.surface}>
+		<ReportSurfaceProvider surface={props.surface}>
 			<Switch>
 				<Match when={props.page.kind === 'metadata_tagging' ? props.page.overview : null}>
 					{(overview) => (
@@ -103,6 +103,6 @@ export function AnalysisPage(props: {
 					)}
 				</Match>
 			</Switch>
-		</ReportSurfaceContext>
+		</ReportSurfaceProvider>
 	)
 }

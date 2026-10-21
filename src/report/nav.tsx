@@ -1,13 +1,15 @@
 /**
  * A report's header sections, for every Insight Bridge report: the site's own
  * list (`RunSite.sections`, else every section), each custom analysis task
- * listed by its title where `analysis` stands, and Connect last as the call
- * to action. A host adds pages of its own (High Water's Top 30, Fault lines,
- * Campaigns), each placed after a section it names. As data (`reportNav`, for
- * a host's phone menu) and as links (`ReportSections`, rendered through the
- * host's own Link, so the router marks the current one).
+ * listed by its title where `analysis` stands (several fold into one menu in
+ * the header row), and Connect last as the call to action. A host adds pages
+ * of its own (High Water's Top 30, Fault lines, Campaigns), each placed after
+ * a section it names. As data (`reportNav`, for a host's phone menu) and as
+ * links (`ReportSections`, rendered through the host's own Link, so the
+ * router marks the current one).
  */
 import type { RunWords } from '@aicolab/insight-bridge-contracts/explorer'
+import { Menu, MenuItem } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For } from 'solid-js'
 import { type ReportSection, type ReportSurface, tasksOf } from './surface.tsx'
@@ -46,16 +48,77 @@ const labelOf = (section: ReportSection, words: RunWords) =>
 		? words.nouns.entities.charAt(0).toUpperCase() + words.nouns.entities.slice(1)
 		: LABEL[section]
 
-/** The header's entries, in the site's order; `analysis` expands to one entry per task the run performed; the host's own pages follow the sections they name. */
-export function reportNav(words: RunWords, host: readonly HostNavItem[] = []): NavItem[] {
-	return words.sections.flatMap((section): NavItem[] => [
-		...(section === 'analysis'
-			? tasksOf(words).map((t) => ({ section, taskId: t.taskId, label: t.title }))
-			: [{ section, label: labelOf(section, words) }]),
+/** Several analysis tasks as one header entry: a menu of their pages. */
+export interface AnalysisMenuEntry {
+	menu: 'analysis'
+	label: string
+	tasks: { taskId: string; label: string }[]
+}
+
+export type HeaderEntry = NavItem | AnalysisMenuEntry
+
+const analysisMenu = (tasks: ReturnType<typeof tasksOf>): AnalysisMenuEntry => ({
+	menu: 'analysis',
+	label: LABEL.analysis,
+	tasks: tasks.map((t) => ({ taskId: t.taskId, label: t.title })),
+})
+
+/** The entries in the site's order, the host's own pages after the sections they name; the tasks folded into one menu entry when `fold` and there are several. */
+function entriesOf(words: RunWords, host: readonly HostNavItem[], fold: boolean): HeaderEntry[] {
+	const tasks = tasksOf(words)
+	return words.sections.flatMap((section): HeaderEntry[] => [
+		...(section !== 'analysis'
+			? [{ section, label: labelOf(section, words) }]
+			: fold && tasks.length > 1
+				? [analysisMenu(tasks)]
+				: tasks.map((t) => ({ section, taskId: t.taskId, label: t.title }))),
 		...host
 			.filter((item) => item.after === section)
 			.map((item) => ({ section: null, to: item.to, label: item.label })),
 	])
+}
+
+const isMenu = (entry: HeaderEntry): entry is AnalysisMenuEntry => 'menu' in entry
+
+/** Every entry as a link, each analysis task its own, in the site's order: the phone menu's list. */
+export const reportNav = (words: RunWords, host: readonly HostNavItem[] = []): NavItem[] =>
+	entriesOf(words, host, false).flatMap((entry) => (isMenu(entry) ? [] : [entry]))
+
+/** The header row's entries: as `reportNav`, with several analysis tasks folded into one "Analysis" menu so the row fits (settled 2026-10-21); a single task stays a link. */
+export const headerEntries = (words: RunWords, host: readonly HostNavItem[] = []) =>
+	entriesOf(words, host, true)
+
+/** Several tasks' pages behind one header entry: ui-solid's Menu, each item the host's own Link (MenuItem `linkComponent`), so choosing one navigates in the app and the router marks it. The trigger reads as current when one of its pages is. */
+function AnalysisMenu(props: { surface: ReportSurface; entry: AnalysisMenuEntry }) {
+	return (
+		<Menu
+			label={props.entry.label}
+			class="ib-report-nav-menu"
+			trigger={(wiring) => (
+				<button
+					type="button"
+					class="ib-report-nav-trigger"
+					aria-haspopup="menu"
+					popovertarget={wiring.popoverTarget}
+					style={wiring.style}
+				>
+					{props.entry.label}
+				</button>
+			)}
+		>
+			<For each={props.entry.tasks}>
+				{(task) => (
+					<MenuItem
+						linkComponent={(attributes) => (
+							<props.surface.Link section="analysis" taskId={task.taskId} {...attributes} />
+						)}
+					>
+						{task.label}
+					</MenuItem>
+				)}
+			</For>
+		</Menu>
+	)
 }
 
 /** The header's links, through the host's Link; Connect carries the call-to-action class. */
@@ -69,20 +132,25 @@ export function ReportSections(props: {
 	}
 }) {
 	return (
-		<For each={reportNav(props.surface.words, props.host?.items)}>
-			{(item) =>
-				item.section === null ? (
-					props.host?.link(item)
-				) : (
-					<props.surface.Link
-						section={item.section}
-						taskId={item.taskId}
-						class={item.section === 'connect' ? props.ctaClass : undefined}
-					>
-						{item.label}
-					</props.surface.Link>
-				)
-			}
+		<For each={headerEntries(props.surface.words, props.host?.items)}>
+			{(entry) => (
+				// read in a JSX expression (tracked), not in the callback's body
+				<>
+					{isMenu(entry) ? (
+						<AnalysisMenu surface={props.surface} entry={entry} />
+					) : entry.section === null ? (
+						props.host?.link(entry)
+					) : (
+						<props.surface.Link
+							section={entry.section}
+							taskId={entry.taskId}
+							class={entry.section === 'connect' ? props.ctaClass : undefined}
+						>
+							{entry.label}
+						</props.surface.Link>
+					)}
+				</>
+			)}
 		</For>
 	)
 }

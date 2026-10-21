@@ -15,7 +15,7 @@
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import './sources.css'
-import { SourcesSurfaceContext, useSourcesSurface } from './surface.tsx'
+import { SourcesSurfaceProvider, useSourcesSurface } from './surface.tsx'
 import type { SourceRow, SourcesResult, SourcesSurface } from './types.ts'
 
 const n = (v: number) => v.toLocaleString('en-US')
@@ -45,12 +45,20 @@ function Pager(props: { page: number; pages: number; label: string }) {
 	return (
 		<Show when={props.pages > 1}>
 			<nav class="ib-src-pager" aria-label={`${props.label} pages`}>
-				<button type="button" class="ib-src-pager-b" disabled={props.page <= 1} onClick={() => go(props.page - 1)}>
+				<button
+					type="button"
+					class="ib-src-pager-b"
+					disabled={props.page <= 1}
+					onClick={() => go(props.page - 1)}
+				>
 					← Prev
 				</button>
 				<For each={pageWindow(props.page, props.pages)}>
 					{(step) => (
-						<Show when={step.kind === 'page' ? step : undefined} fallback={<span class="ib-src-pager-gap">…</span>}>
+						<Show
+							when={step.kind === 'page' ? step : undefined}
+							fallback={<span class="ib-src-pager-gap">…</span>}
+						>
 							{(p) => (
 								<button
 									type="button"
@@ -64,7 +72,12 @@ function Pager(props: { page: number; pages: number; label: string }) {
 						</Show>
 					)}
 				</For>
-				<button type="button" class="ib-src-pager-b" disabled={props.page >= props.pages} onClick={() => go(props.page + 1)}>
+				<button
+					type="button"
+					class="ib-src-pager-b"
+					disabled={props.page >= props.pages}
+					onClick={() => go(props.page + 1)}
+				>
 					Next →
 				</button>
 			</nav>
@@ -149,7 +162,7 @@ export function SourcesPage(props: {
 	row: (row: SourceRow) => JSX.Element
 }) {
 	return (
-		<SourcesSurfaceContext value={props.surface}>
+		<SourcesSurfaceProvider surface={props.surface}>
 			<div class="ib-sources">
 				<header class="ib-src-head">
 					<p class="ib-src-eyebrow">§ The record</p>
@@ -167,7 +180,11 @@ export function SourcesPage(props: {
 
 					<Filters d={props.d} />
 					<Counts d={props.d} />
-					<Pager page={props.d.page} pages={props.d.pages} label={props.surface.vocabulary.sources} />
+					<Pager
+						page={props.d.page}
+						pages={props.d.pages}
+						label={props.surface.vocabulary.sources}
+					/>
 
 					<div class="ib-src-list">
 						<For each={props.d.groups}>
@@ -178,7 +195,11 @@ export function SourcesPage(props: {
 											<header class="ib-src-group-head">
 												<span class="ib-src-group-name">{groupLabel(props.d, value())}</span>
 												<span class="ib-src-group-n">
-													{n(group.rows.length)} {group.rows.length === 1 ? props.surface.vocabulary.source : props.surface.vocabulary.sources} on this page
+													{n(group.rows.length)}{' '}
+													{group.rows.length === 1
+														? props.surface.vocabulary.source
+														: props.surface.vocabulary.sources}{' '}
+													on this page
 												</span>
 											</header>
 										)}
@@ -186,7 +207,11 @@ export function SourcesPage(props: {
 									<div class="ib-src-rows">
 										<For each={group.rows}>
 											{(row) => (
-												<button type="button" class="ib-src-row" onClick={() => props.surface.openSource(row.entityId)}>
+												<button
+													type="button"
+													class="ib-src-row"
+													onClick={() => props.surface.openSource(row.entityId)}
+												>
 													{props.row(row)}
 												</button>
 											)}
@@ -197,9 +222,13 @@ export function SourcesPage(props: {
 						</For>
 					</div>
 
-					<Pager page={props.d.page} pages={props.d.pages} label={props.surface.vocabulary.sources} />
+					<Pager
+						page={props.d.page}
+						pages={props.d.pages}
+						label={props.surface.vocabulary.sources}
+					/>
 				</section>
 			</div>
-		</SourcesSurfaceContext>
+		</SourcesSurfaceProvider>
 	)
 }

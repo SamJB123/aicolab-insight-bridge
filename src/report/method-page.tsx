@@ -18,7 +18,13 @@ import { Eyebrow } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { InsightBridgeReading } from '../about.tsx'
-import { cap, fmt, type ReportSurface, ReportSurfaceContext, useReportSurface } from './surface.tsx'
+import {
+	cap,
+	fmt,
+	type ReportSurface,
+	ReportSurfaceProvider,
+	useReportSurface,
+} from './surface.tsx'
 import './report.css'
 
 /** What only the host can add to its method page, each a lazy slot. */
@@ -38,9 +44,9 @@ export function MethodPage(props: {
 	additions?: MethodAdditions
 }) {
 	return (
-		<ReportSurfaceContext value={props.surface}>
+		<ReportSurfaceProvider surface={props.surface}>
 			<MethodBody method={props.method} data={props.data} additions={props.additions} />
-		</ReportSurfaceContext>
+		</ReportSurfaceProvider>
 	)
 }
 
@@ -96,7 +102,7 @@ function MethodBody(props: {
 					</Show>
 					.
 				</p>
-				<Show when={props.additions?.serving}>{(serving) => serving()()}</Show>
+				<Show when={props.additions?.serving}>{(serving) => <>{serving()()}</>}</Show>
 
 				<h3 class="sec-h ib-report-h">What was done, in order</h3>
 				<p class="sec-sub">
@@ -163,9 +169,9 @@ function MethodBody(props: {
 						when={m().scale.agreement}
 						fallback="This run's scale does not measure agreement. Read the labels as what they say and not as a spectrum from support to opposition."
 					>
-						{(agreement) =>
-							`Read weakest claim first. ${agreement().supportive.join(', ')} ${agreement().supportive.length === 1 ? 'agrees' : 'agree'} with a topic's proposition; ${agreement().contesting.join(', ')} ${agreement().contesting.length === 1 ? 'pushes' : 'push'} back against it${agreement().unclear ? `; ${agreement().unclear} reads as neither` : ''}.`
-						}
+						{(agreement) => (
+							<>{`Read weakest claim first. ${agreement().supportive.join(', ')} ${agreement().supportive.length === 1 ? 'agrees' : 'agree'} with a topic's proposition; ${agreement().contesting.join(', ')} ${agreement().contesting.length === 1 ? 'pushes' : 'push'} back against it${agreement().unclear ? `; ${agreement().unclear} reads as neither` : ''}.`}</>
+						)}
 					</Show>
 				</p>
 				<div class="defs">
@@ -375,7 +381,7 @@ function RunNotes(props: {
 					{` A ${nouns().entity} with more than one document may answer a question twice; a question's page counts a ${nouns().entity} once. An unanswered question means no answer was located in the available text, never that a ${nouns().entity} has no view.`}
 				</p>
 			</Show>
-			<Show when={props.additions?.notes}>{(notes) => notes()()}</Show>
+			<Show when={props.additions?.notes}>{(notes) => <>{notes()()}</>}</Show>
 		</div>
 	)
 }

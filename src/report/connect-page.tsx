@@ -41,7 +41,7 @@ import {
 	type ToolResult,
 	toolArguments,
 } from '../mcp-tools.ts'
-import { type ReportSurface, ReportSurfaceContext, useReportSurface } from './surface.tsx'
+import { type ReportSurface, ReportSurfaceProvider, useReportSurface } from './surface.tsx'
 import './report.css'
 
 /** The OAuth clients the account service registered for this report's connector. */
@@ -87,14 +87,14 @@ export function ConnectPage(props: {
 	additions?: ConnectAdditions
 }) {
 	return (
-		<ReportSurfaceContext value={props.surface}>
+		<ReportSurfaceProvider surface={props.surface}>
 			<ConnectBody
 				endpoint={props.endpoint}
 				serverName={props.serverName}
 				access={props.access}
 				additions={props.additions}
 			/>
-		</ReportSurfaceContext>
+		</ReportSurfaceProvider>
 	)
 }
 
@@ -119,14 +119,14 @@ function ConnectBody(props: {
 	const [loadError, setLoadError] = createSignal<string | null>(null)
 	let rpcId = 0
 	let discovery: AbortController | undefined
-	const load = async () => {
+	const load = async (endpoint: string) => {
 		discovery?.abort()
 		const controller = new AbortController()
 		discovery = controller
 		setLoading(true)
 		setLoadError(null)
 		try {
-			const listed = await listTools(props.endpoint, () => ++rpcId, controller.signal)
+			const listed = await listTools(endpoint, () => ++rpcId, controller.signal)
 			if (!controller.signal.aborted) setTools(listed)
 		} catch (e) {
 			if (!controller.signal.aborted) setLoadError(message(e))
@@ -136,9 +136,9 @@ function ConnectBody(props: {
 	}
 	createEffect(
 		() => props.endpoint,
-		() => {
+		(endpoint) => {
 			setOrigin(window.location.origin)
-			void load()
+			void load(endpoint)
 			return () => discovery?.abort()
 		},
 	)
@@ -219,7 +219,7 @@ function ConnectBody(props: {
 						<code>topicClusterId</code> a topic tool returns; {nouns().entity} and{' '}
 						{nouns().document} tools return the ids their detail tools take.
 					</li>
-					<Show when={props.additions?.notes}>{(notes) => notes()()}</Show>
+					<Show when={props.additions?.notes}>{(notes) => <>{notes()()}</>}</Show>
 				</ul>
 			</section>
 
@@ -238,7 +238,7 @@ function ConnectBody(props: {
 					{(error) => (
 						<div role="alert">
 							<pre class="ib-report-mcp-pre ib-report-mcp-pre-err">{error()}</pre>
-							<Button variant="outline" onClick={() => void load()}>
+							<Button variant="outline" onClick={() => void load(props.endpoint)}>
 								Retry loading the tools
 							</Button>
 						</div>

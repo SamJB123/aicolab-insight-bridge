@@ -39,7 +39,14 @@ export function PerspectiveView(props: {
 	const s = useReportSurface()
 	const lens = () => lensWords(s)
 	const ov = () => props.overview
-	const [chosen, setChosen] = createSignal(ov().criteria[0]?.criterionId ?? null)
+	// the reader's pick, when it is one of this task's criteria; else the task's first
+	const [picked, setChosen] = createSignal<number | null>(null)
+	const chosen = () => {
+		const id = picked()
+		return ov().criteria.some((c) => c.criterionId === id)
+			? id
+			: (ov().criteria[0]?.criterionId ?? null)
+	}
 	const criterion = () => ov().criteria.find((c) => c.criterionId === chosen())
 	const textOf = (criterionId: number) =>
 		ov().criteria.find((c) => c.criterionId === criterionId)?.text ?? ''

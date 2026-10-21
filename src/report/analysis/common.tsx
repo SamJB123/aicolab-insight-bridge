@@ -6,7 +6,7 @@
 import type { LensBase, ReportTask } from '@aicolab/insight-bridge-contracts/explorer'
 import { Button, Eyebrow } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { createEffect, createSignal, For, Show, untrack } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js'
 import { fmt, type ReportSurface, useReportSurface } from '../surface.tsx'
 
 /** Each kind of custom analysis, as a reader meets it. */
@@ -70,25 +70,30 @@ export function LensStrip(props: {
 	label: (value: string | null) => string
 	noun: string
 }) {
+	// the cells, derived from the props in a memo (a tracking scope), drawn by the For
+	const cells = createMemo(() =>
+		props.lens.map((l, i) => {
+			const base = l[props.of]
+			const count = props.counts[i] ?? 0
+			const share = base ? count / base : 0
+			const lift = props.overall ? share / props.overall : 0
+			return {
+				share: String(Math.round(share * 100)),
+				lift: String(Math.max(0, Math.min(2, lift))),
+				title: `${props.label(l.value)}: ${count} of ${base} (${Math.round(share * 100)}%; across all: ${Math.round(props.overall * 100)}%)`,
+			}
+		}),
+	)
 	return (
 		<span class="ib-report-an-strip" role="img" aria-label={`By ${props.noun}`}>
-			<For each={props.lens}>
-				{(l, i) => {
-					const base = l[props.of]
-					const count = props.counts[i()] ?? 0
-					const share = base ? count / base : 0
-					const lift = props.overall ? share / props.overall : 0
-					return (
-						<span
-							class="ib-report-an-strip-cell"
-							style={{
-								'--share': String(Math.round(share * 100)),
-								'--lift': String(Math.max(0, Math.min(2, lift))),
-							}}
-							title={`${props.label(l.value)}: ${count} of ${base} (${Math.round(share * 100)}%; across all: ${Math.round(props.overall * 100)}%)`}
-						/>
-					)
-				}}
+			<For each={cells()}>
+				{(cell) => (
+					<span
+						class="ib-report-an-strip-cell"
+						style={{ '--share': cell.share, '--lift': cell.lift }}
+						title={cell.title}
+					/>
+				)}
 			</For>
 		</span>
 	)

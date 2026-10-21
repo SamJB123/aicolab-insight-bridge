@@ -21,7 +21,7 @@ import {
 	cap,
 	fmt,
 	type ReportSurface,
-	ReportSurfaceContext,
+	ReportSurfaceProvider,
 	tasksOf,
 	useReportSurface,
 } from './surface.tsx'
@@ -45,13 +45,13 @@ export function OverviewPage(props: {
 	additions?: OverviewAdditions
 }) {
 	return (
-		<ReportSurfaceContext value={props.surface}>
+		<ReportSurfaceProvider surface={props.surface}>
 			<OverviewBody
 				overview={props.overview}
 				landscape={props.landscape}
 				additions={props.additions}
 			/>
-		</ReportSurfaceContext>
+		</ReportSurfaceProvider>
 	)
 }
 
@@ -141,7 +141,7 @@ function OverviewBody(props: {
 						</Show>
 					</p>
 				</div>
-				<Show when={props.additions?.hero}>{(hero) => hero()()}</Show>
+				<Show when={props.additions?.hero}>{(hero) => <>{hero()()}</>}</Show>
 			</header>
 
 			<section class="sec" style={{ 'border-top': 'none' }}>

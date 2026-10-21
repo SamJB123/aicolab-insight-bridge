@@ -167,7 +167,10 @@
 	.mast-nav::-webkit-scrollbar {
 		display: none;
 	}
-	.mast-nav a {
+	/* The row's own entries: its links and a header menu's trigger (a menu's
+	   items are anchors inside the nav too, and keep the menu's look). */
+	.mast-nav > a,
+	.mast-nav > .ib-report-nav-trigger {
 		font-family: var(--font-data);
 		font-size: 12px;
 		letter-spacing: 0.02em;
@@ -179,12 +182,30 @@
 		text-decoration: none;
 		border-bottom: 2px solid transparent;
 	}
-	.mast-nav a:hover {
+	.mast-nav > .ib-report-nav-trigger {
+		appearance: none;
+		background: none;
+		border-top: none;
+		border-inline: none;
+		cursor: pointer;
+	}
+	.mast-nav > .ib-report-nav-trigger::after {
+		content: " ▾";
+	}
+	.mast-nav > a:hover,
+	.mast-nav > .ib-report-nav-trigger:hover {
 		color: var(--color-base-content);
 	}
-	.mast-nav a.active {
+	/* current: the link itself, or the trigger whose menu holds the current page */
+	.mast-nav > a.active,
+	.mast-nav > .ib-report-nav-trigger:has(+ .ib-report-nav-menu a.active),
+	.mast-nav > .ib-report-nav-trigger:has(+ .ib-report-nav-menu:popover-open) {
 		color: var(--color-primary);
 		border-bottom-color: var(--color-primary);
+	}
+	.ib-report-nav-menu .ui-menu-item.active {
+		color: var(--color-primary);
+		font-weight: 600;
 	}
 	.mast-nav a.mast-cta {
 		color: var(--color-primary);
