@@ -182,13 +182,19 @@ describe.skipIf(!file || !existsSync(file))('the reader’s scope', () => {
 		// the analysis is untouched
 		expect(served?.keyPointItems).toEqual(open?.keyPointItems)
 		expect(served?.withheld).toBeUndefined()
-		// no search returns its passages: a phrase from its own text, then its passage ids
-		const passage = sqlite
-			.prepare(
-				'SELECT id, text FROM published_chunk WHERE document_id = ? AND length(text) > 60 LIMIT 1',
-			)
-			.get(doc.documentId)
-		const phrase = String(passage?.text ?? '').slice(10, 50)
+		// no search returns its passages: a phrase only its own text holds (a
+		// submission's boilerplate is shared by many), then its passage ids
+		const candidates = sqlite
+			.prepare('SELECT id, text FROM published_chunk WHERE document_id = ? AND length(text) > 60')
+			.all(doc.documentId)
+		const onlyHere = sqlite.prepare(
+			"SELECT COUNT(DISTINCT document_id) AS n FROM published_chunk WHERE text LIKE '%' || ? || '%'",
+		)
+		const passage = candidates.find(
+			(c) => Number(onlyHere.get(String(c.text).slice(10, 50))?.n) === 1,
+		)
+		if (!passage) throw new Error('the chosen source has no passage of its own words')
+		const phrase = String(passage.text).slice(10, 50)
 		expect((await x.searchText(db, phrase, 50)).some((h) => h.documentId === doc.documentId)).toBe(
 			true,
 		)

@@ -440,9 +440,8 @@ export function InsightBridgeMcp(props: { connectLink?: JSX.Element }) {
 				The tools carry the reading rules in their own descriptions, so an agent is told, at the
 				point of use, that counts are not prevalence and that positions are relative to a framing.
 			</p>
-			<Show when={props.connectLink}>
-				<p class="ib-note">{props.connectLink}</p>
-			</Show>
+			{/* the callback places the element `when` read: reading the prop again would build a second link */}
+			<Show when={props.connectLink}>{(link) => <p class="ib-note">{link()}</p>}</Show>
 		</section>
 	)
 }

@@ -69,8 +69,10 @@ export async function loadFacetCache(
 	subjectType: 'entity' | 'document' | 'chunk',
 	/** Only these facets (a per-request rule that reads one facet need not read them all). */
 	only?: readonly string[],
+	/** Only these subjects (a page of rows need not read the whole record). */
+	subjects?: readonly string[],
 ): Promise<Map<string, EffectiveFacets>> {
-	const withConcepts = await loadConceptFacetCache(db, subjectType, only)
+	const withConcepts = await loadConceptFacetCache(db, subjectType, only, subjects)
 	const out = new Map<string, EffectiveFacets>()
 	for (const [subject, facets] of withConcepts)
 		out.set(
@@ -87,6 +89,7 @@ export async function loadConceptFacetCache(
 	db: CorpusDb,
 	subjectType: 'entity' | 'document' | 'chunk',
 	only?: readonly string[],
+	subjects?: readonly string[],
 ): Promise<Map<string, EffectiveConceptFacets>> {
 	const derived =
 		subjectType === 'chunk'
@@ -94,26 +97,41 @@ export async function loadConceptFacetCache(
 			: (await derivedFacets(db, subjectType)).filter((d) => !only || only.includes(d.name))
 	// a derived facet asked for by name is read from the facet it derives from
 	const read = only ? [...new Set([...only, ...derived.map((d) => d.rule.from_facet)])] : null
-	const rows = await db
-		.select({
-			subjectId: facetAssignment.subjectId,
-			facet: facetAssignment.facet,
-			value: facetAssignment.facetValue,
-			conceptId: facetAssignment.conceptId,
-			provenance: facetAssignment.provenance,
-			confidence: facetAssignment.confidence,
-		})
-		.from(facetAssignment)
-		.where(
-			and(
-				eq(facetAssignment.subjectType, subjectType),
-				read ? inArray(facetAssignment.facet, read) : undefined,
-			),
-		)
-		.orderBy(
-			desc(sql`coalesce(${facetAssignment.confidence}, 0)`),
-			asc(facetAssignment.facetAssignmentId),
-		)
+	const select = (batch: readonly string[] | null) =>
+		db
+			.select({
+				subjectId: facetAssignment.subjectId,
+				facet: facetAssignment.facet,
+				value: facetAssignment.facetValue,
+				conceptId: facetAssignment.conceptId,
+				provenance: facetAssignment.provenance,
+				confidence: facetAssignment.confidence,
+			})
+			.from(facetAssignment)
+			.where(
+				and(
+					eq(facetAssignment.subjectType, subjectType),
+					read ? inArray(facetAssignment.facet, read) : undefined,
+					batch ? inArray(facetAssignment.subjectId, [...batch]) : undefined,
+				),
+			)
+			.orderBy(
+				desc(sql`coalesce(${facetAssignment.confidence}, 0)`),
+				asc(facetAssignment.facetAssignmentId),
+			)
+	// D1 binds at most 100 parameters: a subject list is read in batches that
+	// leave room for the facet list. Each subject's rows are within one batch,
+	// so the order the resolution below relies on holds per subject.
+	const SUBJECT_BATCH = Math.max(1, 90 - (read?.length ?? 0))
+	const rows = subjects
+		? (
+				await Promise.all(
+					Array.from({ length: Math.ceil(subjects.length / SUBJECT_BATCH) }, (_, i) =>
+						select(subjects.slice(i * SUBJECT_BATCH, (i + 1) * SUBJECT_BATCH)),
+					),
+				)
+			).flat()
+		: await select(null)
 	const best = new Map<
 		string,
 		Map<string, { rank: number; values: { value: string; conceptId: number | null }[] }>
@@ -128,6 +146,8 @@ export async function loadConceptFacetCache(
 		else if (rank === current.rank) current.values.push(entry)
 	}
 	const out = new Map<string, EffectiveConceptFacets>()
+	// a named subject with no facet of its own still takes its derived facets' unknown label
+	for (const subject of subjects ?? []) out.set(subject, {})
 	for (const [subject, facets] of best)
 		out.set(subject, Object.fromEntries([...facets].map(([facet, { values }]) => [facet, values])))
 	// a facet the profile derives (era from year) is resolved here for every

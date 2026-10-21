@@ -15,8 +15,9 @@ import {
 	facetAssignment,
 	facet as facetTable,
 } from '@aicolab/insight-bridge-contracts/schema'
-import { and, eq, inArray, like, or } from 'drizzle-orm'
+import { inArray, like, or } from 'drizzle-orm'
 import { likePattern } from '../explorer/data.ts'
+import { type EffectiveFacets, loadFacetCache } from '../explorer/facets.ts'
 import { isKept } from '../explorer/scope.ts'
 import type {
 	SourceDocument,
@@ -94,35 +95,42 @@ export async function sourcesData(
 	const grandTotal = record.length
 
 	/* ── the subjects of one facet, always as ENTITY ids ────────────────────
-	 * A document facet is filed against the document, so it is projected up to
-	 * the contributor who lodged it — every count on these pages counts
-	 * contributors. An entity facet passes straight through. */
+	 * Every facet resolves as every reader resolves it (explorer/facets: the
+	 * best provenance, and the facets the profile derives, such as an era
+	 * from a year). A document facet is filed against the document, so it is
+	 * projected up to the contributor who lodged it — every count on these
+	 * pages counts contributors. An entity facet passes straight through. */
 	const derived = new Map((config.derived ?? []).map((d) => [d.key, d.holders]))
-	const subjectsOf = async (
-		key: string,
-		value?: string,
-	): Promise<{ id: string; value: string }[]> => {
+	const keys = [
+		...new Set([
+			...filterKeys,
+			...(config.sort ?? []).map((s) => s.facet),
+			...(config.groupBy ? [config.groupBy] : []),
+		]),
+	].filter((key) => !derived.has(key))
+	const [entityValues, documentValues, owners] = keys.length
+		? await Promise.all([
+				loadFacetCache(db, 'entity', keys),
+				loadFacetCache(db, 'document', keys),
+				db.select({ id: document.documentId, entityUuid: document.entityUuid }).from(document),
+			])
+		: [new Map<string, EffectiveFacets>(), new Map<string, EffectiveFacets>(), []]
+	const ownerOf = new Map(owners.map((d) => [d.id, d.entityUuid]))
+	const subjectsOf = (key: string, value?: string): { id: string; value: string }[] => {
 		const own = derived.get(key)
 		if (own)
 			return own
 				.filter((h) => value === undefined || h.value === value)
 				.map((h) => ({ id: h.entityUuid, value: h.value }))
-		const where = value
-			? and(eq(facetAssignment.facet, key), eq(facetAssignment.facetValue, value))
-			: eq(facetAssignment.facet, key)
-		if (granularityOf.get(key) === 'document') {
-			const rows = await db
-				.select({ id: document.entityUuid, value: facetAssignment.facetValue })
-				.from(facetAssignment)
-				.innerJoin(document, eq(document.documentId, facetAssignment.subjectId))
-				.where(and(eq(facetAssignment.subjectType, 'document'), where))
-			return rows
-		}
-		const rows = await db
-			.select({ id: facetAssignment.subjectId, value: facetAssignment.facetValue })
-			.from(facetAssignment)
-			.where(and(eq(facetAssignment.subjectType, 'entity'), where))
-		return rows
+		const byDocument = granularityOf.get(key) === 'document'
+		return [...(byDocument ? documentValues : entityValues)].flatMap(([subject, facets]) => {
+			const id = byDocument ? ownerOf.get(subject) : subject
+			return id
+				? (facets[key] ?? [])
+						.filter((v) => value === undefined || v === value)
+						.map((v) => ({ id, value: v }))
+				: []
+		})
 	}
 
 	/* ── 1. the matching set ───────────────────────────────────────────────── */
@@ -131,7 +139,7 @@ export async function sourcesData(
 	for (const key of filterKeys) {
 		const value = chosen(search, key)
 		if (!value) continue
-		const held = new Set((await subjectsOf(key, value)).map((r) => r.id))
+		const held = new Set(subjectsOf(key, value).map((r) => r.id))
 		matching = new Set([...matching].filter((id) => held.has(id)))
 	}
 
@@ -161,6 +169,10 @@ export async function sourcesData(
 				.where(inArray(document.documentId, batch))
 			for (const o of owners) hit.add(o.id)
 		}
+		// … and any value a reader is shown that the run does not store (a derived facet's)
+		const needle = q.toLowerCase()
+		for (const key of keys)
+			for (const r of subjectsOf(key)) if (r.value.toLowerCase().includes(needle)) hit.add(r.id)
 		matching = new Set([...matching].filter((id) => hit.has(id)))
 	}
 
@@ -169,7 +181,7 @@ export async function sourcesData(
 	const sortValues = new Map<string, Map<string, string>>()
 	for (const s of sortKeys) {
 		const first = new Map<string, string>()
-		for (const r of await subjectsOf(s.facet)) if (!first.has(r.id)) first.set(r.id, r.value)
+		for (const r of subjectsOf(s.facet)) if (!first.has(r.id)) first.set(r.id, r.value)
 		sortValues.set(s.facet, first)
 	}
 	const ordinalRank = new Map<string, Map<string, number>>()
@@ -204,65 +216,41 @@ export async function sourcesData(
 
 	/* ── 3. the page's facets, entity and document ─────────────────────────── */
 	// Every facet of the page's 40 rows, not a declared subset: the row chrome
-	// draws from whatever the run recorded, and at this size that is one
-	// indexed read either way.
-	const entityFacets = new Map<string, Record<string, string[]>>()
+	// draws from whatever the run recorded, resolved as every reader resolves it.
+	let entityFacets = new Map<string, EffectiveFacets>()
 	const docsOf = new Map<string, SourceDocument[]>()
-	const bagUp = (
-		into: Map<string, Record<string, string[]>>,
-		id: string,
-		key: string,
-		value: string,
-	) => {
-		const bag = into.get(id) ?? {}
-		bag[key] = [...(bag[key] ?? []), value]
-		into.set(id, bag)
-	}
 	if (ids.length) {
-		for (const batch of chunked(ids)) {
-			const rows = await db
-				.select({
-					id: facetAssignment.subjectId,
-					facet: facetAssignment.facet,
-					value: facetAssignment.facetValue,
-				})
-				.from(facetAssignment)
-				.where(
-					and(eq(facetAssignment.subjectType, 'entity'), inArray(facetAssignment.subjectId, batch)),
-				)
-			for (const r of rows) bagUp(entityFacets, r.id, r.facet, r.value)
-		}
+		entityFacets = await loadFacetCache(db, 'entity', undefined, ids)
 		// the host's derived facets ride on the rows they describe
 		const onPage = new Set(ids)
 		for (const [key, holders] of derived)
 			for (const h of holders)
-				if (onPage.has(h.entityUuid)) bagUp(entityFacets, h.entityUuid, key, h.value)
+				if (onPage.has(h.entityUuid)) {
+					const bag = entityFacets.get(h.entityUuid) ?? {}
+					bag[key] = [...(bag[key] ?? []), h.value]
+					entityFacets.set(h.entityUuid, bag)
+				}
 
-		const docRows: { documentId: string; entityUuid: string }[] = []
-		for (const batch of chunked(ids)) {
-			const rows = await db
-				.select({ documentId: document.documentId, entityUuid: document.entityUuid })
-				.from(document)
-				.where(inArray(document.entityUuid, batch))
-			docRows.push(...rows)
-		}
-		const docFacets = new Map<string, Record<string, string[]>>()
-		for (const batch of chunked(docRows.map((d) => d.documentId))) {
-			const rows = await db
-				.select({
-					id: facetAssignment.subjectId,
-					facet: facetAssignment.facet,
-					value: facetAssignment.facetValue,
-				})
-				.from(facetAssignment)
-				.where(
-					and(
-						eq(facetAssignment.subjectType, 'document'),
-						inArray(facetAssignment.subjectId, batch),
-					),
-				)
-			for (const r of rows) bagUp(docFacets, r.id, r.facet, r.value)
-		}
+		const docRows = owners.length
+			? owners
+					.filter((d) => onPage.has(d.entityUuid))
+					.map((d) => ({ documentId: d.id, entityUuid: d.entityUuid }))
+			: (
+					await Promise.all(
+						chunked(ids).map((batch) =>
+							db
+								.select({ documentId: document.documentId, entityUuid: document.entityUuid })
+								.from(document)
+								.where(inArray(document.entityUuid, batch)),
+						),
+					)
+				).flat()
+		const docFacets = await loadFacetCache(
+			db,
+			'document',
+			undefined,
+			docRows.map((d) => d.documentId),
+		)
 		for (const d of docRows) {
 			docsOf.set(d.entityUuid, [
 				...(docsOf.get(d.entityUuid) ?? []),
@@ -282,7 +270,7 @@ export async function sourcesData(
 	const facets: SourceFacet[] = []
 	for (const spec of config.filters) {
 		const counts = new Map<string, Set<string>>()
-		for (const r of await subjectsOf(spec.key)) {
+		for (const r of subjectsOf(spec.key)) {
 			if (!inRecord.has(r.id)) continue
 			const held = counts.get(r.value) ?? new Set<string>()
 			held.add(r.id)
