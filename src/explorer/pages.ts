@@ -37,7 +37,7 @@ import { questionClause } from '../world/schema.ts'
 import { hierarchy, STRONG } from './data.ts'
 import { type EffectiveFacets, loadFacetCache } from './facets.ts'
 import { groupNodeId, sourceNodeId, topicNodeId } from './readings.ts'
-import { andKept, keepSources, type ReadScope, textOf, wordsOf } from './scope.ts'
+import { andKept, keepSources, type ReadScope, servedSources, textOf, wordsOf } from './scope.ts'
 
 const n = (v: unknown) => Number(v ?? 0)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
@@ -656,6 +656,8 @@ export async function topicSearch(
 						and(
 							inArray(s.currentChunkMembership.chunkId, batch),
 							keepSources(s.publishedDocument.entityUuid, scope),
+							// a source whose passages are not served is never a search's match
+							servedSources(s.publishedDocument.entityUuid, scope),
 						),
 					),
 			),

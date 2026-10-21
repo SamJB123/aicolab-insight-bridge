@@ -165,4 +165,54 @@ describe.skipIf(!file || !existsSync(file))('the reader’s scope', () => {
 			for (const p of q.positions.filter((p) => p.documentId === answer.documentId))
 				expect(p.position).toBe(NOTICE)
 	})
+
+	it('an unserved source’s passages are never served; its analysis reads as written', async () => {
+		const scope: ReadScope = {
+			unserved: { entities: new Set([source.entityUuid]), notice: NOTICE },
+		}
+		const [doc] = (await x.entityByKey(db, source.entityId))?.documentItems ?? []
+		if (!doc) throw new Error('the chosen source has no document')
+		const [open, served] = [
+			await x.documentById(db, doc.documentId),
+			await x.documentById(db, doc.documentId, scope),
+		]
+		expect(open?.text.length).toBeGreaterThan(0)
+		expect(served?.text).toBe('')
+		expect(served?.notice).toBe(NOTICE)
+		// the analysis is untouched
+		expect(served?.keyPointItems).toEqual(open?.keyPointItems)
+		expect(served?.withheld).toBeUndefined()
+		// no search returns its passages: a phrase from its own text, then its passage ids
+		const passage = sqlite
+			.prepare(
+				'SELECT id, text FROM published_chunk WHERE document_id = ? AND length(text) > 60 LIMIT 1',
+			)
+			.get(doc.documentId)
+		const phrase = String(passage?.text ?? '').slice(10, 50)
+		expect((await x.searchText(db, phrase, 50)).some((h) => h.documentId === doc.documentId)).toBe(
+			true,
+		)
+		expect(
+			(await x.searchText(db, phrase, 50, scope)).some((h) => h.documentId === doc.documentId),
+		).toBe(false)
+		expect(await x.hydrateChunks(db, [String(passage?.id)], scope)).toEqual([])
+	})
+
+	it('a document serves its verified quotes only', async () => {
+		const [doc] = (await x.entityByKey(db, source.entityId))?.documentItems ?? []
+		if (!doc) throw new Error('the chosen source has no document')
+		const read = await x.documentById(db, doc.documentId)
+		const served = (read?.keyPointItems ?? []).flatMap((k) => k.quotes)
+		const verified = sqlite
+			.prepare(
+				`SELECT COUNT(*) AS n FROM published_key_quote q
+				 JOIN published_key_point k ON k.key_point_id = q.key_point_id
+				 JOIN published_key_quote_verification v ON v.key_quote_id = q.key_quote_id
+				 WHERE k.document_id = ? AND v.verified = 1`,
+			)
+			.get(doc.documentId)
+		expect(served.length).toBe(Number(verified?.n))
+		expect(served.every((q) => q.verified)).toBe(true)
+		expect(read?.quotes).toBe(Number(verified?.n))
+	})
 })

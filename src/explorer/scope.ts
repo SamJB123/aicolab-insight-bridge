@@ -13,6 +13,11 @@
  *             instead, marked `withheld` (High Water's ICIP gate, closed).
  *   annotate  sources whose words are shown with `notice` beside them (the
  *             gate open, with its cultural notice).
+ *   unserved  sources whose PASSAGES are not served (Legal AI's restricted
+ *             distribution: paywalled or login-only works): a document's
+ *             text reads empty with `notice` on the document, and no text or
+ *             semantic search returns their passages; every analysis, stance,
+ *             key point and quote of theirs reads as written.
  *
  * The rule that decides who is in which set is the host's; the record is
  * never altered.
@@ -24,6 +29,32 @@ export interface ReadScope {
 	exclude?: ReadonlySet<string>
 	withhold?: { entities: ReadonlySet<string>; notice: string }
 	annotate?: { entities: ReadonlySet<string>; notice: string }
+	unserved?: { entities: ReadonlySet<string>; notice: string }
+}
+
+/** Whether a source's passages are served in this scope. */
+export const passagesServed = (
+	scope: ReadScope | undefined,
+	entityUuid: string | null | undefined,
+) => !entityUuid || !scope?.unserved?.entities.has(entityUuid)
+
+/** The sources whose passages are not served, as one JSON parameter, or null when there are none. */
+const unservedJson = (scope: ReadScope | undefined) =>
+	scope?.unserved?.entities.size ? JSON.stringify([...scope.unserved.entities]) : null
+
+/** A predicate keeping `column`'s source's passages unless they are not served; undefined (dropped by `and`) when all are. */
+export function servedSources(
+	column: AnyColumn | SQL,
+	scope: ReadScope | undefined,
+): SQL | undefined {
+	const json = unservedJson(scope)
+	return json === null ? undefined : sql`${column} NOT IN (SELECT value FROM json_each(${json}))`
+}
+
+/** The same for a raw query: ` AND column NOT IN …`, or nothing. */
+export function andServed(column: SQL, scope: ReadScope | undefined): SQL {
+	const json = unservedJson(scope)
+	return json === null ? sql`` : sql` AND ${column} NOT IN (SELECT value FROM json_each(${json}))`
 }
 
 /** The excluded sources as one SQL parameter: a JSON array a query reads with json_each (one binding, whatever the count). */

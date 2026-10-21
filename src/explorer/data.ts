@@ -60,7 +60,17 @@ import { z } from 'zod'
 import { treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
-import { andKept, isKept, keepSources, type ReadScope, textOf, wordsOf } from './scope.ts'
+import {
+	andKept,
+	andServed,
+	isKept,
+	keepSources,
+	passagesServed,
+	type ReadScope,
+	servedSources,
+	textOf,
+	wordsOf,
+} from './scope.ts'
 
 /**
  * The grades every count of the record counts: a source or a passage strongly
@@ -915,6 +925,7 @@ export async function documents(db: CorpusDb, scope?: ReadScope): Promise<Docume
 				.groupBy(s.publishedKeyPoint.documentId)
 		).map((r) => [r.id, n(r.n)]),
 	)
+	// the quotes a reader is served: the verified ones (an unverified quote is never served)
 	const quotes = new Map(
 		(
 			await db
@@ -924,6 +935,11 @@ export async function documents(db: CorpusDb, scope?: ReadScope): Promise<Docume
 					s.publishedKeyPoint,
 					eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId),
 				)
+				.innerJoin(
+					s.publishedKeyQuoteVerification,
+					eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
+				)
+				.where(eq(s.publishedKeyQuoteVerification.verified, 1))
 				.groupBy(s.publishedKeyPoint.documentId)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -960,23 +976,28 @@ export async function documentById(
 		.from(s.publishedKeyPoint)
 		.where(eq(s.publishedKeyPoint.documentId, documentId))
 		.orderBy(asc(s.publishedKeyPoint.keyPointId))
-	// through the document's own predicate, never an id list (see topicById)
+	// through the document's own predicate, never an id list (see topicById); verified
+	// quotes only: an unverified quote is never served (settled 2026-10-21, every report)
 	const kpQuotes = await db
 		.select({
 			keyPointId: s.publishedKeyQuote.keyPointId,
 			quote: s.publishedKeyQuote.quote,
-			verified: s.publishedKeyQuoteVerification.verified,
 		})
 		.from(s.publishedKeyQuote)
 		.innerJoin(
 			s.publishedKeyPoint,
 			eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId),
 		)
-		.leftJoin(
+		.innerJoin(
 			s.publishedKeyQuoteVerification,
 			eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
 		)
-		.where(eq(s.publishedKeyPoint.documentId, documentId))
+		.where(
+			and(
+				eq(s.publishedKeyPoint.documentId, documentId),
+				eq(s.publishedKeyQuoteVerification.verified, 1),
+			),
+		)
 		.orderBy(asc(s.publishedKeyQuote.keyQuoteId))
 	// v7: the document's model-assigned concepts (the former document_tag rows), direct assignments only
 	const tags = (
@@ -1119,9 +1140,13 @@ export async function documentById(
 	)
 		.map((r) => r.text)
 		.join(' ')
+	// a source whose passages are not served: the text reads empty and the document says why
+	const served = passagesServed(scope, summary.entityUuid)
+	const unservedNotice = served || words.withheld ? null : (scope?.unserved?.notice ?? null)
 	return {
 		...summary,
 		...words,
+		...(unservedNotice ? { notice: [words.notice, unservedNotice].filter(Boolean).join(' ') } : {}),
 		keyPointItems: words.withheld
 			? []
 			: kpRows.map((k) => ({
@@ -1129,7 +1154,7 @@ export async function documentById(
 					details: k.details,
 					quotes: kpQuotes
 						.filter((q) => q.keyPointId === k.keyPointId)
-						.map((q) => ({ text: q.quote, verified: q.verified !== 0 })),
+						.map((q) => ({ text: q.quote, verified: true })),
 				})),
 		tags: tags.map((t) => ({ ...t, context: own(t.context), isPrimary: t.isPrimary === 1 })),
 		questionResponses: qr.map((r) => ({
@@ -1172,7 +1197,7 @@ export async function documentById(
 				.map((x) => ({ northStar: x.northStar, how: own(x.how) })),
 		})),
 		topics: topicRows.map((t) => ({ ...t, chunks: n(t.chunks) })),
-		text: own(text),
+		text: served ? own(text) : '',
 	}
 }
 
@@ -1827,8 +1852,8 @@ export async function searchText(
 	const rows = await db.all<TextHit & { entityUuid: string }>(sql`
 		SELECT c.id AS chunkId, d.document_id AS documentId, d.document_title AS title, d.file_name AS fileName, e.entity_name AS entityName, e.id AS entityUuid, c.text
 		FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
-		WHERE c.text LIKE ${pattern}${andKept(sql`e.id`, scope)} LIMIT ${limit}`)
-	// a withheld source's hit stays, its passage read as the notice
+		WHERE c.text LIKE ${pattern}${andKept(sql`e.id`, scope)}${andServed(sql`e.id`, scope)} LIMIT ${limit}`)
+	// a withheld source's hit stays, its passage read as the notice; an unserved source's never comes
 	return rows.map(({ entityUuid, ...hit }) => ({
 		...hit,
 		text: textOf(scope, entityUuid, hit.text),
@@ -1860,7 +1885,13 @@ export async function hydrateChunks(
 				eq(s.publishedChunk.documentId, s.publishedDocument.documentId),
 			)
 			.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
-			.where(and(inArray(s.publishedChunk.id, group), keepSources(s.entity.id, scope)))
+			.where(
+				and(
+					inArray(s.publishedChunk.id, group),
+					keepSources(s.entity.id, scope),
+					servedSources(s.entity.id, scope),
+				),
+			)
 		const rows = found.map(({ entityUuid, ...hit }) => ({
 			...hit,
 			text: textOf(scope, entityUuid, hit.text),
