@@ -32,8 +32,9 @@ export interface ExplorerServerOptions {
 	instructions?: string
 }
 
-const json = (data: unknown) => ({
-	content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+/** A tool's answer as MCP text content: the data as indented JSON. Every report's own tools answer with it too. */
+export const toolText = (data: unknown): { content: { type: 'text'; text: string }[] } => ({
+	content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
 })
 const fmt = (n: number) => n.toLocaleString('en-US')
 
@@ -75,7 +76,7 @@ export function registerExplorerTools(
 					search && options.nearest && typeof query === 'string'
 						? [...(await options.nearest(query, search.topK(args)))]
 						: undefined
-				return json(await options.host.explorerTool(name, args, nearest))
+				return toolText(await options.host.explorerTool(name, args, nearest))
 			},
 		)
 	}
