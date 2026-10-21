@@ -7,9 +7,15 @@
  * contributors and a facet sort is an ordinal lookup rather than a join per
  * sort key. Batched clear of D1's ~100 bound-parameter cap.
  */
+
+import {
+	type CorpusDb,
+	document,
+	entity,
+	facetAssignment,
+	facet as facetTable,
+} from '@aicolab/insight-bridge-contracts/schema'
 import { and, eq, inArray, like, or } from 'drizzle-orm'
-import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
-import { document, entity, facetAssignment, facet as facetTable } from '@aicolab/insight-bridge-contracts/schema'
 import type {
 	SourceDocument,
 	SourceFacet,
@@ -21,10 +27,6 @@ import type {
 	SourcesSearch,
 } from './types.ts'
 
-/** Either SQLite drizzle speaks: D1 (`'async'`) or a Durable Object's own
- *  storage (`'sync'`). See the note on `BriefDb`. */
-export type SourcesDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
-
 const CHUNK = 80
 const DEFAULT_PAGE_SIZE = 40
 
@@ -35,7 +37,7 @@ const DEFAULT_PAGE_SIZE = 40
  */
 const needle = (q: string) => `%${q.trim().replace(/[%_]/g, '').slice(0, 46)}%`
 
-const chunked = <T,>(xs: T[], size = CHUNK): T[][] => {
+const chunked = <T>(xs: T[], size = CHUNK): T[][] => {
 	const out: T[][] = []
 	for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size))
 	return out
@@ -48,7 +50,7 @@ const chosen = (search: SourcesSearch, key: string): string | undefined => {
 }
 
 export async function sourcesData(
-	db: SourcesDb,
+	db: CorpusDb,
 	config: SourcesConfig,
 	search: SourcesSearch = {},
 ): Promise<SourcesResult> {
@@ -56,7 +58,13 @@ export async function sourcesData(
 	const filterKeys = config.filters.map((f) => f.key)
 
 	const [facetMeta, held, everyone] = await Promise.all([
-		db.select({ facet: facetTable.facet, noun: facetTable.noun, granularity: facetTable.granularity }).from(facetTable),
+		db
+			.select({
+				facet: facetTable.facet,
+				noun: facetTable.noun,
+				granularity: facetTable.granularity,
+			})
+			.from(facetTable),
 		db
 			.selectDistinct({ facet: facetAssignment.facet, subjectType: facetAssignment.subjectType })
 			.from(facetAssignment),
@@ -77,7 +85,8 @@ export async function sourcesData(
 	// exactly one), and it has no bearing on what a record can filter by.
 	const granularityOf = new Map(facetMeta.map((f) => [f.facet, f.granularity]))
 	for (const h of held) {
-		if (h.subjectType === 'entity' || h.subjectType === 'document') granularityOf.set(h.facet, h.subjectType)
+		if (h.subjectType === 'entity' || h.subjectType === 'document')
+			granularityOf.set(h.facet, h.subjectType)
 	}
 
 	const excluded = config.excludeEntities
@@ -89,8 +98,13 @@ export async function sourcesData(
 	 * A document facet is filed against the document, so it is projected up to
 	 * the contributor who lodged it — every count on these pages counts
 	 * contributors. An entity facet passes straight through. */
-	const subjectsOf = async (key: string, value?: string): Promise<{ id: string; value: string }[]> => {
-		const where = value ? and(eq(facetAssignment.facet, key), eq(facetAssignment.facetValue, value)) : eq(facetAssignment.facet, key)
+	const subjectsOf = async (
+		key: string,
+		value?: string,
+	): Promise<{ id: string; value: string }[]> => {
+		const where = value
+			? and(eq(facetAssignment.facet, key), eq(facetAssignment.facetValue, value))
+			: eq(facetAssignment.facet, key)
 		if (granularityOf.get(key) === 'document') {
 			const rows = await db
 				.select({ id: document.entityUuid, value: facetAssignment.facetValue })
@@ -123,7 +137,10 @@ export async function sourcesData(
 	if (q) {
 		const pattern = needle(q)
 		const [byName, byFacet] = await Promise.all([
-			db.select({ id: entity.id }).from(entity).where(or(like(entity.entityName, pattern), like(entity.entityId, pattern))),
+			db
+				.select({ id: entity.id })
+				.from(entity)
+				.where(or(like(entity.entityName, pattern), like(entity.entityId, pattern))),
 			db
 				.select({ id: facetAssignment.subjectId, subjectType: facetAssignment.subjectType })
 				.from(facetAssignment)
@@ -133,7 +150,10 @@ export async function sourcesData(
 		for (const r of byFacet) if (r.subjectType === 'entity') hit.add(r.id)
 		const docHits = byFacet.filter((r) => r.subjectType === 'document').map((r) => r.id)
 		for (const batch of chunked(docHits)) {
-			const owners = await db.select({ id: document.entityUuid }).from(document).where(inArray(document.documentId, batch))
+			const owners = await db
+				.select({ id: document.entityUuid })
+				.from(document)
+				.where(inArray(document.documentId, batch))
 			for (const o of owners) hit.add(o.id)
 		}
 		matching = new Set([...matching].filter((id) => hit.has(id)))
@@ -162,7 +182,10 @@ export async function sourcesData(
 		for (const s of sortKeys) {
 			const va = rankOf(s.facet, sortValues.get(s.facet)?.get(a.id))
 			const vb = rankOf(s.facet, sortValues.get(s.facet)?.get(b.id))
-			const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb))
+			const cmp =
+				typeof va === 'number' && typeof vb === 'number'
+					? va - vb
+					: String(va).localeCompare(String(vb))
 			if (cmp !== 0) return s.desc ? -cmp : cmp
 		}
 		return a.name.localeCompare(b.name)
@@ -180,7 +203,12 @@ export async function sourcesData(
 	// indexed read either way.
 	const entityFacets = new Map<string, Record<string, string[]>>()
 	const docsOf = new Map<string, SourceDocument[]>()
-	const bagUp = (into: Map<string, Record<string, string[]>>, id: string, key: string, value: string) => {
+	const bagUp = (
+		into: Map<string, Record<string, string[]>>,
+		id: string,
+		key: string,
+		value: string,
+	) => {
 		const bag = into.get(id) ?? {}
 		bag[key] = [...(bag[key] ?? []), value]
 		into.set(id, bag)
@@ -188,9 +216,15 @@ export async function sourcesData(
 	if (ids.length) {
 		for (const batch of chunked(ids)) {
 			const rows = await db
-				.select({ id: facetAssignment.subjectId, facet: facetAssignment.facet, value: facetAssignment.facetValue })
+				.select({
+					id: facetAssignment.subjectId,
+					facet: facetAssignment.facet,
+					value: facetAssignment.facetValue,
+				})
 				.from(facetAssignment)
-				.where(and(eq(facetAssignment.subjectType, 'entity'), inArray(facetAssignment.subjectId, batch)))
+				.where(
+					and(eq(facetAssignment.subjectType, 'entity'), inArray(facetAssignment.subjectId, batch)),
+				)
 			for (const r of rows) bagUp(entityFacets, r.id, r.facet, r.value)
 		}
 
@@ -205,13 +239,25 @@ export async function sourcesData(
 		const docFacets = new Map<string, Record<string, string[]>>()
 		for (const batch of chunked(docRows.map((d) => d.documentId))) {
 			const rows = await db
-				.select({ id: facetAssignment.subjectId, facet: facetAssignment.facet, value: facetAssignment.facetValue })
+				.select({
+					id: facetAssignment.subjectId,
+					facet: facetAssignment.facet,
+					value: facetAssignment.facetValue,
+				})
 				.from(facetAssignment)
-				.where(and(eq(facetAssignment.subjectType, 'document'), inArray(facetAssignment.subjectId, batch)))
+				.where(
+					and(
+						eq(facetAssignment.subjectType, 'document'),
+						inArray(facetAssignment.subjectId, batch),
+					),
+				)
 			for (const r of rows) bagUp(docFacets, r.id, r.facet, r.value)
 		}
 		for (const d of docRows) {
-			docsOf.set(d.entityUuid, [...(docsOf.get(d.entityUuid) ?? []), { documentId: d.documentId, facets: docFacets.get(d.documentId) ?? {} }])
+			docsOf.set(d.entityUuid, [
+				...(docsOf.get(d.entityUuid) ?? []),
+				{ documentId: d.documentId, facets: docFacets.get(d.documentId) ?? {} },
+			])
 		}
 	}
 
@@ -232,10 +278,15 @@ export async function sourcesData(
 			held.add(r.id)
 			counts.set(r.value, held)
 		}
-		let values: SourceFacetValue[] = [...counts].map(([value, held]) => ({ value, sources: held.size }))
+		let values: SourceFacetValue[] = [...counts].map(([value, held]) => ({
+			value,
+			sources: held.size,
+		}))
 		const ranks = ordinalRank.get(spec.key)
 		values = ranks
-			? values.sort((a, b) => (ranks.get(a.value) ?? ranks.size) - (ranks.get(b.value) ?? ranks.size))
+			? values.sort(
+					(a, b) => (ranks.get(a.value) ?? ranks.size) - (ranks.get(b.value) ?? ranks.size),
+				)
 			: values.sort((a, b) => b.sources - a.sources || a.value.localeCompare(b.value))
 		facets.push({ ...spec, label: spec.label ?? nounOf.get(spec.key) ?? spec.key, values })
 	}

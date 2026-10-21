@@ -55,6 +55,7 @@ import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { and, asc, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { treeOf } from '../tree.ts'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
 
 export type {
@@ -111,7 +112,9 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 			heading: said?.heading ?? cap(f.noun),
 			values: said?.values ?? {},
 			descriptions: f.display_labels,
-			order: (f.values ?? f.derive?.buckets.map((b) => b.label) ?? []).filter((v) => !excluded.has(v)),
+			order: (f.values ?? f.derive?.buckets.map((b) => b.label) ?? []).filter(
+				(v) => !excluded.has(v),
+			),
 		}
 	}
 	for (const [name, said] of Object.entries(site?.facets ?? {}))
@@ -498,58 +501,6 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 		parents: parents.map((p) => ({ ...p, isPrimary: p.isPrimary === 1 })),
 		members: members.map((m) => ({ ...m, facets: facetCache.get(m.entityUuid) ?? {} })),
 		lineage: base ? tree.ancestorsOf(base.superclusterId) : [],
-	}
-}
-
-/** The committed build's tree by primary edge: each node's primary parent and children. */
-export function treeOf(h: Hierarchy) {
-	const byId = new Map(h.nodes.map((node) => [node.superclusterId, node]))
-	const parentOf = new Map<number, number>()
-	const childrenOf = new Map<number, number[]>()
-	for (const e of h.edges) {
-		if (!e.isPrimary) continue
-		parentOf.set(e.child, e.parent)
-		childrenOf.set(e.parent, [...(childrenOf.get(e.parent) ?? []), e.child])
-	}
-	const baseOfTopic = new Map(
-		h.nodes.flatMap((node) =>
-			node.generation === 0 && node.topicClusterId !== null ? [[node.topicClusterId, node]] : [],
-		),
-	)
-	const ancestorsOf = (id: number) => {
-		const out: { superclusterId: number; generation: number; title: string | null }[] = []
-		const seen = new Set([id])
-		for (let at = parentOf.get(id); at !== undefined && !seen.has(at); at = parentOf.get(at)) {
-			seen.add(at)
-			const node = byId.get(at)
-			if (!node) break
-			out.push({
-				superclusterId: node.superclusterId,
-				generation: node.generation,
-				title: node.title,
-			})
-		}
-		return out
-	}
-	/** The topics beneath a node by primary edge. */
-	const topicsUnder = (id: number): number[] => {
-		const out: number[] = []
-		const walk = (at: number, seen: Set<number>) => {
-			if (seen.has(at)) return
-			seen.add(at)
-			const node = byId.get(at)
-			if (node?.generation === 0 && node.topicClusterId !== null) out.push(node.topicClusterId)
-			for (const child of childrenOf.get(at) ?? []) walk(child, seen)
-		}
-		walk(id, new Set())
-		return out
-	}
-	return {
-		byId,
-		baseOfTopic,
-		ancestorsOf,
-		topicsUnder,
-		childrenOf: (id: number) => childrenOf.get(id) ?? [],
 	}
 }
 

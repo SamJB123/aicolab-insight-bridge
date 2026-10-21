@@ -29,7 +29,6 @@ export {
 	type WorldSource,
 	type WorldTask,
 	type WorldTopic,
-	worldGenerationLabel,
 	worldReadingRefSchema,
 	worldReadingSchema,
 	worldRecordSchema,

@@ -296,14 +296,6 @@ export const worldRecordSchema = z
 	.readonly()
 export type WorldRecord = z.infer<typeof worldRecordSchema>
 
-/** Human name for a grouping generation, counted from the top. */
-export const worldGenerationLabel = (generation: number, top: number, plural = false): string => {
-	const depth = top - generation
-	if (depth === 0) return plural ? 'families' : 'family'
-	if (depth === 1) return plural ? 'themes' : 'theme'
-	return plural ? 'groups' : 'group'
-}
-
 /** "(a) the opportunities…" → "(a)"; a key like AI-TOR-a gives the same letter. */
 export const questionClause = (key: string, text: string): string => {
 	const lead = text.match(/^\(([a-z0-9]+)\)/i)

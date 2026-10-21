@@ -12,7 +12,7 @@
  * (and `/sources/types` for the shapes), which reach drizzle and nothing
  * heavier, so no page lands in its bundle.
  */
-export { sourcesData, type SourcesDb, sourcesSearchValidator } from './data.ts'
+export { sourcesData, sourcesSearchValidator } from './data.ts'
 export { SourcesPage } from './sources-page.tsx'
 export { SourcesSurfaceContext, useSourcesSurface } from './surface.tsx'
 export type {

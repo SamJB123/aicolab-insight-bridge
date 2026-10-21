@@ -32,9 +32,9 @@ import type {
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
-import { generationLabel } from '../brief/data.ts'
+import { generationLabel, treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
-import { hierarchy, treeOf } from './data.ts'
+import { hierarchy } from './data.ts'
 import { type EffectiveFacets, loadFacetCache } from './facets.ts'
 
 const n = (v: unknown) => Number(v ?? 0)

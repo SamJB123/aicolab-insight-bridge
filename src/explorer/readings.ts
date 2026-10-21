@@ -24,7 +24,6 @@ import type {
 	RunWords,
 	TopicDetail,
 } from '@aicolab/insight-bridge-contracts/explorer'
-import { generationLabel } from '../brief/data.ts'
 import type { IBFlag, IBNodeContent, IBNodeId, IBPoint, IBQuote } from '../galaxy/types.ts'
 import {
 	type AnalysisBlock,
@@ -38,6 +37,7 @@ import {
 	type TopicLens,
 } from '../reader/content-builders.ts'
 import type { ReadingView } from '../reader/detail-sheet.tsx'
+import { generationLabel } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
 
 export type { ReadingView }

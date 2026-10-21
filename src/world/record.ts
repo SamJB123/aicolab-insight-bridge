@@ -96,6 +96,7 @@ import type {
 	SQLiteViewWithSelection,
 } from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
+import { generationLabel, treeOf } from '../tree.ts'
 import {
 	MEMBERSHIP_GRADES,
 	PROMPT_TASK_KINDS,
@@ -112,7 +113,6 @@ import {
 	type WorldSource,
 	type WorldTask,
 	type WorldTopic,
-	worldGenerationLabel,
 	worldReadingSchema,
 	worldRecordSchema,
 } from './schema.ts'
@@ -502,28 +502,32 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 		}
 	})
 
-	/* ── the tree ── */
-	const primaryParent = new Map<number, number>()
-	for (const e of edgeRows) if (e.isPrimary === 1) primaryParent.set(e.child, e.parent)
-	const baseOfTopic = new Map<number, number>()
-	for (const sc of scRows)
-		if (sc.generation === 0 && sc.topicId != null) baseOfTopic.set(sc.topicId, sc.id)
+	/* ── the tree (core's treeOf) ── */
+	// Edges in the order their children appear in the build's rows, so each node's
+	// children — and so each group's topics — come out in that order.
+	const rowOf = new Map(scRows.map((sc, i) => [sc.id, i]))
+	const tree = treeOf({
+		nodes: scRows.map((sc) => ({
+			superclusterId: sc.id,
+			generation: sc.generation,
+			topicClusterId: sc.topicId,
+			title: sc.title,
+		})),
+		edges: edgeRows
+			.map((e) => ({ child: e.child, parent: e.parent, isPrimary: e.isPrimary === 1 }))
+			.sort(
+				(a, b) =>
+					(rowOf.get(a.child) ?? Number.MAX_SAFE_INTEGER) -
+					(rowOf.get(b.child) ?? Number.MAX_SAFE_INTEGER),
+			),
+	})
 	const groupNodes = scRows.filter((sc) => sc.generation > 0)
 	const groupIds = new Set(groupNodes.map((g) => g.id))
 	const generationsPresent = [...new Set(groupNodes.map((g) => g.generation))].sort((a, b) => b - a)
 	const top = generationsPresent[0] ?? 0
-	const childrenOf = grouped(
-		scRows.filter((sc) => primaryParent.has(sc.id)),
-		(sc) => primaryParent.get(sc.id) ?? -1,
-	)
+	/** A group's current topics, depth first in the build's row order. */
 	const topicsUnder = (groupId: number): number[] =>
-		(childrenOf.get(groupId) ?? []).flatMap((child) =>
-			child.generation === 0
-				? child.topicId != null && topicIds.has(child.topicId)
-					? [child.topicId]
-					: []
-				: topicsUnder(child.id),
-		)
+		tree.topicsUnder(groupId).filter((topicId) => topicIds.has(topicId))
 
 	/* ── per-topic figures ── */
 	const strongByTopic = grouped(strong, (m) => m.topicId)
@@ -545,7 +549,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 	const edgesByChild = grouped(edgeRows, (e) => e.child)
 
 	const topics: WorldTopic[] = topicRows.map((t) => {
-		const base = baseOfTopic.get(t.id)
+		const base = tree.baseOfTopic.get(t.id)?.superclusterId
 		const parents = (base !== undefined ? (edgesByChild.get(base) ?? []) : [])
 			.filter((e) => groupIds.has(e.parent))
 			.map((e) => ({
@@ -606,7 +610,7 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 			generation: g.generation,
 			title: g.title ?? `Group ${g.id}`,
 			description: g.description,
-			parentId: primaryParent.get(g.id) ?? null,
+			parentId: tree.parentOf(g.id),
 			topics: under.length,
 			sources: sources.size,
 			positions: positionsOf(stances),
@@ -701,8 +705,8 @@ export async function worldRecord(db: WorldDb, config: WorldRecordConfig): Promi
 		facets,
 		generations: generationsPresent.map((generation) => ({
 			generation,
-			label: worldGenerationLabel(generation, top),
-			labelPlural: worldGenerationLabel(generation, top, true),
+			label: generationLabel(generation, top),
+			labelPlural: generationLabel(generation, top, true),
 		})),
 		groups,
 		topics,

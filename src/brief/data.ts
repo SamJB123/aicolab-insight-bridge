@@ -15,6 +15,7 @@
  * clear of D1's ~100 bound-parameter cap.
  */
 
+import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import {
 	clusterEntityPerspective,
 	clusterKeyPerspective,
@@ -30,7 +31,7 @@ import {
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { eq, inArray } from 'drizzle-orm'
-import type { SQLiteAsyncDatabase } from 'drizzle-orm/sqlite-core'
+import { generationLabel, treeOf } from '../tree.ts'
 import type {
 	BriefContributor,
 	BriefData,
@@ -47,17 +48,9 @@ import type {
 } from './types.ts'
 
 /**
- * Either SQLite drizzle speaks here.
- *
- * `DrizzleD1Database` is `SQLiteAsyncDatabase<'async', D1RunResult>` — what a
- * standalone app reads. `DrizzleSqliteDODatabase` is
- * `SQLiteAsyncDatabase<'sync', DurableSQLiteRunResult>` — what the pipeline
- * zone reads for a run, straight from the Durable Object's own storage. Both
- * extend the same class, and its select builder extends `QueryPromise`
- * whatever the result kind, so every query below reads the same and `await`
- * resolves a sync result as readily as an async one.
+ * Either SQLite drizzle speaks — a standalone app's D1 or the pipeline's Durable
+ * Object storage — is the contracts' `CorpusDb`, the type every reader takes.
  */
-export type BriefDb = SQLiteAsyncDatabase<'sync' | 'async', unknown>
 
 /*
  * WHICH BUILD, WHICH TOPICS. A corpus keeps every clustering it ever made, and
@@ -122,7 +115,7 @@ export const DEFAULT_SCALE: PositionScale = {
  * supplied, analysed or not. Ordered by weight, so the facet the run has most
  * to say about leads.
  */
-export async function analysedFacets(db: BriefDb): Promise<string[]> {
+export async function analysedFacets(db: CorpusDb): Promise<string[]> {
 	const rows = await db.select({ facet: clusterKeyPerspective.facet }).from(clusterKeyPerspective)
 	const weight = new Map<string, number>()
 	for (const r of rows) weight.set(r.facet, (weight.get(r.facet) ?? 0) + 1)
@@ -180,24 +173,7 @@ export const splitTitle = (title: string): { subject: string; claim: string } =>
 		: { subject: title, claim: '' }
 }
 
-/** Human name for a grouping generation, counted from the top. */
-export const generationLabel = (generation: number, top: number, plural = false): string => {
-	const depth = top - generation
-	if (depth === 0) return plural ? 'families' : 'family'
-	if (depth === 1) return plural ? 'themes' : 'theme'
-	return plural ? 'groups' : 'group'
-}
-
-type TreeNode = {
-	id: number
-	generation: number
-	title: string
-	description: string | null
-	parentId: number | null
-	topicClusterId: number | null
-}
-
-export async function briefData(db: BriefDb, config: BriefConfig): Promise<BriefData> {
+export async function briefData(db: CorpusDb, config: BriefConfig): Promise<BriefData> {
 	const keys = await analysedFacets(db)
 	const scale = config.positions ?? DEFAULT_SCALE
 	const supportive = new Set(scale.supportive ?? [])
@@ -312,41 +288,33 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 		return parts.length ? parts.join(' · ') : null
 	}
 
-	/* ── the tree, from supercluster + its primary edges ── */
-	const primaryParent = new Map<number, number>()
-	for (const e of edgeRows)
-		if (e.isPrimary === 1) primaryParent.set(e.childSuperclusterId, e.parentSuperclusterId)
-	const nodes = new Map<number, TreeNode>()
-	const baseOfTopic = new Map<number, number>()
-	const generations = new Set<number>()
-	for (const s of scRows) {
-		const node: TreeNode = {
-			id: s.superclusterId,
-			generation: s.generation,
-			title: s.title ?? `Group ${s.superclusterId}`,
-			description: s.description,
-			parentId: primaryParent.get(s.superclusterId) ?? null,
-			topicClusterId: s.topicClusterId,
-		}
-		nodes.set(node.id, node)
-		if (node.generation === 0 && node.topicClusterId != null)
-			baseOfTopic.set(node.topicClusterId, node.id)
-		if (node.generation > 0) generations.add(node.generation)
-	}
-	const top = generations.size ? Math.max(...generations) : 0
+	/* ── the tree, from supercluster + its primary edges (core's treeOf) ── */
+	const tree = treeOf({
+		nodes: scRows.map((s) => ({ ...s, title: s.title ?? `Group ${s.superclusterId}` })),
+		edges: edgeRows.map((e) => ({
+			child: e.childSuperclusterId,
+			parent: e.parentSuperclusterId,
+			isPrimary: e.isPrimary === 1,
+		})),
+	})
+	/** The grouping nodes, in the order the build lists them. */
+	const groupNodes = [...tree.byId.values()]
+		.filter((n) => n.generation > 0)
+		.map((n) => ({
+			id: n.superclusterId,
+			generation: n.generation,
+			title: n.title,
+			description: n.description,
+			parentId: tree.parentOf(n.superclusterId),
+		}))
+	const top = groupNodes.length ? Math.max(...groupNodes.map((n) => n.generation)) : 0
 	const substantive = new Set(topicRows.map((t) => t.topicClusterId))
 	/** The grouping node directly above a topic, and the chain to the root. */
 	const lineageOf = (topicClusterId: number): number[] => {
-		const chain: number[] = []
-		let cur = baseOfTopic.get(topicClusterId)
-		for (let hops = 0; cur != null && hops < 8; hops++) {
-			const parent = nodes.get(cur)?.parentId ?? null
-			if (parent == null) break
-			chain.push(parent)
-			cur = parent
-		}
-		return chain
+		const base = tree.baseOfTopic.get(topicClusterId)
+		return base ? tree.ancestorsOf(base.superclusterId).map((a) => a.superclusterId) : []
 	}
+	// each group's topics in the topics' own order, which the figures below are summed in
 	const topicsUnder = new Map<number, number[]>()
 	for (const t of substantive) {
 		for (const g of lineageOf(t)) topicsUnder.set(g, [...(topicsUnder.get(g) ?? []), t])
@@ -488,7 +456,6 @@ export async function briefData(db: BriefDb, config: BriefConfig): Promise<Brief
 		.map((t) => t.id)
 
 	/* ── groups ── */
-	const groupNodes = [...nodes.values()].filter((n) => n.generation > 0)
 	const built = new Map<number, BriefNode>()
 	for (const g of groupNodes)
 		built.set(
@@ -569,7 +536,7 @@ const PUSHBACK_LIMIT = 8
  *  each, every declared facet's position pins, and the contributors that
  *  contest a claim. `topicIds` of one reads a single topic in full. */
 export async function chapterReading(
-	db: BriefDb,
+	db: CorpusDb,
 	config: BriefConfig,
 	id: number,
 	topicIds: number[],

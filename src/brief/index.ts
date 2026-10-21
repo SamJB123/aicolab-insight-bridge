@@ -14,15 +14,14 @@
  * reaches drizzle and nothing heavier, so no reading UI lands in its bundle.
  */
 
+export { generationLabel } from '../tree.ts'
 export { BriefPage } from './brief-page.tsx'
 export {
 	analysedFacets,
 	type BriefConfig,
-	type BriefDb,
 	briefData,
 	chapterReading,
 	type FacetHint,
-	generationLabel,
 	POSITIONS,
 	type PositionScale,
 	readTopics,
