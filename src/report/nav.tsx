@@ -11,7 +11,7 @@
 import type { RunWords } from '@aicolab/insight-bridge-contracts/explorer'
 import { Menu, MenuItem } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { For } from 'solid-js'
+import { For, Show } from 'solid-js'
 import { type ReportSection, type ReportSurface, tasksOf } from './surface.tsx'
 
 /** A page of the host's own in the header, after the section it names. */
@@ -80,6 +80,14 @@ function entriesOf(words: RunWords, host: readonly HostNavItem[], fold: boolean)
 
 const isMenu = (entry: HeaderEntry): entry is AnalysisMenuEntry => 'menu' in entry
 
+/** What a header entry is, across reloads of the run's words: the menu, a host page, or a section (and its task). */
+const entryKey = (entry: HeaderEntry): string =>
+	isMenu(entry)
+		? 'menu:analysis'
+		: entry.section === null
+			? `page:${entry.to}`
+			: `section:${entry.section}:${entry.taskId ?? ''}`
+
 /** Every entry as a link, each analysis task its own, in the site's order: the phone menu's list. */
 export const reportNav = (words: RunWords, host: readonly HostNavItem[] = []): NavItem[] =>
 	entriesOf(words, host, false).flatMap((entry) => (isMenu(entry) ? [] : [entry]))
@@ -106,14 +114,14 @@ function AnalysisMenu(props: { surface: ReportSurface; entry: AnalysisMenuEntry 
 				</button>
 			)}
 		>
-			<For each={props.entry.tasks}>
+			<For each={props.entry.tasks} keyed={(task) => task.taskId}>
 				{(task) => (
 					<MenuItem
 						linkComponent={(attributes) => (
-							<props.surface.Link section="analysis" taskId={task.taskId} {...attributes} />
+							<props.surface.Link section="analysis" taskId={task().taskId} {...attributes} />
 						)}
 					>
-						{task.label}
+						{task().label}
 					</MenuItem>
 				)}
 			</For>
@@ -132,25 +140,41 @@ export function ReportSections(props: {
 	}
 }) {
 	return (
-		<For each={headerEntries(props.surface.words, props.host?.items)}>
-			{(entry) => (
-				// read in a JSX expression (tracked), not in the callback's body
-				<>
-					{isMenu(entry) ? (
-						<AnalysisMenu surface={props.surface} entry={entry} />
-					) : entry.section === null ? (
-						props.host?.link(entry)
-					) : (
-						<props.surface.Link
-							section={entry.section}
-							taskId={entry.taskId}
-							class={entry.section === 'connect' ? props.ctaClass : undefined}
-						>
-							{entry.label}
-						</props.surface.Link>
-					)}
-				</>
-			)}
+		// Keyed by what each entry IS, so a reload of the run's words (a route's
+		// loader runs again) updates a row in place rather than building it anew:
+		// a rebuilt menu or link re-reads its attributes outside any tracking scope.
+		<For each={headerEntries(props.surface.words, props.host?.items)} keyed={entryKey}>
+			{(entry) => {
+				const menu = () => {
+					const e = entry()
+					return isMenu(e) ? e : null
+				}
+				const page = () => {
+					const e = entry()
+					return !isMenu(e) && e.section === null ? e : null
+				}
+				const section = () => {
+					const e = entry()
+					return !isMenu(e) && e.section !== null ? e : null
+				}
+				return (
+					<>
+						<Show when={menu()}>{(m) => <AnalysisMenu surface={props.surface} entry={m()} />}</Show>
+						<Show when={page()}>{(p) => <>{props.host?.link(p())}</>}</Show>
+						<Show when={section()}>
+							{(s) => (
+								<props.surface.Link
+									section={s().section}
+									taskId={s().taskId}
+									class={s().section === 'connect' ? props.ctaClass : undefined}
+								>
+									{s().label}
+								</props.surface.Link>
+							)}
+						</Show>
+					</>
+				)
+			}}
 		</For>
 	)
 }

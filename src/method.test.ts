@@ -9,11 +9,15 @@
  * loses it. (Moved from the pipeline zone's run-method.node.test.ts with the
  * builder, 2026-10-21.)
  */
-import { clusteringParamsSchema } from '@aicolab/insight-bridge-contracts/clustering'
+import {
+	clusteringParamsSchema,
+	recordedClusteringParams,
+	storedClusteringParamsSchema,
+} from '@aicolab/insight-bridge-contracts/clustering'
 import type { MethodData } from '@aicolab/insight-bridge-contracts/explorer'
-import { clusteringTuningSchema } from '@aicolab/insight-bridge-contracts/run-notes'
 import { profileSchema } from '@aicolab/insight-bridge-contracts/profile'
 import { runConfigSchema } from '@aicolab/insight-bridge-contracts/run-config'
+import { clusteringTuningSchema } from '@aicolab/insight-bridge-contracts/run-notes'
 import { describe, expect, it } from 'vitest'
 import { buildMethod } from './method.ts'
 
@@ -111,7 +115,11 @@ describe('buildMethod — the stages are the phases that ran', () => {
 	})
 
 	it('does not claim positions were assessed when synthesis was off', () => {
-		const stages = buildMethod(profile, runConfigSchema.parse({ run_synthesis: false }), data).stages
+		const stages = buildMethod(
+			profile,
+			runConfigSchema.parse({ run_synthesis: false }),
+			data,
+		).stages
 		expect(stages.map((s) => s.key)).not.toContain('synthesis')
 		expect(stages.some((s) => /position/i.test(s.body))).toBe(false)
 	})
@@ -206,9 +214,43 @@ describe('buildMethod — the stages are the phases that ran', () => {
 				labels: null,
 			},
 		}
-		const method = buildMethod(profile, runConfigSchema.parse({ clustering: { min_cluster_size: 5 } }), tuned)
-		expect(method.stages.find((s) => s.key === 'clustering')?.body).toContain('at least 12 passages')
+		const method = buildMethod(
+			profile,
+			runConfigSchema.parse({ clustering: { min_cluster_size: 5 } }),
+			tuned,
+		)
+		expect(method.stages.find((s) => s.key === 'clustering')?.body).toContain(
+			'at least 12 passages',
+		)
 		expect(method.attempts.map((a) => a.minClusterSize)).toEqual([8, 12])
+	})
+
+	it('says a build recorded no settings, and never states the config’s defaults as the run’s', () => {
+		const params = storedClusteringParamsSchema.parse({})
+		expect(recordedClusteringParams(params)).toBeNull()
+		expect(
+			recordedClusteringParams(storedClusteringParamsSchema.parse({ min_cluster_size: 12 }))
+				?.min_cluster_size,
+		).toBe(12)
+		const lifted: MethodData = {
+			...data,
+			build: {
+				buildId: 1,
+				kind: 'initial',
+				points: 4300,
+				params,
+				tuning: null,
+				hierarchy: null,
+				labels: null,
+			},
+		}
+		const body = buildMethod(
+			profile,
+			runConfigSchema.parse({ clustering: { auto_relax: true } }),
+			lifted,
+		).stages.find((s) => s.key === 'clustering')?.body
+		expect(body).toContain('did not record the settings')
+		expect(body).not.toMatch(/at least \d+ passages|relaxed/)
 	})
 })
 

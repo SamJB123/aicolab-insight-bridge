@@ -22,6 +22,8 @@
  * Pure strings, no JSX, so a server module can import this without pulling the
  * components in.
  */
+
+import { recordedClusteringParams } from '@aicolab/insight-bridge-contracts/clustering'
 import type { MethodData, MethodStage, RunMethod } from '@aicolab/insight-bridge-contracts/explorer'
 import { facetKind, type Profile } from '@aicolab/insight-bridge-contracts/profile'
 import { type RunConfig, resolvedModels } from '@aicolab/insight-bridge-contracts/run-config'
@@ -169,7 +171,10 @@ function stagesOf(
 	const p = profile.prompts.params
 	const o = d.overview
 	const c = config.clustering
-	const minClusterSize = d.build?.params.min_cluster_size ?? c.min_cluster_size
+	const recorded = d.build ? recordedClusteringParams(d.build.params) : null
+	// a build that recorded no parameters (a lifted run) states none: never the config's default
+	const minClusterSize =
+		d.build && !recorded ? null : (recorded?.min_cluster_size ?? c.min_cluster_size)
 	const attempts = d.build?.tuning?.attempts.length ?? 0
 	const copy = methodCopy({
 		entity: p.entity_noun,
@@ -223,12 +228,15 @@ function stagesOf(
 		key: 'clustering',
 		title: 'Grouping the passages into topics',
 		body:
-			`${copy.clustering} A group had to hold at least ${minClusterSize} passages to count as a topic. ` +
-			(attempts > 1
-				? `The settings were tuned at a review gate: ${attempts} attempts were tried before these were committed (they are listed below). `
-				: c.auto_relax
-					? 'Where those settings found nothing, they were relaxed a step at a time until they did. '
-					: '') +
+			`${copy.clustering} ` +
+			(minClusterSize === null
+				? 'The run did not record the settings it clustered with. '
+				: `A group had to hold at least ${minClusterSize} passages to count as a topic. ` +
+					(attempts > 1
+						? `The settings were tuned at a review gate: ${attempts} attempts were tried before these were committed (they are listed below). `
+						: c.auto_relax
+							? 'Where those settings found nothing, they were relaxed a step at a time until they did. '
+							: '')) +
 			`${copy.membership} ${count(o.topics + o.junkTopics)} topics resulted, over ${count(d.clusteredPassages)} passages.`,
 	})
 
@@ -266,7 +274,9 @@ function stagesOf(
 				(config.hierarchy.max_generations
 					? `, held to ${config.hierarchy.max_generations} generation${config.hierarchy.max_generations === 1 ? '' : 's'}`
 					: '') +
-				(config.hierarchy.force_target ? `, then cut to ${config.hierarchy.target} groups at the top` : '') +
+				(config.hierarchy.force_target
+					? `, then cut to ${config.hierarchy.target} groups at the top`
+					: '') +
 				`. A topic with no theme above the attachment threshold ${config.hierarchy.attach_orphans ? 'was attached to its nearest theme rather than left alone' : 'stands on its own'}. ` +
 				'This site reads the tree as the run left it, however many generations that turned out to be' +
 				(o.groups
@@ -295,9 +305,13 @@ function modelsOf(profile: Profile, config: RunConfig, d: MethodData) {
 			role: `Reading each ${profile.prompts.params.document_noun}${d.overview.questions ? ', answering the questions' : ''}`,
 			model: m.step1,
 		},
-		...(config.run_synthesis ? [{ role: 'Writing the topics up and reading positions', model: m.step2 }] : []),
+		...(config.run_synthesis
+			? [{ role: 'Writing the topics up and reading positions', model: m.step2 }]
+			: []),
 		...(config.hierarchy.enabled ? [{ role: 'Naming the themes', model: m.hierarchy_labels }] : []),
-		...(config.junk_review.enabled ? [{ role: 'Flagging empty topics', model: m.junk_review }] : []),
+		...(config.junk_review.enabled
+			? [{ role: 'Flagging empty topics', model: m.junk_review }]
+			: []),
 		{ role: 'Embedding the passages', model: m.embedding },
 		...(m.fallback ? [{ role: 'When a call failed', model: m.fallback }] : []),
 	]
@@ -340,7 +354,10 @@ export function buildMethod(
 			type: t.task_type,
 		})),
 		glossary: profile.glossary,
-		exclusions: profile.exclusions.analysis.map((rule) => ({ facet: rule.facet, values: rule.values })),
+		exclusions: profile.exclusions.analysis.map((rule) => ({
+			facet: rule.facet,
+			values: rule.values,
+		})),
 		attempts: (d.build?.tuning?.attempts ?? []).map((a) => ({
 			minClusterSize: a.min_cluster_size,
 			clusters: a.clusters,
