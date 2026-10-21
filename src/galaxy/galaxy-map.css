@@ -289,7 +289,9 @@
 			all: unset;
 			/* `all: unset` resets flex too, silently re-enabling shrink and
 			 * letting the column crush this row to a sliver — the layout
-			 * props must be re-declared AFTER the reset. */
+			 * props must be re-declared AFTER the reset. So must box-sizing,
+			 * which would otherwise depend on a host's global rule. */
+			box-sizing: border-box;
 			display: block;
 			flex: none;
 			cursor: pointer;
@@ -350,6 +352,7 @@
 		 * sidebar's brand row. Absent for hosts that mount the galaxy top-level. */
 		.ib-galaxy-home {
 			all: unset;
+			box-sizing: border-box;
 			cursor: pointer;
 			display: flex;
 			align-items: center;
@@ -377,6 +380,7 @@
 		/* The gate panel's action chip (hosts pass a Link with this class). */
 		.ib-galaxy-related-chip {
 			all: unset;
+			box-sizing: border-box;
 			cursor: pointer;
 			padding: 0.2rem 0.65rem;
 			border-radius: var(--r-pill);
@@ -400,6 +404,7 @@
 		 * is the RadialMenu organism's own contract. */
 		.ib-galaxy-bnav-radial {
 			all: unset;
+			box-sizing: border-box;
 			cursor: pointer;
 			display: flex;
 			flex-direction: column;

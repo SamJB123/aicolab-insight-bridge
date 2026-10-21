@@ -41,7 +41,9 @@
 
 		.ib-reader-up {
 			all: unset;
-			/* `all: unset` resets flex too — re-declare layout after it. */
+			/* `all: unset` resets flex and box-sizing too — re-declare them after
+			 * it (box-sizing would otherwise depend on a host's global rule). */
+			box-sizing: border-box;
 			display: block;
 			flex: none;
 			cursor: pointer;
@@ -267,6 +269,7 @@
 
 		.ib-reader-chip {
 			all: unset;
+			box-sizing: border-box;
 			cursor: pointer;
 			display: inline-block;
 			padding: 0.2rem 0.65rem;
@@ -286,6 +289,7 @@
 
 		.ib-reader-show-all {
 			all: unset;
+			box-sizing: border-box;
 			cursor: pointer;
 			display: block;
 			padding: 0.35rem 0.25rem;
