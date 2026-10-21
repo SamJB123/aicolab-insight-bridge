@@ -94,6 +94,14 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		for (const { name, derive } of derived)
 			for (const values of facets.values())
 				expect(values[name]).toEqual([derivedValue(derive, values[derive.from_facet]?.[0])])
+		// asked for alone, a facet reads exactly as in the whole read, and nothing else comes with it
+		for (const name of [...derived.map((d) => d.name), 'distribution', 'voice']) {
+			const alone = await loadFacetCache(db, 'entity', [name])
+			for (const [subject, values] of alone) {
+				expect(Object.keys(values).every((key) => key === name)).toBe(true)
+				expect(values[name]).toEqual(facets.get(subject)?.[name])
+			}
+		}
 	})
 
 	it('the overview counts published evidence', async () => {

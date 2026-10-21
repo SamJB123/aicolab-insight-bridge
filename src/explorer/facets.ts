@@ -12,7 +12,7 @@
 import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
 import type { Profile } from '@aicolab/insight-bridge-contracts/profile'
 import { type CorpusDb, facetAssignment, runMeta } from '@aicolab/insight-bridge-contracts/schema'
-import { asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 export type EffectiveFacets = Record<string, string[]>
 /** v7: the same, with the resolved concept beside each value (null = free facet or unresolved). */
@@ -67,8 +67,10 @@ async function derivedFacets(
 export async function loadFacetCache(
 	db: CorpusDb,
 	subjectType: 'entity' | 'document' | 'chunk',
+	/** Only these facets (a per-request rule that reads one facet need not read them all). */
+	only?: readonly string[],
 ): Promise<Map<string, EffectiveFacets>> {
-	const withConcepts = await loadConceptFacetCache(db, subjectType)
+	const withConcepts = await loadConceptFacetCache(db, subjectType, only)
 	const out = new Map<string, EffectiveFacets>()
 	for (const [subject, facets] of withConcepts)
 		out.set(
@@ -84,7 +86,14 @@ export async function loadFacetCache(
 export async function loadConceptFacetCache(
 	db: CorpusDb,
 	subjectType: 'entity' | 'document' | 'chunk',
+	only?: readonly string[],
 ): Promise<Map<string, EffectiveConceptFacets>> {
+	const derived =
+		subjectType === 'chunk'
+			? []
+			: (await derivedFacets(db, subjectType)).filter((d) => !only || only.includes(d.name))
+	// a derived facet asked for by name is read from the facet it derives from
+	const read = only ? [...new Set([...only, ...derived.map((d) => d.rule.from_facet)])] : null
 	const rows = await db
 		.select({
 			subjectId: facetAssignment.subjectId,
@@ -95,7 +104,12 @@ export async function loadConceptFacetCache(
 			confidence: facetAssignment.confidence,
 		})
 		.from(facetAssignment)
-		.where(eq(facetAssignment.subjectType, subjectType))
+		.where(
+			and(
+				eq(facetAssignment.subjectType, subjectType),
+				read ? inArray(facetAssignment.facet, read) : undefined,
+			),
+		)
 		.orderBy(
 			desc(sql`coalesce(${facetAssignment.confidence}, 0)`),
 			asc(facetAssignment.facetAssignmentId),
@@ -118,14 +132,21 @@ export async function loadConceptFacetCache(
 		out.set(subject, Object.fromEntries([...facets].map(([facet, { values }]) => [facet, values])))
 	// a facet the profile derives (era from year) is resolved here for every
 	// subject that holds no value of its own, as the pipeline's lens step did
-	if (subjectType !== 'chunk')
-		for (const { name, rule } of await derivedFacets(db, subjectType))
-			for (const facets of out.values())
-				if (!facets[name]?.length)
-					facets[name] = [
-						{ value: derivedValue(rule, facets[rule.from_facet]?.[0]?.value), conceptId: null },
-					]
-	return out
+	for (const { name, rule } of derived)
+		for (const facets of out.values())
+			if (!facets[name]?.length)
+				facets[name] = [
+					{ value: derivedValue(rule, facets[rule.from_facet]?.[0]?.value), conceptId: null },
+				]
+	// only what was asked for: a facet read to derive another is not returned unless asked
+	return only
+		? new Map(
+				[...out].map(([subject, facets]) => [
+					subject,
+					Object.fromEntries(Object.entries(facets).filter(([facet]) => only.includes(facet))),
+				]),
+			)
+		: out
 }
 
 /**
