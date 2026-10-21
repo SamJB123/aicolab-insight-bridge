@@ -154,9 +154,9 @@ function TopicOrbit(props: { topics: TopicHit[]; query: string }) {
 	)
 
 	return (
-		<section ref={host} class="topic-orbit" aria-label="Semantic topic relevance map">
-			<div class="topic-orbit-rings" aria-hidden="true" />
-			<div class="topic-person" role="img" aria-label="Your area of interest">
+		<section ref={host} class="ib-report-orbit" aria-label="Semantic topic relevance map">
+			<div class="ib-report-orbit-rings" aria-hidden="true" />
+			<div class="ib-report-orbit-you" role="img" aria-label="Your area of interest">
 				<span>You</span>
 				<small>{props.query || 'Your interests'}</small>
 			</div>
@@ -164,7 +164,7 @@ function TopicOrbit(props: { topics: TopicHit[]; query: string }) {
 				{(node) => (
 					<button
 						type="button"
-						class="topic-bubble"
+						class="ib-report-orbit-topic"
 						style={{
 							left: `${node.x}px`,
 							top: `${node.y}px`,
@@ -244,7 +244,7 @@ function TopicSearchBody(props: {
 	}
 
 	return (
-		<div class="view-wrap topic-search-view">
+		<div class="view-wrap ib-report-search">
 			<header class="view-head">
 				<Eyebrow>§ Topic Search</Eyebrow>
 				<h1 class="view-title">Find where your question meets the record</h1>
@@ -257,19 +257,19 @@ function TopicSearchBody(props: {
 			</header>
 
 			<section class="sec" style={{ 'border-top': 'none' }}>
-				<form class="topic-search-form" onSubmit={submit}>
+				<form class="ib-report-search-form" onSubmit={submit}>
 					<label for="topic-query">What are you interested in?</label>
-					<div class="topic-search-controls">
+					<div class="ib-report-search-controls">
 						<input
 							id="topic-query"
-							class="topic-search-input"
+							class="ib-report-search-input"
 							type="search"
 							placeholder={props.placeholder}
 							value={query()}
 							onInput={(event) => setQuery(event.currentTarget.value)}
 						/>
 						<button
-							class="topic-search-submit"
+							class="ib-report-search-submit"
 							type="submit"
 							aria-busy={searching() ? 'true' : 'false'}
 						>
@@ -277,18 +277,18 @@ function TopicSearchBody(props: {
 						</button>
 					</div>
 					<Show when={error()}>
-						<p class="topic-search-error" role="alert">
+						<p class="ib-report-search-error" role="alert">
 							{error()}
 						</p>
 					</Show>
 				</form>
 
-				<div class="topic-search-legend">
+				<div class="ib-report-search-legend">
 					<span>
-						<i class="topic-legend-near" /> Most relevant
+						<i class="ib-report-search-near" /> Most relevant
 					</span>
 					<span>
-						<i class="topic-legend-far" /> Less relevant
+						<i class="ib-report-search-far" /> Less relevant
 					</span>
 					<Show when={topics().length}>
 						<span>{topics().length} topics found</span>

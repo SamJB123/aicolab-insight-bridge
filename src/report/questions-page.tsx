@@ -11,7 +11,7 @@
  * (2026-10-21), where the questions are the committee's terms of reference.
  */
 import type { QuestionDetail, QuestionsOverview } from '@aicolab/insight-bridge-contracts/explorer'
-import { Eyebrow } from '@aicolab/ui-solid'
+import { Eyebrow, Segmented } from '@aicolab/ui-solid'
 import { createMemo, For, Show } from 'solid-js'
 import { HeatCell, StatRow } from './figures.tsx'
 import {
@@ -94,7 +94,7 @@ function QuestionsBody(props: {
 	const last = () => ov().questions[ov().questions.length - 1]?.clause ?? ''
 
 	return (
-		<div class="view-wrap view-wide">
+		<div class="view-wrap ib-report-view-wide">
 			<header class="view-head">
 				<Eyebrow>{`§ ${v.questionsTitle} · ${first()} to ${last()}`}</Eyebrow>
 				<h1 class="view-title">{`Who answered which ${v.question}`}</h1>
@@ -104,8 +104,8 @@ function QuestionsBody(props: {
 			</header>
 
 			<section class="sec" style={{ 'border-top': 'none' }}>
-				<div class="fig reveal heat-wrap">
-					<table class="heat">
+				<div class="fig reveal ib-report-heat-wrap">
+					<table class="ib-report-heat">
 						<caption class="fig-title" style={{ 'text-align': 'left', 'caption-side': 'top' }}>
 							{`Share of each ${lens().toLowerCase()} answering each ${v.question} · ${fmt(ov().sourcesWithDocuments)} ${nouns().entities} with documents`}
 						</caption>
@@ -116,7 +116,7 @@ function QuestionsBody(props: {
 									{(q) => (
 										<th
 											scope="col"
-											class={['click', { on: qid() === q.questionId }]}
+											class={['ib-report-click', { 'ib-report-on': qid() === q.questionId }]}
 											title={q.text}
 											onClick={() =>
 												props.onSelect({ questionId: q.questionId, lensValue: undefined }, true)
@@ -124,7 +124,7 @@ function QuestionsBody(props: {
 										>
 											{q.clause}
 											<br />
-											<span class="heat-n">{`${overallOf(q.questionId)}%`}</span>
+											<span class="ib-report-heat-n">{`${overallOf(q.questionId)}%`}</span>
 										</th>
 									)}
 								</For>
@@ -135,7 +135,7 @@ function QuestionsBody(props: {
 								{(row) => (
 									<tr>
 										<th scope="row">
-											{valueLabel(row.value)} <span class="heat-n">{row.sources}</span>
+											{valueLabel(row.value)} <span class="ib-report-heat-n">{row.sources}</span>
 										</th>
 										<For each={ov().questions}>
 											{(q) => (
@@ -165,13 +165,13 @@ function QuestionsBody(props: {
 			<Show when={det()}>
 				{(dd) => (
 					<section class="sec" id="answers">
-						<fieldset class="q-tabs" aria-label={v.questionsTitle}>
+						<fieldset class="ib-report-q-tabs" aria-label={v.questionsTitle}>
 							<For each={ov().questions}>
 								{(q) => (
 									<button
 										type="button"
 										aria-pressed={q.questionId === qid() ? 'true' : 'false'}
-										class={['q-tab', { on: q.questionId === qid() }]}
+										class={['ib-report-q-tab', { 'ib-report-on': q.questionId === qid() }]}
 										title={q.text}
 										onClick={() =>
 											props.onSelect({ questionId: q.questionId, lensValue: undefined }, false)
@@ -185,7 +185,7 @@ function QuestionsBody(props: {
 						<Eyebrow>
 							{`${v.question.charAt(0).toUpperCase()}${v.question.slice(1)} ${dd().question.clause} · answered by ${fmt(dd().question.sources)} ${nouns().entities} · ${fmt(dd().question.keyPoints)} key points`}
 						</Eyebrow>
-						<h2 class="q-text">{wording(dd().question.text)}</h2>
+						<h2 class="ib-report-q-text">{wording(dd().question.text)}</h2>
 						<StatRow
 							items={[
 								{
@@ -203,37 +203,33 @@ function QuestionsBody(props: {
 								{ n: fmt(dd().byLensValue.length), l: `${lens().toLowerCase()}s represented` },
 							]}
 						/>
-						<div class="roster-filter" style={{ 'margin-top': '1.2rem' }}>
-							<fieldset class="seg" aria-label={lens()}>
-								<button
-									type="button"
-									class={['seg-b', { on: !filtered() }]}
-									onClick={() =>
-										props.onSelect(
-											{ questionId: dd().question.questionId, lensValue: undefined },
-											false,
-										)
-									}
-								>
-									{`All ${lens().toLowerCase()}s`}
-								</button>
-								<For each={dd().byLensValue}>
-									{(g) => (
-										<button
-											type="button"
-											class={['seg-b', { on: filtered() && props.selection.lensValue === g.value }]}
-											onClick={() =>
-												props.onSelect(
-													{ questionId: dd().question.questionId, lensValue: g.value },
-													false,
-												)
-											}
-										>
-											{`${valueLabel(g.value)} · ${g.answers.length}`}
-										</button>
-									)}
-								</For>
-							</fieldset>
+						<div class="ib-report-filter" style={{ 'margin-top': '1.2rem' }}>
+							{/* ui-solid's own segmented control; a lens value (null for the
+							    unclassified) is named by its place in the list, "all" by itself */}
+							<Segmented
+								label={lens()}
+								options={[
+									{ id: 'all', label: `All ${lens().toLowerCase()}s` },
+									...dd().byLensValue.map((g, i) => ({
+										id: String(i),
+										label: `${valueLabel(g.value)} · ${g.answers.length}`,
+									})),
+								]}
+								value={
+									filtered()
+										? String(
+												dd().byLensValue.findIndex((g) => g.value === props.selection.lensValue),
+											)
+										: 'all'
+								}
+								onChange={(id) => {
+									const questionId = dd().question.questionId
+									if (id === 'all')
+										return props.onSelect({ questionId, lensValue: undefined }, false)
+									const g = dd().byLensValue[Number(id)]
+									if (g) props.onSelect({ questionId, lensValue: g.value }, false)
+								}}
+							/>
 							<span class="fig-note" style={{ margin: 0 }}>
 								{`${shownCount()} answer${shownCount() === 1 ? '' : 's'} shown`}
 							</span>
@@ -241,22 +237,22 @@ function QuestionsBody(props: {
 
 						<For each={groupsShown()}>
 							{(g) => (
-								<div class="q-sector">
-									<div class="q-sector-h">
+								<div class="ib-report-q-sector">
+									<div class="ib-report-q-sector-h">
 										<h4>{valueLabel(g.value)}</h4>
 										<span class="fig-note" style={{ margin: 0 }}>
 											{`${g.answers.length} of ${cellOf(g.value, dd().question.questionId)?.sources ?? '?'} ${nouns().entities}`}
 										</span>
 									</div>
-									<div class="q-answers">
+									<div class="ib-report-q-answers">
 										<For each={g.answers}>
 											{(a) => (
 												<button
 													type="button"
-													class="q-answer reveal"
+													class="ib-report-q-answer reveal"
 													onClick={() => s.open({ kind: 'source', key: a.documentId })}
 												>
-													<span class="q-answer-who">
+													<span class="ib-report-q-answer-who">
 														<span>{a.name}</span>
 														<small>
 															{documentLabelOf(s, {
@@ -270,7 +266,7 @@ function QuestionsBody(props: {
 																	: '')}
 														</small>
 													</span>
-													<span class="q-answer-pos">{a.position}</span>
+													<span class="ib-report-q-answer-pos">{a.position}</span>
 												</button>
 											)}
 										</For>

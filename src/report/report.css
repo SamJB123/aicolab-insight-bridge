@@ -1,7 +1,13 @@
 /* A report's pages — what they draw beyond the site frame's classes
  * (site.css: .view-wrap, .sec, .fig, .door, .grid2). Imported by the pages
  * themselves; layered below any unlayered host CSS, like the Brief's sheet —
- * all but the frame modifiers at the end of this file. */
+ * all but the frame modifiers at the end of this file.
+ *
+ * Every class here carries the `ib-report-` prefix, state modifiers included:
+ * the frame's names are shared on purpose, but a page's own names must not be
+ * reachable by an app's sheet or by ui-solid's bare-class scopes (its
+ * segmented control styles any `.seg`), nor reach into ui-solid's. A control
+ * ui-solid has is used, not imitated. */
 @layer reset,
 	ui.tokens,
 	ui.resolver,
@@ -17,14 +23,26 @@
 		margin-top: 0.6rem;
 		font-size: clamp(2.2rem, 6.4vw, 4.2rem);
 	}
+	/* the landing's header, when the host sets a picture beside the title */
+	.ib-report-home-hero {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(280px, 400px);
+		gap: 2.4rem;
+		align-items: center;
+	}
+	@media (max-width: 940px) {
+		.ib-report-home-hero {
+			grid-template-columns: 1fr;
+		}
+	}
 
 	/* ── the matrix: the questions' heat map, and the clustering attempts as a plain table ── */
-	.heat {
+	.ib-report-heat {
 		border-collapse: collapse;
 		width: 100%;
 		min-width: 720px;
 	}
-	.heat th {
+	.ib-report-heat th {
 		font-family: var(--font-data);
 		font-size: 10.5px;
 		text-transform: uppercase;
@@ -35,30 +53,30 @@
 		padding: 6px 8px;
 		line-height: 1.3;
 	}
-	.heat thead th {
+	.ib-report-heat thead th {
 		vertical-align: bottom;
 		border-bottom: 1px solid var(--color-border-strong);
 		max-width: 110px;
 	}
-	.heat thead th.click {
+	.ib-report-heat thead th.ib-report-click {
 		cursor: pointer;
 	}
-	.heat thead th.click:hover,
-	.heat thead th.on {
+	.ib-report-heat thead th.ib-report-click:hover,
+	.ib-report-heat thead th.ib-report-on {
 		color: var(--color-primary);
 	}
-	.heat tbody th {
+	.ib-report-heat tbody th {
 		white-space: nowrap;
 		position: sticky;
 		left: 0;
 		background: var(--color-base-100);
 		z-index: 2;
 	}
-	.heat-n {
+	.ib-report-heat-n {
 		color: var(--color-base-content-faint);
 		font-size: 9.5px;
 	}
-	.heat-cell {
+	.ib-report-heat-cell {
 		font-family: var(--font-data);
 		font-size: 12px;
 		font-variant-numeric: tabular-nums;
@@ -72,13 +90,13 @@
 		);
 		color: var(--color-base-content);
 	}
-	.heat-cell > span,
-	.heat-btn {
+	.ib-report-heat-cell > span,
+	.ib-report-heat-btn {
 		display: block;
 		width: 100%;
 		padding: 8px 6px;
 	}
-	.heat-btn {
+	.ib-report-heat-btn {
 		appearance: none;
 		background: none;
 		border: 1px solid transparent;
@@ -86,24 +104,24 @@
 		color: inherit;
 		cursor: pointer;
 	}
-	.heat-btn:hover {
+	.ib-report-heat-btn:hover {
 		border-color: var(--color-base-content);
 	}
-	.heat-cell.on .heat-btn {
+	.ib-report-heat-cell.ib-report-on .ib-report-heat-btn {
 		outline: 2px solid var(--color-base-content);
 		outline-offset: -2px;
 	}
 	@supports (color: contrast-color(red)) {
-		.heat-cell {
+		.ib-report-heat-cell {
 			color: contrast-color(
 				color-mix(in oklab, var(--color-primary) calc(var(--pct, 0) * 1%), var(--color-base-300))
 			);
 		}
 	}
-	.heat.attempts {
+	.ib-report-heat.ib-report-attempts {
 		min-width: 0;
 	}
-	.heat.attempts td {
+	.ib-report-heat.ib-report-attempts td {
 		font-family: var(--font-data);
 		font-size: 12px;
 		font-variant-numeric: tabular-nums;
@@ -111,26 +129,26 @@
 		color: var(--color-base-content-muted);
 		border-bottom: 1px solid var(--color-border);
 	}
-	.heat.attempts tr.committed th,
-	.heat.attempts tr.committed td {
+	.ib-report-heat.ib-report-attempts tr.ib-report-committed th,
+	.ib-report-heat.ib-report-attempts tr.ib-report-committed td {
 		color: var(--color-primary);
 		background: var(--color-primary-soft);
 	}
 
 	/* ── a row of figures ── */
-	.statrow {
+	.ib-report-statrow {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 		gap: 0.85rem;
 	}
-	.stat {
+	.ib-report-stat {
 		background: var(--color-base-100);
 		border: 1px solid var(--color-border);
 		border-radius: 11px;
 		padding: 1rem 1.05rem;
 		corner-shape: superellipse(2.2);
 	}
-	.stat .sn {
+	.ib-report-stat .ib-report-stat-n {
 		font-family: var(--font-data);
 		font-size: 1.55rem;
 		font-weight: 600;
@@ -138,69 +156,35 @@
 		font-variant-numeric: tabular-nums;
 		line-height: 1;
 	}
-	.stat .sl {
+	.ib-report-stat .ib-report-stat-l {
 		font-size: 12.5px;
 		color: var(--color-base-content-muted);
 		margin-top: 0.45rem;
 		line-height: 1.35;
 	}
 
-	/* ── a filter row and its segmented control ── */
-	.roster-filter {
+	/* ── a filter row: ui-solid's segmented control and a count ── */
+	.ib-report-filter {
 		display: flex;
 		gap: 0.6rem;
 		flex-wrap: wrap;
 		align-items: center;
 		margin-bottom: 0.8rem;
 	}
-	.seg {
-		display: inline-flex;
-		flex-wrap: wrap;
-		border: 1px solid var(--color-border-strong);
-		border-radius: 8px;
-		overflow: hidden;
-		corner-shape: superellipse(2.2);
-	}
-	.seg-b {
-		appearance: none;
-		background: transparent;
-		border: none;
-		border-right: 1px solid var(--color-border);
-		color: var(--color-base-content-muted);
-		font-family: var(--font-data);
-		font-size: 11px;
-		letter-spacing: 0.04em;
-		padding: 0.4rem 0.75rem;
-		cursor: pointer;
-		transition:
-			background 0.12s,
-			color 0.12s;
-	}
-	.seg-b:last-child {
-		border-right: none;
-	}
-	.seg-b:hover {
-		color: var(--color-base-content);
-	}
-	.seg-b.on {
-		background: var(--color-primary-soft);
-		color: var(--color-primary-2);
-	}
 
-	/* the groups of controls are fieldsets; the reset layer clears their frame,
-	 * all but a fieldset's min-content width */
-	fieldset.q-tabs,
-	fieldset.seg {
+	/* the clause tabs are a fieldset; the reset layer clears its frame, all
+	 * but a fieldset's min-content width */
+	fieldset.ib-report-q-tabs {
 		min-width: 0;
 	}
 
 	/* ── the questions: their tabs and the answers ── */
-	.q-tabs {
+	.ib-report-q-tabs {
 		display: flex;
 		gap: 0.35rem;
 		flex-wrap: wrap;
 	}
-	.q-tab {
+	.ib-report-q-tab {
 		appearance: none;
 		font-family: var(--font-data);
 		font-size: 12px;
@@ -215,19 +199,19 @@
 		align-items: center;
 		gap: 0.4rem;
 	}
-	.q-tab:hover {
+	.ib-report-q-tab:hover {
 		border-color: var(--color-border-strong);
 		color: var(--color-base-content);
 	}
-	.q-tab.on {
+	.ib-report-q-tab.ib-report-on {
 		color: var(--color-primary);
 		border-color: var(--color-primary);
 		background: var(--color-primary-soft);
 	}
-	.q-tab small {
+	.ib-report-q-tab small {
 		color: var(--color-base-content-faint);
 	}
-	.q-text {
+	.ib-report-q-text {
 		font-family: var(--font-display);
 		font-size: clamp(1.25rem, 2.6vw, 1.7rem);
 		font-weight: 500;
@@ -237,10 +221,10 @@
 		max-width: 60ch;
 		margin: 0.4rem 0 0.8rem;
 	}
-	.q-sector {
+	.ib-report-q-sector {
 		margin-top: 1.4rem;
 	}
-	.q-sector-h {
+	.ib-report-q-sector-h {
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
@@ -249,19 +233,19 @@
 		padding-bottom: 0.4rem;
 		margin-bottom: 0.6rem;
 	}
-	.q-sector-h h4 {
+	.ib-report-q-sector-h h4 {
 		font-family: var(--font-display);
 		font-size: 1.15rem;
 		font-weight: 500;
 		margin: 0;
 		color: var(--color-base-content);
 	}
-	.q-answers {
+	.ib-report-q-answers {
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
 	}
-	.q-answer {
+	.ib-report-q-answer {
 		display: grid;
 		grid-template-columns: minmax(180px, 220px) 1fr;
 		gap: 0.9rem;
@@ -276,10 +260,10 @@
 		font-family: inherit;
 		color: inherit;
 	}
-	.q-answer:hover {
+	.ib-report-q-answer:hover {
 		border-color: var(--color-primary);
 	}
-	.q-answer-who {
+	.ib-report-q-answer-who {
 		font-size: 13px;
 		color: var(--color-base-content);
 		line-height: 1.3;
@@ -287,19 +271,19 @@
 		flex-direction: column;
 		gap: 0.2rem;
 	}
-	.q-answer-who small {
+	.ib-report-q-answer-who small {
 		font-family: var(--font-data);
 		font-size: 10px;
 		color: var(--color-base-content-faint);
 	}
-	.q-answer-pos {
+	.ib-report-q-answer-pos {
 		font-size: 13.5px;
 		color: var(--color-base-content-muted);
 		line-height: 1.5;
 		text-wrap: pretty;
 	}
 	@media (max-width: 640px) {
-		.q-answer {
+		.ib-report-q-answer {
 			grid-template-columns: 1fr;
 			gap: 0.3rem;
 		}
@@ -329,13 +313,13 @@
 
 	/* ── the topic search: the reader at the centre, topics by relevance around them;
 	 * the far end of the scale reads the host's heat ramp (--s1…--s5), as the galaxy does ── */
-	.topic-search-view {
+	.ib-report-search {
 		max-width: 1280px;
 	}
-	.topic-search-form {
+	.ib-report-search-form {
 		max-width: 920px;
 	}
-	.topic-search-form label {
+	.ib-report-search-form label {
 		display: block;
 		margin-bottom: 0.55rem;
 		font-family: var(--font-data);
@@ -344,11 +328,11 @@
 		text-transform: uppercase;
 		color: var(--color-base-content-muted);
 	}
-	.topic-search-controls {
+	.ib-report-search-controls {
 		display: flex;
 		gap: 0.6rem;
 	}
-	.topic-search-input {
+	.ib-report-search-input {
 		flex: 1;
 		background: var(--color-base-300);
 		border: 1px solid var(--color-border-strong);
@@ -358,11 +342,11 @@
 		font-family: var(--font-data);
 		font-size: 14px;
 	}
-	.topic-search-input:focus {
+	.ib-report-search-input:focus {
 		outline: none;
 		border-color: var(--color-primary);
 	}
-	.topic-search-submit {
+	.ib-report-search-submit {
 		border: 1px solid var(--color-primary);
 		border-radius: 6px;
 		padding: 0 1.15rem;
@@ -372,16 +356,16 @@
 		font-weight: 700;
 		cursor: pointer;
 	}
-	.topic-search-submit:disabled {
+	.ib-report-search-submit:disabled {
 		opacity: 0.45;
 		cursor: default;
 	}
-	.topic-search-error {
+	.ib-report-search-error {
 		margin: 0.65rem 0 0;
 		color: var(--s5);
 		font-size: 13px;
 	}
-	.topic-search-legend {
+	.ib-report-search-legend {
 		display: flex;
 		gap: 1.15rem;
 		align-items: center;
@@ -390,24 +374,24 @@
 		font-size: 10.5px;
 		color: var(--color-base-content-faint);
 	}
-	.topic-search-legend span {
+	.ib-report-search-legend span {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
 	}
-	.topic-search-legend i {
+	.ib-report-search-legend i {
 		display: block;
 		width: 9px;
 		height: 9px;
 		border-radius: 50%;
 	}
-	.topic-legend-near {
+	.ib-report-search-near {
 		background: var(--color-primary);
 	}
-	.topic-legend-far {
+	.ib-report-search-far {
 		background: var(--s2);
 	}
-	.topic-orbit {
+	.ib-report-orbit {
 		position: relative;
 		height: min(680px, 70vh);
 		min-height: 560px;
@@ -423,7 +407,7 @@
 			var(--color-base-100);
 		corner-shape: superellipse(2.2);
 	}
-	.topic-orbit-rings {
+	.ib-report-orbit-rings {
 		position: absolute;
 		inset: 50%;
 		width: min(76%, 600px);
@@ -436,8 +420,8 @@
 			0 0 0 180px color-mix(in oklab, var(--color-border) 28%, transparent);
 		opacity: 0.45;
 	}
-	.topic-person,
-	.topic-bubble {
+	.ib-report-orbit-you,
+	.ib-report-orbit-topic {
 		position: absolute;
 		left: 50%;
 		top: 50%;
@@ -448,7 +432,7 @@
 		border-radius: 50%;
 		text-align: center;
 	}
-	.topic-person {
+	.ib-report-orbit-you {
 		z-index: 3;
 		width: 116px;
 		height: 116px;
@@ -458,12 +442,12 @@
 		color: var(--color-base-200);
 		box-shadow: 0 0 0 8px color-mix(in oklab, var(--color-base-content) 12%, transparent);
 	}
-	.topic-person span {
+	.ib-report-orbit-you span {
 		font-family: var(--font-display);
 		font-size: 22px;
 		font-weight: 700;
 	}
-	.topic-person small {
+	.ib-report-orbit-you small {
 		display: -webkit-box;
 		overflow: hidden;
 		-webkit-box-orient: vertical;
@@ -472,7 +456,7 @@
 		line-height: 1.2;
 		opacity: 0.66;
 	}
-	.topic-bubble {
+	.ib-report-orbit-topic {
 		z-index: 2;
 		transform: translate(-50%, -50%);
 		padding: 9px;
@@ -496,15 +480,15 @@
 			filter 0.15s,
 			box-shadow 0.15s;
 	}
-	.topic-bubble:hover,
-	.topic-bubble:focus-visible {
+	.ib-report-orbit-topic:hover,
+	.ib-report-orbit-topic:focus-visible {
 		z-index: 4;
 		border-color: var(--color-primary);
 		filter: brightness(1.25);
 		box-shadow: 0 9px 30px light-dark(rgba(15, 23, 42, 0.22), rgba(0, 0, 0, 0.4));
 		outline: none;
 	}
-	.topic-bubble span {
+	.ib-report-orbit-topic span {
 		display: -webkit-box;
 		overflow: hidden;
 		-webkit-box-orient: vertical;
@@ -513,24 +497,24 @@
 		font-weight: 650;
 		line-height: 1.18;
 	}
-	.topic-bubble small {
+	.ib-report-orbit-topic small {
 		margin-top: 4px;
 		font-family: var(--font-data);
 		font-size: 8px;
 		color: var(--color-base-content-muted);
 	}
 	@media (max-width: 620px) {
-		.topic-search-controls {
+		.ib-report-search-controls {
 			flex-direction: column;
 		}
-		.topic-search-submit {
+		.ib-report-search-submit {
 			min-height: 42px;
 		}
-		.topic-orbit {
+		.ib-report-orbit {
 			height: 620px;
 			min-height: 620px;
 		}
-		.topic-search-legend {
+		.ib-report-search-legend {
 			flex-wrap: wrap;
 		}
 	}
@@ -542,11 +526,11 @@
  * and win by compound specificity. */
 
 /* a page as wide as the frame allows */
-.view-wrap.view-wide {
+.view-wrap.ib-report-view-wide {
 	max-width: var(--page-max);
 }
 /* the matrix scrolls sideways inside its figure, on a tighter pad */
-.fig.heat-wrap {
+.fig.ib-report-heat-wrap {
 	overflow-x: auto;
 	padding: 1rem;
 }

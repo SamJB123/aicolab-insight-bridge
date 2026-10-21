@@ -112,7 +112,7 @@ function OverviewBody(props: {
 
 	return (
 		<div class="view-wrap">
-			<header class="view-head home-hero">
+			<header class={['view-head', { 'ib-report-home-hero': !!props.additions?.hero }]}>
 				<div>
 					<Show when={w().eyebrow}>{(e) => <Eyebrow>{e()}</Eyebrow>}</Show>
 					<h1 class="view-title ib-report-landing-title">{w().title}</h1>

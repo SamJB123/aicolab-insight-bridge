@@ -9,12 +9,12 @@ import { For, Show } from 'solid-js'
 /** A row of figures: each a number and what it counts. */
 export function StatRow(props: { items: { n: JSX.Element; l: JSX.Element }[] }) {
 	return (
-		<div class="statrow">
+		<div class="ib-report-statrow">
 			<For each={props.items}>
 				{(s) => (
-					<div class="stat reveal">
-						<div class="sn">{s.n}</div>
-						<div class="sl">{s.l}</div>
+					<div class="ib-report-stat reveal">
+						<div class="ib-report-stat-n">{s.n}</div>
+						<div class="ib-report-stat-l">{s.l}</div>
 					</div>
 				)}
 			</For>
@@ -38,7 +38,10 @@ export function HeatCell(props: {
 			: `${props.pct}%`)
 	return (
 		<td
-			class={['heat-cell', { on: !!props.active, click: !!props.onClick }]}
+			class={[
+				'ib-report-heat-cell',
+				{ 'ib-report-on': !!props.active, 'ib-report-click': !!props.onClick },
+			]}
 			style={{ '--pct': String(props.pct) }}
 			title={title()}
 		>
@@ -46,7 +49,7 @@ export function HeatCell(props: {
 				{(onClick) => (
 					<button
 						type="button"
-						class="heat-btn"
+						class="ib-report-heat-btn"
 						onClick={() => onClick()()}
 						aria-pressed={props.active ? 'true' : 'false'}
 						aria-label={title()}

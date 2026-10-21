@@ -129,8 +129,8 @@ function MethodBody(props: {
 						cluster size decides how many passages a group must hold to count as a topic; noise is
 						the passages left in no topic.
 					</p>
-					<div class="fig reveal heat-wrap">
-						<table class="heat attempts">
+					<div class="fig reveal ib-report-heat-wrap">
+						<table class="ib-report-heat ib-report-attempts">
 							<thead>
 								<tr>
 									<th scope="col">Attempt</th>
@@ -142,7 +142,7 @@ function MethodBody(props: {
 							<tbody>
 								<For each={m().attempts}>
 									{(a, i) => (
-										<tr class={{ committed: i() === m().attempts.length - 1 }}>
+										<tr class={{ 'ib-report-committed': i() === m().attempts.length - 1 }}>
 											<th scope="row">{i() === m().attempts.length - 1 ? 'committed' : i() + 1}</th>
 											<td>{a.minClusterSize}</td>
 											<td>{a.clusters}</td>
