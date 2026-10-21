@@ -32,10 +32,10 @@ import type {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, countDistinct, eq, inArray, sql } from 'drizzle-orm'
 import { generationLabel, treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
-import { hierarchy } from './data.ts'
+import { hierarchy, STRONG } from './data.ts'
 import { type EffectiveFacets, loadFacetCache } from './facets.ts'
 import { groupNodeId, sourceNodeId, topicNodeId } from './readings.ts'
 
@@ -103,7 +103,7 @@ const strongDocuments = (db: CorpusDb, ids?: number[]) =>
 		.innerJoin(s.publishedChunk, eq(s.publishedChunk.id, s.currentChunkMembership.chunkId))
 		.where(
 			and(
-				inArray(s.currentChunkMembership.membershipType, ['exemplar', 'high_value']),
+				inArray(s.currentChunkMembership.membershipType, STRONG),
 				ids ? inArray(s.currentChunkMembership.topicClusterId, ids) : undefined,
 			),
 		)
@@ -169,10 +169,15 @@ export async function reportOverview(
 			s.topicCluster,
 			sql`${s.topicCluster.retiredBuildId} IS NULL AND ${s.topicCluster.junkStatus} = 'confirmed'`,
 		),
-		db.$count(s.currentEntityMembership),
-		db.all<{ topicClusterId: number; sources: number }>(sql`
-			SELECT topic_cluster_id AS topicClusterId, COUNT(DISTINCT entity_uuid) AS sources
-			FROM current_entity_membership GROUP BY topic_cluster_id`),
+		db.$count(s.currentEntityMembership, inArray(s.currentEntityMembership.membershipType, STRONG)),
+		db
+			.select({
+				topicClusterId: s.currentEntityMembership.topicClusterId,
+				sources: countDistinct(s.currentEntityMembership.entityUuid),
+			})
+			.from(s.currentEntityMembership)
+			.where(inArray(s.currentEntityMembership.membershipType, STRONG))
+			.groupBy(s.currentEntityMembership.topicClusterId),
 		hierarchy(db),
 		db.$count(s.question),
 		db
@@ -272,7 +277,12 @@ async function topicFacts(db: CorpusDb, words: RunWords, ids?: number[]) {
 				membershipType: s.currentEntityMembership.membershipType,
 			})
 			.from(s.currentEntityMembership)
-			.where(ids ? inArray(s.currentEntityMembership.topicClusterId, ids) : undefined),
+			.where(
+				and(
+					inArray(s.currentEntityMembership.membershipType, STRONG),
+					ids ? inArray(s.currentEntityMembership.topicClusterId, ids) : undefined,
+				),
+			),
 		currentStances(db, ids),
 		strongDocuments(db, ids),
 	])
@@ -432,7 +442,7 @@ export async function galaxy(
 				membershipType: s.currentEntityMembership.membershipType,
 			})
 			.from(s.currentEntityMembership)
-			.where(inArray(s.currentEntityMembership.membershipType, ['exemplar', 'high_value'])),
+			.where(inArray(s.currentEntityMembership.membershipType, STRONG)),
 	])
 	const nouns = words.nouns
 	const lensHeading = words.lens ? (words.facets[words.lens]?.heading ?? words.lens) : null

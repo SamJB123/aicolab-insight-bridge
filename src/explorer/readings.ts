@@ -38,7 +38,10 @@ import {
 } from '../reader/content-builders.ts'
 import type { ReadingView } from '../reader/detail-sheet.tsx'
 import { generationLabel } from '../tree.ts'
-import { questionClause } from '../world/schema.ts'
+import { MEMBERSHIP_GRADES, questionClause } from '../world/schema.ts'
+
+/** A strong link, the grade every count counts: a plain member is listed under its grade, never counted. */
+const isStrong = (grade: string) => MEMBERSHIP_GRADES.some((strong) => strong === grade)
 
 export type { ReadingView }
 
@@ -210,7 +213,10 @@ export function topicReading(
 		[name, lensOf(entityUuid)].filter(Boolean).join(' · ') || undefined
 	const stanceOf = new Map(d.entityPerspectives.map((p) => [p.entityUuid, p.position]))
 	const stances = d.entityPerspectives.length
-	const unjudged = d.members.filter((m) => !stanceOf.has(m.entityUuid)).length
+	// a strong member with no written stance; a plain member is never analysed, so never missing one
+	const unjudged = d.members.filter(
+		(m) => isStrong(m.membershipType) && !stanceOf.has(m.entityUuid),
+	).length
 	const lensValues = new Map<string, number>()
 	for (const p of d.entityPerspectives) {
 		const value = lensOf(p.entityUuid)
@@ -279,7 +285,7 @@ export function topicReading(
 		{
 			label: 'Members',
 			rows: d.members
-				.filter((m) => m.membershipType !== 'exemplar' && m.membershipType !== 'high_value')
+				.filter((m) => !isStrong(m.membershipType))
 				.sort((a, b) => a.entityName.localeCompare(b.entityName))
 				.map((m) => row(m, false)),
 		},

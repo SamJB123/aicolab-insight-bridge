@@ -56,7 +56,17 @@ import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { and, asc, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { treeOf } from '../tree.ts'
+import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
+
+/**
+ * The grades every count of the record counts: a source or a passage strongly
+ * linked to its topic (exemplar or high value). A plain member has no written
+ * analysis, so it is listed under its grade where a reading lists members,
+ * never counted.
+ */
+export const STRONG = [...MEMBERSHIP_GRADES]
+const strongSource = inArray(s.currentEntityMembership.membershipType, STRONG)
 
 export type {
 	DocumentDetail,
@@ -254,6 +264,7 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 			await db
 				.select({ id: s.currentEntityMembership.topicClusterId, n: sql<number>`count(*)` })
 				.from(s.currentEntityMembership)
+				.where(strongSource)
 				.groupBy(s.currentEntityMembership.topicClusterId)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -262,7 +273,7 @@ export async function topics(db: CorpusDb, includeJunk = false): Promise<TopicSu
 	const docs = new Map(
 		(
 			await db.all<{ id: number; n: number }>(
-				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id WHERE m.membership_type IN ('exemplar', 'high_value') GROUP BY m.topic_cluster_id`,
+				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id WHERE m.membership_type IN ${STRONG} GROUP BY m.topic_cluster_id`,
 			)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -422,7 +433,7 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 	}>(sql`
 		SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
 		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
-		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ('exemplar', 'high_value') GROUP BY d.document_id ORDER BY chunks DESC`)
+		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG} GROUP BY d.document_id ORDER BY chunks DESC`)
 	const parents = await db.all<{
 		superclusterId: number
 		title: string | null
@@ -516,6 +527,7 @@ export async function groupById(db: CorpusDb, superclusterId: number): Promise<G
 			entityUuid: s.currentEntityMembership.entityUuid,
 		})
 		.from(s.currentEntityMembership)
+		.where(strongSource)
 	const membersOf = new Map<number, Set<string>>()
 	for (const m of membership)
 		membersOf.set(
@@ -619,7 +631,7 @@ export async function relatedTopics(
 		await db
 			.select({ e: s.currentEntityMembership.entityUuid })
 			.from(s.currentEntityMembership)
-			.where(eq(s.currentEntityMembership.topicClusterId, pk))
+			.where(and(eq(s.currentEntityMembership.topicClusterId, pk), strongSource))
 	).map((r) => r.e)
 	if (!own.length) return []
 	const shared = new Map<number, number>()
@@ -630,7 +642,7 @@ export async function relatedTopics(
 				n: sql<number>`count(distinct ${s.currentEntityMembership.entityUuid})`,
 			})
 			.from(s.currentEntityMembership)
-			.where(inArray(s.currentEntityMembership.entityUuid, group))
+			.where(and(inArray(s.currentEntityMembership.entityUuid, group), strongSource))
 			.groupBy(s.currentEntityMembership.topicClusterId)) {
 			if (r.id !== pk) shared.set(r.id, (shared.get(r.id) ?? 0) + n(r.n))
 		}
@@ -667,6 +679,7 @@ export async function entities(db: CorpusDb): Promise<EntitySummary[]> {
 			await db
 				.select({ id: s.currentEntityMembership.entityUuid, n: sql<number>`count(*)` })
 				.from(s.currentEntityMembership)
+				.where(strongSource)
 				.groupBy(s.currentEntityMembership.entityUuid)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -1669,7 +1682,7 @@ export async function hydrateChunks(
 			.where(
 				and(
 					inArray(s.currentChunkMembership.chunkId, group),
-					inArray(s.currentChunkMembership.membershipType, ['exemplar', 'high_value']),
+					inArray(s.currentChunkMembership.membershipType, STRONG),
 				),
 			)
 		for (const r of rows)

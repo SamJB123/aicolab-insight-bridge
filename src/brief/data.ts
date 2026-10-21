@@ -32,6 +32,7 @@ import {
 } from '@aicolab/insight-bridge-contracts/schema'
 import { eq, inArray } from 'drizzle-orm'
 import { generationLabel, treeOf } from '../tree.ts'
+import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import type {
 	BriefContributor,
 	BriefData,
@@ -229,7 +230,9 @@ export async function briefData(db: CorpusDb, config: BriefConfig): Promise<Brie
 				entityUuid: currentEntityMembership.entityUuid,
 				membershipType: currentEntityMembership.membershipType,
 			})
-			.from(currentEntityMembership),
+			.from(currentEntityMembership)
+			// a topic's sources are its strong links, as every count of the record
+			.where(inArray(currentEntityMembership.membershipType, [...MEMBERSHIP_GRADES])),
 		db
 			.select({
 				topicClusterId: clusterEntityPerspective.topicClusterId,
