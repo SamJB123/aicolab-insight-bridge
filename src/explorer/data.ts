@@ -51,6 +51,7 @@ import type {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
+import { SITE_SECTIONS } from '@aicolab/insight-bridge-contracts/site'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { and, asc, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
@@ -154,8 +155,12 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 		lens: profile.facets_to_analyse[0] ?? profile.identity.primary_facet ?? null,
 		facets,
 		tasks: Object.fromEntries(
-			profile.analysis_tasks.map((t) => [t.task_id, { type: t.task_type, title: taskTitle(t) }]),
+			profile.analysis_tasks.map((t) => [
+				t.task_id,
+				{ type: t.task_type, title: site?.tasks[t.task_id]?.title ?? taskTitle(t) },
+			]),
 		),
+		sections: [...(site?.sections ?? SITE_SECTIONS)],
 	}
 }
 

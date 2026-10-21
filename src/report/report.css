@@ -729,6 +729,607 @@
 		color: var(--color-error);
 		border-color: var(--color-error);
 	}
+
+	/* ── custom analysis: what every kind's page shares ── */
+	.ib-report-an-asked {
+		margin-top: 0.8rem;
+		max-width: 74ch;
+		font-size: 0.9rem;
+		color: var(--color-base-content-muted);
+	}
+	.ib-report-an-asked summary {
+		cursor: pointer;
+		font-family: var(--font-data);
+		font-size: 0.78rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+	.ib-report-an-asked p {
+		margin: 0.5rem 0 0;
+		white-space: pre-line;
+	}
+	.ib-report-an-controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.7rem 1rem;
+		margin: 0 0 1rem;
+	}
+	.ib-report-an-controls .fig-note {
+		margin: 0;
+	}
+	.ib-report-an-n {
+		font-family: var(--font-data);
+		font-size: 0.82rem;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+		color: var(--color-base-content);
+	}
+	.ib-report-an-n small {
+		color: var(--color-base-content-muted);
+	}
+	.ib-report-an-chip {
+		display: inline-flex;
+		align-items: center;
+		font-family: var(--font-data);
+		font-size: 0.7rem;
+		line-height: 1.3;
+		color: var(--color-base-content-muted);
+		background: var(--color-base-200);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0.1rem 0.5rem;
+		white-space: nowrap;
+	}
+	.ib-report-an-chip.ib-report-an-chip-strong {
+		color: var(--color-primary-2, var(--color-primary));
+		border-color: var(--color-primary);
+		background: var(--color-primary-soft);
+	}
+	.ib-report-an-eyebrow {
+		font-family: var(--font-data);
+		font-size: 0.72rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-base-content-faint);
+	}
+	/* a bar of documents; a darker share inside it where the value is primary */
+	.ib-report-an-bar {
+		display: block;
+		height: 0.7rem;
+		background: var(--color-base-200);
+		border-radius: 3px;
+		overflow: hidden;
+		min-width: 4rem;
+	}
+	.ib-report-an-bar-fill {
+		display: block;
+		height: 100%;
+		width: var(--w);
+		background: color-mix(in oklab, var(--color-primary) 45%, var(--color-base-200));
+		border-radius: 3px;
+	}
+	.ib-report-an-bar-primary {
+		display: block;
+		height: 100%;
+		width: var(--w);
+		background: var(--color-primary);
+	}
+	/* the lens strip: each value's share, shaded by how far it sits from the overall share */
+	.ib-report-an-strip {
+		display: inline-flex;
+		gap: 2px;
+		flex-wrap: nowrap;
+	}
+	.ib-report-an-strip-cell {
+		display: inline-block;
+		width: 0.85rem;
+		height: 0.85rem;
+		border-radius: 2px;
+		background: color-mix(
+			in oklab,
+			var(--color-primary) calc(var(--lift, 1) * 50%),
+			var(--color-base-200)
+		);
+		border: 1px solid var(--color-border);
+	}
+	.ib-report-an-key {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 1rem;
+		align-items: center;
+	}
+	.ib-report-an-key-scale {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.ib-report-an-more {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-top: 0.8rem;
+	}
+	.ib-report-an-more .fig-note {
+		margin: 0;
+	}
+	.ib-report-an-drill {
+		margin: 0.6rem 0 1rem;
+		padding: 1rem 1.1rem;
+		background: var(--color-base-100);
+		border: 1px solid var(--color-border);
+		border-radius: 10px;
+		min-width: 0;
+	}
+	.ib-report-an-evidence,
+	.ib-report-an-answers,
+	.ib-report-an-findings,
+	.ib-report-an-ranked,
+	.ib-report-an-combos,
+	.ib-report-an-metrics,
+	.ib-report-an-stars,
+	.ib-report-an-ladder,
+	.ib-report-an-tree {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.6rem;
+	}
+	.ib-report-an-evidence-row,
+	.ib-report-an-answer,
+	.ib-report-an-finding,
+	.ib-report-an-ranked-doc {
+		display: grid;
+		gap: 0.4rem;
+		padding: 0.8rem 0.9rem;
+		background: var(--color-base-100);
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		min-width: 0;
+	}
+	.ib-report-an-drill .ib-report-an-evidence-row {
+		background: var(--color-base-200);
+	}
+	.ib-report-an-evidence-who {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem 0.6rem;
+	}
+	.ib-report-an-evidence-who .fig-note {
+		margin: 0;
+	}
+	.ib-report-an-evidence-row p,
+	.ib-report-an-answer p,
+	.ib-report-an-finding p,
+	.ib-report-an-ranked-doc p {
+		margin: 0;
+		max-width: 80ch;
+	}
+	.ib-report-an-leaf {
+		font-weight: 600;
+		font-size: 0.92rem;
+	}
+	.ib-report-an-context,
+	.ib-report-an-position {
+		color: var(--color-base-content);
+		line-height: 1.5;
+	}
+	.ib-report-an-quote {
+		margin: 0.2rem 0;
+		padding: 0.4rem 0.8rem;
+		border-left: 3px solid var(--color-primary);
+		font-family: var(--font-display);
+		font-style: italic;
+		color: var(--color-base-content);
+		background: var(--color-base-200);
+		border-radius: 0 6px 6px 0;
+	}
+	.ib-report-an-points summary {
+		cursor: pointer;
+		font-size: 0.86rem;
+		color: var(--color-primary-2, var(--color-primary));
+	}
+	.ib-report-an-points ul {
+		list-style: none;
+		margin: 0.5rem 0 0;
+		padding: 0;
+		display: grid;
+		gap: 0.6rem;
+	}
+
+	/* ── tagging: the taxonomy tree and what is tagged together ── */
+	.ib-report-an-node {
+		display: block;
+		padding-left: calc(var(--depth) * 1.4rem);
+	}
+	.ib-report-an-node-row {
+		display: grid;
+		grid-template-columns: 1.4rem minmax(10rem, 1.6fr) minmax(4rem, 1fr) auto auto;
+		align-items: center;
+		gap: 0.6rem;
+		min-width: 0;
+	}
+	@media (max-width: 720px) {
+		.ib-report-an-node-row {
+			grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+		}
+		.ib-report-an-node-row .ib-report-an-bar,
+		.ib-report-an-node-row .ib-report-an-strip {
+			grid-column: 2 / -1;
+		}
+	}
+	.ib-report-an-caret {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		width: 1.4rem;
+		text-align: center;
+		color: var(--color-base-content-muted);
+	}
+	.ib-report-an-caret:disabled {
+		cursor: default;
+	}
+	.ib-report-an-caret:focus-visible,
+	.ib-report-an-node-name:focus-visible,
+	.ib-report-an-rung-head:focus-visible,
+	.ib-report-an-criterion:focus-visible,
+	.ib-report-an-metric-head:focus-visible,
+	.ib-report-an-star:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
+	}
+	.ib-report-an-node-name {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+		font-size: 0.94rem;
+		line-height: 1.35;
+	}
+	.ib-report-an-node-name:hover span,
+	.ib-report-an-node.ib-report-on > .ib-report-an-node-row .ib-report-an-node-name span {
+		color: var(--color-primary-2, var(--color-primary));
+	}
+	.ib-report-an-combo {
+		display: grid;
+		grid-template-columns: minmax(0, 2fr) minmax(4rem, 1fr) auto;
+		align-items: center;
+		gap: 0.7rem;
+	}
+	.ib-report-an-combo-set {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+
+	/* ── questions: the ladder ── */
+	.ib-report-an-rung {
+		border: 1px solid var(--color-border);
+		border-radius: 10px;
+		background: var(--color-base-100);
+	}
+	.ib-report-an-rung.ib-report-on {
+		border-color: var(--color-primary);
+	}
+	.ib-report-an-rung-head {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: grid;
+		grid-template-columns: 3rem minmax(0, 1fr) minmax(14rem, 22rem);
+		gap: 0.8rem 1rem;
+		align-items: center;
+		width: 100%;
+		padding: 0.8rem 1rem;
+	}
+	@media (max-width: 760px) {
+		.ib-report-an-rung-head {
+			grid-template-columns: 2.4rem minmax(0, 1fr);
+		}
+		.ib-report-an-rung-figures {
+			grid-column: 1 / -1;
+		}
+	}
+	.ib-report-an-clause {
+		font-family: var(--font-data);
+		font-size: 0.95rem;
+		color: var(--color-primary-2, var(--color-primary));
+	}
+	.ib-report-an-rung-text {
+		line-height: 1.45;
+	}
+	.ib-report-an-rung-figures {
+		display: grid;
+		grid-template-columns: minmax(4rem, 1fr) auto;
+		gap: 0.4rem 0.6rem;
+		align-items: center;
+	}
+	.ib-report-an-rung-figures .ib-report-an-strip {
+		grid-column: 1 / -1;
+	}
+	.ib-report-an-rung .ib-report-an-drill {
+		margin: 0 1rem 1rem;
+	}
+
+	/* ── perspective: the criteria and the register ── */
+	.ib-report-an-criteria {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+		gap: 0.7rem;
+		margin-bottom: 0.8rem;
+	}
+	.ib-report-an-criterion {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: grid;
+		gap: 0.45rem;
+		align-content: start;
+		padding: 0.8rem 0.9rem;
+		border: 1px solid var(--color-border);
+		border-radius: 10px;
+		background: var(--color-base-100);
+	}
+	.ib-report-an-criterion.ib-report-on {
+		border-color: var(--color-primary);
+		background: var(--color-primary-soft);
+	}
+	.ib-report-an-criterion-text {
+		line-height: 1.4;
+		font-weight: 500;
+	}
+	.ib-report-an-finding-head {
+		font-weight: 600;
+		line-height: 1.4;
+	}
+	.ib-report-an-alongside {
+		display: grid;
+		grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
+		gap: 0.3rem 0.8rem;
+		margin: 0.2rem 0;
+		font-size: 0.9rem;
+	}
+	.ib-report-an-alongside dt {
+		color: var(--color-base-content-muted);
+	}
+	.ib-report-an-alongside dd {
+		margin: 0;
+	}
+
+	/* ── assessment: the scorecards, the joint grid, the ranked documents ── */
+	.ib-report-an-scorecards {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+		gap: 1rem;
+	}
+	.ib-report-an-scorecard {
+		display: grid;
+		gap: 0.7rem;
+		align-content: start;
+		padding: 1rem 1.1rem;
+		border: 1px solid var(--color-border);
+		border-radius: 12px;
+		background: var(--color-base-100);
+		min-width: 0;
+	}
+	.ib-report-an-scorecard h3 {
+		margin: 0.2rem 0 0;
+		font-size: 1.15rem;
+	}
+	.ib-report-an-score-figures {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+	}
+	.ib-report-an-score-figures .fig-note {
+		margin: 0;
+	}
+	.ib-report-an-mean {
+		font-family: var(--font-display);
+		font-size: 2.2rem;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+	}
+	.ib-report-an-scorebar {
+		display: flex;
+		height: 1rem;
+		border-radius: 4px;
+		overflow: hidden;
+		background: var(--color-base-200);
+		min-width: 6rem;
+	}
+	.ib-report-an-scorebar-seg {
+		display: block;
+		height: 100%;
+		width: var(--w);
+	}
+	.ib-report-an-score-legend {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.9rem;
+		font-family: var(--font-data);
+		font-size: 0.78rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.ib-report-an-score-legend li {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.ib-report-an-swatch {
+		display: inline-block;
+		width: 0.7rem;
+		height: 0.7rem;
+		border-radius: 2px;
+	}
+	.ib-report-an-lens-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.86rem;
+	}
+	.ib-report-an-lens-table caption {
+		text-align: left;
+		margin: 0 0 0.3rem;
+	}
+	.ib-report-an-lens-table th {
+		text-align: left;
+		font-weight: 400;
+		padding: 0.25rem 0.6rem 0.25rem 0;
+		white-space: nowrap;
+	}
+	.ib-report-an-lens-table td {
+		padding: 0.25rem 0 0.25rem 0.5rem;
+	}
+	.ib-report-an-lens-table td:nth-child(2) {
+		width: 100%;
+	}
+	.ib-report-an-joint-wrap {
+		overflow-x: auto;
+	}
+	.ib-report-an-joint {
+		border-collapse: separate;
+		border-spacing: 3px;
+		font-family: var(--font-data);
+		font-size: 0.82rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.ib-report-an-joint th {
+		font-weight: 400;
+		color: var(--color-base-content-muted);
+		padding: 0.2rem 0.4rem;
+		text-align: center;
+	}
+	.ib-report-an-joint thead th:first-child {
+		text-align: left;
+		white-space: nowrap;
+	}
+	.ib-report-an-joint td {
+		width: 3.2rem;
+		height: 2.4rem;
+		padding: 0;
+		background: color-mix(in oklab, var(--s5) calc(var(--pct) * 1%), var(--color-base-200));
+		border-radius: 4px;
+		text-align: center;
+	}
+	.ib-report-an-joint td button {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: block;
+		width: 100%;
+		height: 100%;
+		line-height: 2.4rem;
+		color: var(--color-base-content);
+		border-radius: 4px;
+	}
+	.ib-report-an-joint td button[aria-pressed="true"] {
+		outline: 2px solid var(--color-base-content);
+		outline-offset: -2px;
+	}
+	.ib-report-an-joint td button:focus-visible {
+		outline: 2px solid var(--color-primary);
+	}
+	.ib-report-an-doc-scores {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.4rem;
+	}
+	.ib-report-an-doc-scores li {
+		display: grid;
+		grid-template-columns: 2.4rem minmax(0, 1fr);
+		gap: 0.6rem;
+		align-items: start;
+	}
+	.ib-report-an-score-dot {
+		display: inline-grid;
+		place-items: center;
+		width: 2.4rem;
+		height: 1.6rem;
+		border-radius: 999px;
+		font-family: var(--font-data);
+		font-size: 0.82rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-base-100);
+		border: 1px solid var(--color-border);
+	}
+	.ib-report-an-score-what {
+		display: grid;
+		gap: 0.1rem;
+		min-width: 0;
+	}
+	.ib-report-an-score-what small {
+		color: var(--color-base-content-muted);
+		font-size: 0.76rem;
+	}
+	.ib-report-an-reasoning {
+		display: grid;
+		gap: 0.3rem;
+		margin-top: 0.6rem;
+	}
+
+	/* ── metrics: north stars and the catalogue ── */
+	.ib-report-an-stars {
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+	}
+	.ib-report-an-star {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: grid;
+		gap: 0.3rem;
+		width: 100%;
+		padding: 0.7rem 0.9rem;
+		border: 1px solid var(--color-border);
+		border-radius: 10px;
+		background: var(--color-base-100);
+	}
+	.ib-report-an-star.ib-report-on {
+		border-color: var(--color-primary);
+	}
+	.ib-report-an-star.ib-report-an-star-gap {
+		cursor: default;
+		border-style: dashed;
+		color: var(--color-base-content-muted);
+	}
+	.ib-report-an-metric {
+		border: 1px solid var(--color-border);
+		border-radius: 10px;
+		background: var(--color-base-100);
+	}
+	.ib-report-an-metric.ib-report-on {
+		border-color: var(--color-primary);
+	}
+	.ib-report-an-metric-head {
+		all: unset;
+		box-sizing: border-box;
+		cursor: pointer;
+		display: grid;
+		grid-template-columns: minmax(0, 2fr) minmax(4rem, 1fr) auto;
+		gap: 0.7rem;
+		align-items: center;
+		width: 100%;
+		padding: 0.7rem 0.9rem;
+	}
+	.ib-report-an-metric-name {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.ib-report-an-metric .ib-report-an-drill {
+		margin: 0 0.9rem 0.9rem;
+	}
 }
 
 /* Modifiers of the frame's own classes. The frame is unlayered — site.css, or

@@ -29,6 +29,7 @@ import {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import { drizzle } from 'drizzle-orm/node-sqlite'
 import { beforeAll, describe, expect, it } from 'vitest'
+import * as analysis from './analysis.ts'
 import * as x from './data.ts'
 import * as pages from './pages.ts'
 import { documentReading, groupReading, sourceReading, topicReading } from './readings.ts'
@@ -128,8 +129,15 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		expect(overview.groups).toBe(land.groups.length)
 		expect(overview.lensValues.reduce((a, v) => a + v.sources, 0)).toBe(overview.sources)
 		for (const g of land.groups) expect(g.topics).toBeGreaterThan(0)
-		const questions = questionsOverviewSchema.parse(await pages.questionsOverview(db, words))
+		const tasks = await analysis.analysisTasks(db, words)
+		const questionTask = tasks.find((t) => t.kind === 'question_response')
+		expect(questionTask).toBeDefined()
+		if (!questionTask) return
+		const questions = questionsOverviewSchema.parse(
+			await analysis.questionsOverview(db, words, questionTask.taskId),
+		)
 		expect(questions.questions.length).toBe(overview.questions)
+		expect(questions.task.documents).toBe(questionTask.documents)
 		const [first] = questions.questions
 		if (first) {
 			const detail = questionDetailSchema.parse(

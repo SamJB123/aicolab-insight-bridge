@@ -13,16 +13,17 @@
 import type { Landscape, ReportOverview } from '@aicolab/insight-bridge-contracts/explorer'
 import { Eyebrow } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { Show } from 'solid-js'
+import { For, Show } from 'solid-js'
 import { StructureTree } from '../brief/structure-tree.tsx'
 import { BarList, DoorCard, PositionStrip, StatTiles } from '../site/figures.tsx'
+import { kindLabel } from './analysis/common.tsx'
 import {
 	cap,
 	fmt,
 	type ReportSurface,
 	ReportSurfaceContext,
+	tasksOf,
 	useReportSurface,
-	vocabularyOf,
 } from './surface.tsx'
 import './report.css'
 
@@ -60,7 +61,7 @@ function OverviewBody(props: {
 	additions: OverviewAdditions | undefined
 }) {
 	const s = useReportSurface()
-	const v = vocabularyOf(s)
+	const tasks = () => tasksOf(s.words)
 	const o = () => props.overview
 	const land = () => props.landscape
 	const w = () => s.words
@@ -80,13 +81,22 @@ function OverviewBody(props: {
 		const l = lens()
 		return l ? (w().facets[l]?.order.length ?? 0) : 0
 	}
-	const questionsDoor = () => {
-		const heading = lensHeading()
-		return (
-			`${cap(v.questionsPhrase)}, put to every ${nouns().document}` +
-			(heading ? `: a ${heading.toLowerCase()} × ${v.question} map of attention` : '') +
-			', and every answer with its position and key points.'
-		)
+	/** What a custom analysis task's page holds, by its kind. */
+	const taskDoor = (kind: string) => {
+		const heading = lensHeading()?.toLowerCase()
+		const by = heading ? `, by ${heading}` : ''
+		switch (kind) {
+			case 'question_response':
+				return `Each question put to every ${nouns().document}: who answered it${by}, and every answer with its key points and quotes.`
+			case 'metadata_tagging':
+				return `Every ${nouns().document} tagged against a vocabulary: what was tagged most, what was primary, and what each ${heading ?? 'group'} tagged more than others.`
+			case 'perspective_analysis':
+				return `What each ${nouns().entity} said against each criterion, with their own words${by}.`
+			case 'criteria_assessment':
+				return `Every ${nouns().document} scored against each criterion: how the scores fell${by}, and the ${nouns().documents} ranked with the reasoning.`
+			default:
+				return `The measures the ${nouns().documents} proposed, grouped by name, with the data each would take to collect.`
+		}
 	}
 	const connectDoor = () => {
 		const heading = lensHeading()
@@ -94,7 +104,7 @@ function OverviewBody(props: {
 			`The same data over a Model Context Protocol server: add it as a connector and an agent can search the passages` +
 			(heading ? `, split any topic by ${heading.toLowerCase()}` : '') +
 			`, read every ${nouns().entity}'s stance` +
-			(o().questions ? ` and every answer to ${v.questionsPhrase}` : '') +
+			(tasks().length ? ' and every custom analysis' : '') +
 			'.'
 		)
 	}
@@ -162,8 +172,8 @@ function OverviewBody(props: {
 							? [
 									{
 										n: fmt(o().answers),
-										l: `answers to ${v.questionsPhrase}`,
-										note: `${fmt(o().questions)} ${v.question}${o().questions === 1 ? '' : 's'} · ${fmt(o().answeringSources)} ${nouns().entities} answered at least one`,
+										l: 'answers to questions',
+										note: `${fmt(o().questions)} question${o().questions === 1 ? '' : 's'} · ${fmt(o().answeringSources)} ${nouns().entities} answered at least one`,
 									},
 								]
 							: [{ n: fmt(o().quotes), l: 'verbatim quotes' }]),
@@ -273,17 +283,15 @@ function OverviewBody(props: {
 
 			<section class="sec">
 				<div class="grid2 findings-grid">
-					<Show when={o().questions}>
-						<s.Link section="questions" class="fig reveal door">
-							<DoorCard
-								eyebrow={`${v.questionsTitle} · ${fmt(o().questions)}`}
-								title={`Who answered which ${v.question}`}
-								go="Read the answers →"
-							>
-								<p>{questionsDoor()}</p>
-							</DoorCard>
-						</s.Link>
-					</Show>
+					<For each={tasks()}>
+						{(t) => (
+							<s.Link section="analysis" taskId={t.taskId} class="fig reveal door">
+								<DoorCard eyebrow={kindLabel(t.kind)} title={t.title} go="Read it →">
+									<p>{taskDoor(t.kind)}</p>
+								</DoorCard>
+							</s.Link>
+						)}
+					</For>
 					<s.Link section="search" class="fig reveal door">
 						<DoorCard
 							eyebrow="Search"

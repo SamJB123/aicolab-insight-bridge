@@ -4,7 +4,7 @@
  * search found, the questions the run put to every document, and the method's
  * facts. One definition over the canonical run schema, in the shapes the
  * contracts declare (`ReportOverview`, `Landscape`, `TopicHit`,
- * `QuestionsOverview`, `QuestionDetail`, `MethodData`); generalised from Training Data's own page
+ * `QuestionDetail`, `MethodData`; a custom analysis task's overview is analysis.ts's); generalised from Training Data's own page
  * reads (2026-10-21), whose corpus-specific counts are that app's extension.
  *
  * Every count is of contributors; a contributor counts towards a topic by any
@@ -24,7 +24,6 @@ import type {
 	Landscape,
 	MethodData,
 	QuestionDetail,
-	QuestionsOverview,
 	ReportOverview,
 	RunWords,
 	TopicHit,
@@ -50,11 +49,11 @@ const countIn = (mix: Readonly<Record<string, number>>, set: ReadonlySet<string>
 	Object.entries(mix).reduce((a, [p, k]) => a + (set.has(p) ? k : 0), 0)
 
 /** A contributor's lens value, or null when it has none. */
-const lensOf = (words: RunWords, facets: EffectiveFacets | undefined) =>
+export const lensOf = (words: RunWords, facets: EffectiveFacets | undefined) =>
 	(words.lens ? facets?.[words.lens]?.[0] : undefined) ?? null
 
 /** The lens's values in the profile's order, then any the profile did not list, then the unclassified. */
-const lensRank = (words: RunWords) => {
+export const lensRank = (words: RunWords) => {
 	const order = words.lens ? (words.facets[words.lens]?.order ?? []) : []
 	return (value: string | null) => {
 		if (value === null) return Number.MAX_SAFE_INTEGER
@@ -655,84 +654,9 @@ export async function topicSearch(
 	})
 }
 
-// ---------------------------------------------------------------- the questions
+// ---------------------------------------------------------------- one question (a task's overview is analysis.ts's)
 
-/** Every question the run put to every document, and who answered which, by lens value. */
-export async function questionsOverview(db: CorpusDb, words: RunWords): Promise<QuestionsOverview> {
-	const [entityFacets, questions, answers, keyPoints, contributors] = await Promise.all([
-		loadFacetCache(db, 'entity'),
-		db.select().from(s.question).orderBy(asc(s.question.ordinal)),
-		db
-			.select({
-				questionId: s.publishedQuestionResponse.questionId,
-				entityUuid: s.publishedDocument.entityUuid,
-			})
-			.from(s.publishedQuestionResponse)
-			.innerJoin(
-				s.publishedDocument,
-				eq(s.publishedDocument.documentId, s.publishedQuestionResponse.documentId),
-			)
-			.where(eq(s.publishedQuestionResponse.addressed, 1)),
-		db.all<{ questionId: number; keyPoints: number }>(sql`
-			SELECT r.question_id AS questionId, COUNT(*) AS keyPoints
-			FROM published_question_response_key_point k
-			JOIN published_question_response r ON r.question_response_id = k.question_response_id
-			GROUP BY r.question_id`),
-		db.selectDistinct({ entityUuid: s.publishedDocument.entityUuid }).from(s.publishedDocument),
-	])
-	const lensValueOf = (entityUuid: string) => lensOf(words, entityFacets.get(entityUuid))
-	const rank = lensRank(words)
-	const totals = new Map<string | null, number>()
-	for (const c of contributors) {
-		const value = lensValueOf(c.entityUuid)
-		totals.set(value, (totals.get(value) ?? 0) + 1)
-	}
-	const sourcesOf = new Map<number, Set<string>>()
-	const responsesOf = new Map<number, number>()
-	const cell = new Map<string, Set<string>>()
-	for (const a of answers) {
-		sourcesOf.set(a.questionId, (sourcesOf.get(a.questionId) ?? new Set()).add(a.entityUuid))
-		responsesOf.set(a.questionId, (responsesOf.get(a.questionId) ?? 0) + 1)
-		const key = `${lensValueOf(a.entityUuid) ?? ''}|${a.questionId}`
-		cell.set(key, (cell.get(key) ?? new Set()).add(a.entityUuid))
-	}
-	const keyPointsOf = new Map(keyPoints.map((r) => [r.questionId, n(r.keyPoints)]))
-	const lensValues = [...totals]
-		.map(([value, sources]) => ({ value, sources }))
-		.sort((a, b) => rank(a.value) - rank(b.value) || b.sources - a.sources)
-	return {
-		questions: questions.map((q) => ({
-			questionId: q.questionId,
-			key: q.questionKey,
-			clause: questionClause(q.questionKey, q.questionText),
-			text: q.questionText,
-			ordinal: q.ordinal,
-			sources: sourcesOf.get(q.questionId)?.size ?? 0,
-			responses: responsesOf.get(q.questionId) ?? 0,
-			keyPoints: keyPointsOf.get(q.questionId) ?? 0,
-		})),
-		lensValues,
-		heat: lensValues.map((v) => ({
-			value: v.value,
-			cells: questions.map((q) => {
-				const addressed = cell.get(`${v.value ?? ''}|${q.questionId}`)?.size ?? 0
-				return {
-					questionId: q.questionId,
-					addressed,
-					sources: v.sources,
-					pct: pct(addressed, v.sources),
-				}
-			}),
-		})),
-		overall: questions.map((q) => ({
-			questionId: q.questionId,
-			pct: pct(sourcesOf.get(q.questionId)?.size ?? 0, contributors.length),
-		})),
-		sourcesWithDocuments: contributors.length,
-	}
-}
-
-/** One question's answers, by lens value, each with its contributor, document and key points. */
+/** One question's answers, by lens value, each with its contributor, document and key points with their quotes. */
 export async function questionDetail(
 	db: CorpusDb,
 	words: RunWords,
@@ -744,7 +668,7 @@ export async function questionDetail(
 		.where(eq(s.question.questionId, questionId))
 		.limit(1)
 	if (!q) return null
-	const [entityFacets, documentFacets, rows, keyPoints] = await Promise.all([
+	const [entityFacets, documentFacets, rows, keyPoints, quotes] = await Promise.all([
 		loadFacetCache(db, 'entity'),
 		loadFacetCache(db, 'document'),
 		db
@@ -769,6 +693,7 @@ export async function questionDetail(
 			),
 		db
 			.select({
+				id: s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId,
 				responseId: s.publishedQuestionResponseKeyPoint.questionResponseId,
 				keyPoint: s.publishedQuestionResponseKeyPoint.keyPoint,
 				details: s.publishedQuestionResponseKeyPoint.details,
@@ -781,13 +706,39 @@ export async function questionDetail(
 					s.publishedQuestionResponseKeyPoint.questionResponseId,
 				),
 			)
-			.where(eq(s.publishedQuestionResponse.questionId, questionId)),
+			.where(eq(s.publishedQuestionResponse.questionId, questionId))
+			.orderBy(asc(s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId)),
+		db
+			.select({
+				keyPointId: s.publishedQuestionResponseQuote.questionResponseKeyPointId,
+				quote: s.publishedQuestionResponseQuote.quote,
+			})
+			.from(s.publishedQuestionResponseQuote)
+			.innerJoin(
+				s.publishedQuestionResponseKeyPoint,
+				eq(
+					s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId,
+					s.publishedQuestionResponseQuote.questionResponseKeyPointId,
+				),
+			)
+			.innerJoin(
+				s.publishedQuestionResponse,
+				eq(
+					s.publishedQuestionResponse.questionResponseId,
+					s.publishedQuestionResponseKeyPoint.questionResponseId,
+				),
+			)
+			.where(eq(s.publishedQuestionResponse.questionId, questionId))
+			.orderBy(asc(s.publishedQuestionResponseQuote.questionResponseQuoteId)),
 	])
-	const keyPointsOf = new Map<number, { keyPoint: string; details: string }[]>()
+	const quotesOf = new Map<number, string[]>()
+	for (const r of quotes)
+		quotesOf.set(r.keyPointId, [...(quotesOf.get(r.keyPointId) ?? []), r.quote])
+	const keyPointsOf = new Map<number, { keyPoint: string; details: string; quotes: string[] }[]>()
 	for (const k of keyPoints)
 		keyPointsOf.set(k.responseId, [
 			...(keyPointsOf.get(k.responseId) ?? []),
-			{ keyPoint: k.keyPoint, details: k.details },
+			{ keyPoint: k.keyPoint, details: k.details, quotes: quotesOf.get(k.id) ?? [] },
 		])
 	const byValue = new Map<string | null, QuestionDetail['byLensValue'][number]['answers']>()
 	for (const r of rows) {

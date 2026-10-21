@@ -18,14 +18,7 @@ import { Eyebrow } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { InsightBridgeReading } from '../about.tsx'
-import {
-	cap,
-	fmt,
-	type ReportSurface,
-	ReportSurfaceContext,
-	useReportSurface,
-	vocabularyOf,
-} from './surface.tsx'
+import { cap, fmt, type ReportSurface, ReportSurfaceContext, useReportSurface } from './surface.tsx'
 import './report.css'
 
 /** What only the host can add to its method page, each a lazy slot. */
@@ -57,7 +50,6 @@ function MethodBody(props: {
 	additions: MethodAdditions | undefined
 }) {
 	const s = useReportSurface()
-	const v = vocabularyOf(s)
 	const m = () => props.method
 	const o = () => props.data.overview
 	const nouns = () => s.words.nouns
@@ -99,7 +91,7 @@ function MethodBody(props: {
 					<Show when={o().questions}>
 						<span>
 							{' '}
-							and <strong>{fmt(o().answers)}</strong> answers to {v.questionsPhrase}
+							and <strong>{fmt(o().answers)}</strong> answers to {fmt(o().questions)} questions
 						</span>
 					</Show>
 					.
@@ -274,7 +266,7 @@ function MethodBody(props: {
 								? [`${fmt(o().lensRows)} ${(lensHeading() ?? '').toLowerCase()} perspectives`]
 								: []),
 							...(o().questions
-								? [`${fmt(o().questions)} ${v.question}s · ${fmt(o().answers)} answers`]
+								? [`${fmt(o().questions)} questions · ${fmt(o().answers)} answers`]
 								: []),
 						]}
 					>
@@ -328,7 +320,6 @@ function RunNotes(props: {
 	additions: MethodAdditions | undefined
 }) {
 	const s = useReportSurface()
-	const v = vocabularyOf(s)
 	const nouns = () => s.words.nouns
 	const heading = (key: string) => (s.words.facets[key]?.heading ?? key).toLowerCase()
 	return (
@@ -380,8 +371,8 @@ function RunNotes(props: {
 			</Show>
 			<Show when={props.data.overview.questions}>
 				<p>
-					<strong>{cap(v.questionsPhrase)} are answered per document.</strong>
-					{` A ${nouns().entity} with more than one document may answer a ${v.question} twice; the ${v.questionsTitle} page counts a ${nouns().entity} once. An unanswered ${v.question} means no answer was located in the available text, never that a ${nouns().entity} has no view.`}
+					<strong>Questions are answered per document.</strong>
+					{` A ${nouns().entity} with more than one document may answer a question twice; a question's page counts a ${nouns().entity} once. An unanswered question means no answer was located in the available text, never that a ${nouns().entity} has no view.`}
 				</p>
 			</Show>
 			<Show when={props.additions?.notes}>{(notes) => notes()()}</Show>

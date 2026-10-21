@@ -23,6 +23,7 @@
 		"./explorer": "./src/explorer/data.ts",
 		"./explorer/facets": "./src/explorer/facets.ts",
 		"./explorer/readings": "./src/explorer/readings.ts",
+		"./explorer/analysis": "./src/explorer/analysis.ts",
 		"./explorer/pages": "./src/explorer/pages.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",

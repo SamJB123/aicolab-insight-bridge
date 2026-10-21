@@ -12,6 +12,8 @@
  * '@aicolab/insight-bridge/site.css' inside the host's `.ib-site`).
  */
 
+export { KIND_LABEL } from './analysis/common.tsx'
+export { type AnalysisLoaders, AnalysisPage, analysisLoaders } from './analysis-page.tsx'
 export {
 	type ConnectAccess,
 	type ConnectAdditions,
@@ -22,14 +24,14 @@ export {
 export { HeatCell, StatRow } from './figures.tsx'
 export { GalaxyPage, type GalaxyPageProps } from './galaxy-page.tsx'
 export { type MethodAdditions, MethodPage } from './method-page.tsx'
+export { type NavItem, ReportSections, reportNav } from './nav.tsx'
 export { type OverviewAdditions, OverviewPage } from './overview-page.tsx'
-export { QuestionsPage, type QuestionsSelection } from './questions-page.tsx'
 export {
 	REPORT_SECTIONS,
 	type ReportSection,
 	type ReportSurface,
 	ReportSurfaceContext,
-	type ReportVocabulary,
+	tasksOf,
 	useReportSurface,
 } from './surface.tsx'
 export { TopicSearchPage } from './topic-search-page.tsx'
