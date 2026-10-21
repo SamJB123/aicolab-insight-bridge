@@ -1847,30 +1847,37 @@ export async function hydrateChunks(
 			text: textOf(scope, entityUuid, hit.text),
 			...wordsOf(scope, entityUuid),
 		}))
+		// The view alone, then the titles by id: joining current_topic here let
+		// SQLite scan every membership once per topic (6.4 s for five passages on
+		// Legal AI's 482k rows); the view by chunk id reads in milliseconds. The
+		// view already holds current topics only.
 		const memberships = await db
 			.select({
 				chunkId: s.currentChunkMembership.chunkId,
-				topicClusterId: s.currentTopic.topicClusterId,
-				title: s.currentTopic.title,
-				type: s.currentChunkMembership.membershipType,
+				topicClusterId: s.currentChunkMembership.topicClusterId,
 			})
 			.from(s.currentChunkMembership)
-			.innerJoin(
-				s.currentTopic,
-				eq(s.currentChunkMembership.topicClusterId, s.currentTopic.topicClusterId),
-			)
 			.where(
 				and(
 					inArray(s.currentChunkMembership.chunkId, group),
 					inArray(s.currentChunkMembership.membershipType, STRONG),
 				),
 			)
+		const titleOf = new Map<number, string>()
+		for (const ids of inGroups([...new Set(memberships.map((m) => m.topicClusterId))], 80))
+			for (const t of await db
+				.select({ id: s.currentTopic.topicClusterId, title: s.currentTopic.title })
+				.from(s.currentTopic)
+				.where(inArray(s.currentTopic.topicClusterId, ids)))
+				titleOf.set(t.id, t.title)
+		const topicsOf = groupBy(memberships, (m) => m.chunkId)
 		for (const r of rows)
 			out.push({
 				...r,
-				topics: memberships
-					.filter((m) => m.chunkId === r.chunkId)
-					.map((m) => ({ topicClusterId: m.topicClusterId, title: m.title })),
+				topics: (topicsOf.get(r.chunkId) ?? []).flatMap((m) => {
+					const title = titleOf.get(m.topicClusterId)
+					return title === undefined ? [] : [{ topicClusterId: m.topicClusterId, title }]
+				}),
 			})
 	}
 	return out

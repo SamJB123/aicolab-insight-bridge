@@ -51,6 +51,19 @@ describe.skipIf(!file || !existsSync(file))('the explorer tool table', () => {
 		}
 	}, 120_000)
 
+	it('a search ranks the passages a host’s index returns, best first, with their topics', async () => {
+		const ids = sqlite.prepare('SELECT id FROM published_chunk ORDER BY id LIMIT 5').all()
+		const nearest: [string, number][] = ids.map((r, i) => [String(r.id), 0.9 - i / 10])
+		const hits = z
+			.array(z.object({ passage_id: z.string(), score: z.number() }))
+			.parse(await runExplorerTool(db, 'search_passages', { query: 'any', top_k: 5 }, { nearest }))
+		expect(hits.map((h) => h.passage_id)).toEqual(nearest.map(([id]) => id))
+		const topics = z
+			.array(z.object({ topic_id: z.number(), relevance: z.number() }))
+			.parse(await runExplorerTool(db, 'find_topics', { query: 'any' }, { nearest }))
+		for (const t of topics) expect(t.relevance).toBeGreaterThan(0)
+	})
+
 	it('dissent sorts first: the contesting positions lead a topic’s stances', async () => {
 		const scale = context.words.scale
 		if (!scale.contesting.length || context.examples.topicId === null) return
