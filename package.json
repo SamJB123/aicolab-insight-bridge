@@ -31,6 +31,7 @@
 		"./galaxy/types": "./src/galaxy/types.ts",
 		"./method": "./src/method.ts",
 		"./reader": "./src/reader/index.ts",
+		"./report": "./src/report/index.ts",
 		"./server": "./src/server/index.ts",
 		"./site": "./src/site/index.ts",
 		"./site.css": "./src/site/site.css",

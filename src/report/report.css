@@ -1,0 +1,28 @@
+/* A report's pages — what they draw beyond the site frame's classes
+ * (site.css: .view-wrap, .sec, .fig, .door, .grid2). Imported by the pages
+ * themselves; layered below any unlayered host CSS, like the Brief's sheet. */
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
+
+@layer ui.organisms {
+	/* the landing's title, larger than a section page's */
+	.ib-report-landing-title {
+		margin-top: 0.6rem;
+		font-size: clamp(2.2rem, 6.4vw, 4.2rem);
+	}
+
+	/* a topic's title that opens its reading: the door title's type, no button chrome */
+	.ib-report-topic {
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		text-align: left;
+	}
+}

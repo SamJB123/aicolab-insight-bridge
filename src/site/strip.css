@@ -1,0 +1,26 @@
+/* The position strip (PositionStrip in figures.tsx) — a stance mix as one
+ * proportional bar. Its own sheet, imported by the component, so it draws the
+ * same in the Brief, a report page or the hub, whichever frame surrounds it.
+ * Layered like the Brief's sheet: below any unlayered host CSS. */
+@layer reset,
+	ui.tokens,
+	ui.resolver,
+	ui.foundations,
+	ui.atoms,
+	ui.molecules,
+	ui.organisms,
+	ui.enhancements;
+
+@layer ui.organisms {
+	.ib-bp-bar {
+		display: flex;
+		width: 100%;
+		border-radius: 2px;
+		overflow: hidden;
+		background: var(--color-base-300);
+	}
+	.ib-bp-bar > span {
+		display: block;
+		height: 100%;
+	}
+}

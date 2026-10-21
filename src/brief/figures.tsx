@@ -16,6 +16,7 @@
  *                      the contributors sit along it
  */
 import { createMemo, createSignal, For, Show } from 'solid-js'
+import { PositionStrip } from '../site/figures.tsx'
 import { useBriefSurface } from './surface.tsx'
 import type { BriefData, BriefStar, BriefTopic, FacetPin, FacetShare } from './types.ts'
 
@@ -42,23 +43,13 @@ export const contestShare = (t: { contesting: number; stances: number }) =>
 
 export function PositionBar(props: { positions: Record<string, number>; height?: string }) {
 	const s = useBriefSurface()
-	const total = () => s.positions.reduce((a, p) => a + (props.positions[p] ?? 0), 0) || 1
 	return (
-		<span class="ib-bp-bar" style={{ height: props.height ?? '8px' }}>
-			<For each={s.positions}>
-				{(p) => (
-					<Show when={props.positions[p]}>
-						<span
-							style={{
-								width: `${(100 * (props.positions[p] ?? 0)) / total()}%`,
-								background: s.positionColors[p],
-							}}
-							title={`${p}: ${props.positions[p]}`}
-						/>
-					</Show>
-				)}
-			</For>
-		</span>
+		<PositionStrip
+			positions={props.positions}
+			order={s.positions}
+			colors={s.positionColors}
+			height={props.height}
+		/>
 	)
 }
 

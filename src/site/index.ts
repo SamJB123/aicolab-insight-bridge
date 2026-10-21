@@ -18,5 +18,5 @@
  * is the default for generated sites) and load its font files. Nothing here
  * carries a palette.
  */
-export { BarList, type BarRow, DoorCard, SectionHead, StatTiles } from './figures.tsx'
+export { BarList, type BarRow, DoorCard, PositionStrip, SectionHead, StatTiles } from './figures.tsx'
 export { SiteShell, type SiteShellProps } from './SiteShell.tsx'

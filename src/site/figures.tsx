@@ -14,6 +14,7 @@
  */
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
+import './strip.css'
 
 const fmt = (n: number) => n.toLocaleString('en-AU')
 
@@ -92,6 +93,33 @@ export function BarList(props: {
 				}}
 			</For>
 		</div>
+	)
+}
+
+/** A position mix as one proportional strip, in the scale's order and the host's colours. */
+export function PositionStrip(props: {
+	positions: Readonly<Record<string, number>>
+	order: readonly string[]
+	colors: Readonly<Record<string, string>>
+	height?: string
+}) {
+	const total = () => props.order.reduce((a, p) => a + (props.positions[p] ?? 0), 0) || 1
+	return (
+		<span class="ib-bp-bar" style={{ height: props.height ?? '8px' }}>
+			<For each={props.order}>
+				{(p) => (
+					<Show when={props.positions[p]}>
+						<span
+							style={{
+								width: `${(100 * (props.positions[p] ?? 0)) / total()}%`,
+								background: props.colors[p],
+							}}
+							title={`${p}: ${props.positions[p]}`}
+						/>
+					</Show>
+				)}
+			</For>
+		</span>
 	)
 }
 
