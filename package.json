@@ -72,6 +72,7 @@
 		"@tanstack/solid-router": "catalog:",
 		"@tanstack/solid-start": "catalog:",
 		"@types/d3-force": "catalog:",
+		"@types/node": "catalog:",
 		"@types/three": "catalog:",
 		"solid-js": "catalog:",
 		"three": "catalog:",

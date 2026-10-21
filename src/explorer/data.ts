@@ -36,6 +36,7 @@ import type {
 	EntitySummary,
 	FoundDocument,
 	GalaxyData,
+	GroupDetail,
 	Hierarchy,
 	Overview,
 	QuestionSummary,
@@ -59,6 +60,7 @@ export type {
 	EntityDetail,
 	EntitySummary,
 	GalaxyData,
+	GroupDetail,
 	Hierarchy,
 	Overview,
 	QuestionSummary,
@@ -362,6 +364,19 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 		SELECT p.supercluster_id AS superclusterId, p.title, p.generation, e.is_primary AS isPrimary, e.membership_type AS membershipType, e.similarity
 		FROM current_supercluster child JOIN current_supercluster_edge e ON e.child_supercluster_id = child.supercluster_id JOIN current_supercluster p ON p.supercluster_id = e.parent_supercluster_id
 		WHERE child.topic_cluster_id = ${tc} ORDER BY e.is_primary DESC, e.similarity DESC`)
+	const members = await db
+		.select({
+			entityUuid: s.entity.id,
+			entityId: s.entity.entityId,
+			entityName: s.entity.entityName,
+			membershipType: s.currentEntityMembership.membershipType,
+		})
+		.from(s.currentEntityMembership)
+		.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
+		.where(eq(s.currentEntityMembership.topicClusterId, tc))
+		.orderBy(asc(s.entity.entityName))
+	const tree = treeOf(await hierarchy(db))
+	const base = tree.baseOfTopic.get(tc)
 	return {
 		...summary,
 		keyPointItems: kpRows.map((r) => ({
@@ -414,6 +429,150 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 		})),
 		sourceDocuments: sourceDocs.map((d) => ({ ...d, chunks: n(d.chunks) })),
 		parents: parents.map((p) => ({ ...p, isPrimary: p.isPrimary === 1 })),
+		members: members.map((m) => ({ ...m, facets: facetCache.get(m.entityUuid) ?? {} })),
+		lineage: base ? tree.ancestorsOf(base.superclusterId) : [],
+	}
+}
+
+/** The committed build's tree by primary edge: each node's primary parent and children. */
+function treeOf(h: Hierarchy) {
+	const byId = new Map(h.nodes.map((node) => [node.superclusterId, node]))
+	const parentOf = new Map<number, number>()
+	const childrenOf = new Map<number, number[]>()
+	for (const e of h.edges) {
+		if (!e.isPrimary) continue
+		parentOf.set(e.child, e.parent)
+		childrenOf.set(e.parent, [...(childrenOf.get(e.parent) ?? []), e.child])
+	}
+	const baseOfTopic = new Map(
+		h.nodes.flatMap((node) =>
+			node.generation === 0 && node.topicClusterId !== null ? [[node.topicClusterId, node]] : [],
+		),
+	)
+	const ancestorsOf = (id: number) => {
+		const out: { superclusterId: number; generation: number; title: string | null }[] = []
+		const seen = new Set([id])
+		for (let at = parentOf.get(id); at !== undefined && !seen.has(at); at = parentOf.get(at)) {
+			seen.add(at)
+			const node = byId.get(at)
+			if (!node) break
+			out.push({ superclusterId: node.superclusterId, generation: node.generation, title: node.title })
+		}
+		return out
+	}
+	/** The topics beneath a node by primary edge. */
+	const topicsUnder = (id: number): number[] => {
+		const out: number[] = []
+		const walk = (at: number, seen: Set<number>) => {
+			if (seen.has(at)) return
+			seen.add(at)
+			const node = byId.get(at)
+			if (node?.generation === 0 && node.topicClusterId !== null) out.push(node.topicClusterId)
+			for (const child of childrenOf.get(at) ?? []) walk(child, seen)
+		}
+		walk(id, new Set())
+		return out
+	}
+	return {
+		byId,
+		baseOfTopic,
+		ancestorsOf,
+		topicsUnder,
+		childrenOf: (id: number) => childrenOf.get(id) ?? [],
+	}
+}
+
+/** A grouping node: its lineage, its direct sub-groups or topics, and the reach of everything beneath it. */
+export async function groupById(db: CorpusDb, superclusterId: number): Promise<GroupDetail | null> {
+	const tree = treeOf(await hierarchy(db))
+	const node = tree.byId.get(superclusterId)
+	if (!node || node.generation === 0) return null
+	const summaries = new Map((await topics(db)).map((t) => [t.topicClusterId, t]))
+	const membership = await db
+		.select({
+			topicClusterId: s.currentEntityMembership.topicClusterId,
+			entityUuid: s.currentEntityMembership.entityUuid,
+		})
+		.from(s.currentEntityMembership)
+	const membersOf = new Map<number, Set<string>>()
+	for (const m of membership)
+		membersOf.set(m.topicClusterId, (membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid))
+	const reachOf = (topicIds: number[]) => {
+		const reach = new Set<string>()
+		for (const t of topicIds) for (const e of membersOf.get(t) ?? []) reach.add(e)
+		return reach.size
+	}
+	const facetCache = await loadFacetCache(db, 'entity')
+	const stances = await db
+		.select({
+			topicClusterId: s.clusterEntityPerspective.topicClusterId,
+			entityUuid: s.clusterEntityPerspective.entityUuid,
+			position: s.clusterEntityPerspective.position,
+		})
+		.from(s.clusterEntityPerspective)
+	const under = new Set(tree.topicsUnder(superclusterId))
+	const positions: Record<string, number> = {}
+	const spreadOf = new Map<number, Map<string, Set<string>>>()
+	for (const st of stances) {
+		if (!under.has(st.topicClusterId)) continue
+		positions[st.position] = (positions[st.position] ?? 0) + 1
+		const spread = spreadOf.get(st.topicClusterId) ?? new Map<string, Set<string>>()
+		for (const [facet, values] of Object.entries(facetCache.get(st.entityUuid) ?? {}))
+			spread.set(facet, (spread.get(facet) ?? new Set()).add(values[0] ?? 'Unknown'))
+		spreadOf.set(st.topicClusterId, spread)
+	}
+	const children = tree.childrenOf(superclusterId).flatMap((id) => {
+		const child = tree.byId.get(id)
+		return child ? [child] : []
+	})
+	return {
+		superclusterId,
+		generation: node.generation,
+		title: node.title,
+		description: node.description,
+		lineage: tree.ancestorsOf(superclusterId),
+		children: children
+			.filter((c) => c.generation > 0)
+			.map((c) => {
+				const topicIds = tree.topicsUnder(c.superclusterId)
+				return {
+					superclusterId: c.superclusterId,
+					generation: c.generation,
+					title: c.title,
+					topics: topicIds.length,
+					entities: reachOf(topicIds),
+				}
+			})
+			.sort((a, b) => b.entities - a.entities),
+		topics: children
+			.flatMap((c) =>
+				c.generation === 0 && c.topicClusterId !== null && under.has(c.topicClusterId)
+					? [c.topicClusterId]
+					: [],
+			)
+			.flatMap((t) => {
+				const summary = summaries.get(t)
+				if (!summary) return []
+				return [
+					{
+						topicClusterId: t,
+						title: summary.title,
+						entities: membersOf.get(t)?.size ?? 0,
+						documents: summary.documents,
+						positions: summary.positions,
+						facetSpread: Object.fromEntries(
+							[...(spreadOf.get(t) ?? new Map<string, Set<string>>())].map(([facet, values]) => [
+								facet,
+								values.size,
+							]),
+						),
+					},
+				]
+			})
+			.sort((a, b) => b.entities - a.entities),
+		topicCount: under.size,
+		entities: reachOf([...under]),
+		positions,
 	}
 }
 
@@ -572,9 +731,14 @@ export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDeta
 			),
 		)
 		.where(eq(s.clusterEntityPerspective.entityUuid, row.id))
+	const documentFacets = await loadFacetCache(db, 'document')
 	return {
 		...summary,
-		documentItems: docs.map((d) => ({ ...d, keyPoints: kp.get(d.documentId) ?? 0 })),
+		documentItems: docs.map((d) => ({
+			...d,
+			keyPoints: kp.get(d.documentId) ?? 0,
+			facets: documentFacets.get(d.documentId) ?? {},
+		})),
 		topicItems: memberships.map((m) => {
 			const p = persp.find((x) => x.topicClusterId === m.topicClusterId)
 			return {
