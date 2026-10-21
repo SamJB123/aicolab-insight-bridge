@@ -12,6 +12,8 @@
  * '@aicolab/insight-bridge/site.css' inside the host's `.ib-site`).
  */
 
+export type { ScoreBand } from '../explorer/bands.ts'
+export type { ScoreBandsOf } from './analysis/assessment-view.tsx'
 export { KIND_LABEL } from './analysis/common.tsx'
 export { type AnalysisLoaders, AnalysisPage, analysisLoaders } from './analysis-page.tsx'
 export {
@@ -25,10 +27,11 @@ export { HeatCell, StatRow } from './figures.tsx'
 export { GalaxyPage, type GalaxyPageProps } from './galaxy-page.tsx'
 export { type MethodAdditions, MethodPage } from './method-page.tsx'
 export {
-	type AnalysisMenuEntry,
 	type HeaderEntry,
+	type HostLink,
 	type HostNavItem,
 	headerEntries,
+	type MenuEntry,
 	type NavItem,
 	ReportSections,
 	reportNav,

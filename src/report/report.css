@@ -1185,8 +1185,12 @@
 		height: 0.7rem;
 		border-radius: 2px;
 	}
+	/* fixed columns, so a long lens value wraps inside its own column instead of
+	   widening the card past a phone's screen: the label a share, the two
+	   numbers narrow, the bar the rest */
 	.ib-report-an-lens-table {
 		width: 100%;
+		table-layout: fixed;
 		border-collapse: collapse;
 		font-size: 0.86rem;
 	}
@@ -1194,17 +1198,30 @@
 		text-align: left;
 		margin: 0 0 0.3rem;
 	}
-	.ib-report-an-lens-table th {
+	/* a fixed table takes its column widths from its first row, the heading row */
+	.ib-report-an-lens-table thead td:first-child {
+		width: 36%;
+	}
+	.ib-report-an-lens-table thead th {
+		width: 3.4rem;
+		padding: 0 0 0 0.5rem;
+		text-align: left;
+		font-weight: 400;
+		font-size: 0.75rem;
+		color: var(--color-base-content-muted);
+	}
+	.ib-report-an-lens-table tbody th {
 		text-align: left;
 		font-weight: 400;
 		padding: 0.25rem 0.6rem 0.25rem 0;
-		white-space: nowrap;
+		overflow-wrap: anywhere;
 	}
 	.ib-report-an-lens-table td {
 		padding: 0.25rem 0 0.25rem 0.5rem;
 	}
-	.ib-report-an-lens-table td:nth-child(2) {
-		width: 100%;
+	/* in a row, the bar is as wide as its column: a minimum would spill over the numbers */
+	.ib-report-an-lens-table .ib-report-an-scorebar {
+		min-width: 0;
 	}
 	.ib-report-an-joint-wrap {
 		overflow-x: auto;
@@ -1222,12 +1239,25 @@
 		padding: 0.2rem 0.4rem;
 		text-align: center;
 	}
-	.ib-report-an-joint thead th:first-child {
+	.ib-report-an-joint caption {
+		caption-side: top;
 		text-align: left;
+		margin: 0 0 0.4rem;
+		max-width: 40rem;
+	}
+	.ib-report-an-joint caption span {
+		display: block;
+	}
+	.ib-report-an-joint tbody th {
+		text-align: right;
 		white-space: nowrap;
 	}
+	/* the corner above the row labels is empty, not a cell */
+	.ib-report-an-joint thead td {
+		background: none;
+	}
 	.ib-report-an-joint td {
-		width: 3.2rem;
+		width: 4.6rem;
 		height: 2.4rem;
 		padding: 0;
 		background: color-mix(in oklab, var(--s5) calc(var(--pct) * 1%), var(--color-base-200));

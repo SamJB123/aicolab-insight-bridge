@@ -4,12 +4,12 @@
  * listed by its title where `analysis` stands (several fold into one menu in
  * the header row), and Connect last as the call to action. A host adds pages
  * of its own (High Water's Top 30, Fault lines, Campaigns), each placed after
- * a section it names. As data (`reportNav`, for a host's phone menu) and as
+ * a section it names, and may fold them into a menu of its own naming. As data (`reportNav`, for a host's phone menu) and as
  * links (`ReportSections`, rendered through the host's own Link, so the
  * router marks the current one).
  */
 import type { RunWords } from '@aicolab/insight-bridge-contracts/explorer'
-import { Menu, MenuItem } from '@aicolab/ui-solid'
+import { Menu, MenuItem, type MenuItemLinkProps } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { type ReportSection, type ReportSurface, tasksOf } from './surface.tsx'
@@ -21,7 +21,20 @@ export interface HostNavItem {
 	label: string
 	/** The section it follows; after the last task's entry when `analysis`. */
 	after: ReportSection
+	/**
+	 * A header menu to fold it into, by that menu's label: the pages naming the
+	 * same menu become one entry, where the first of them stands, so a host with
+	 * many pages of its own keeps the row to one line (the audit corpus's
+	 * eleven, the user's choice 2026-10-22). The phone menu lists each page.
+	 */
+	menu?: string
 }
+
+/** How the host renders a link to one of its pages, through its router: as a header link, or — given a menu item's attributes — as that item's anchor. */
+export type HostLink = (
+	item: { to: string; label: string },
+	attributes?: MenuItemLinkProps,
+) => JSX.Element
 
 export type NavItem =
 	| {
@@ -48,59 +61,101 @@ const labelOf = (section: ReportSection, words: RunWords) =>
 		? words.nouns.entities.charAt(0).toUpperCase() + words.nouns.entities.slice(1)
 		: LABEL[section]
 
-/** Several analysis tasks as one header entry: a menu of their pages. */
-export interface AnalysisMenuEntry {
-	menu: 'analysis'
-	label: string
-	tasks: { taskId: string; label: string }[]
+/** Several entries as one header entry: a menu of their pages, named by its label. */
+export interface MenuEntry {
+	menu: string
+	items: NavItem[]
 }
 
-export type HeaderEntry = NavItem | AnalysisMenuEntry
+export type HeaderEntry = NavItem | MenuEntry
 
-const analysisMenu = (tasks: ReturnType<typeof tasksOf>): AnalysisMenuEntry => ({
-	menu: 'analysis',
-	label: LABEL.analysis,
-	tasks: tasks.map((t) => ({ taskId: t.taskId, label: t.title })),
-})
-
-/** The entries in the site's order, the host's own pages after the sections they name; the tasks folded into one menu entry when `fold` and there are several. */
-function entriesOf(words: RunWords, host: readonly HostNavItem[], fold: boolean): HeaderEntry[] {
+/** Every entry in the site's order, the host's own pages after the sections they name, each with the menu it folds into in the header row (several analysis tasks fold into "Analysis", settled 2026-10-21). */
+function placedOf(
+	words: RunWords,
+	host: readonly HostNavItem[],
+): { item: NavItem; menu: string | null }[] {
 	const tasks = tasksOf(words)
-	return words.sections.flatMap((section): HeaderEntry[] => [
+	return words.sections.flatMap((section) => [
 		...(section !== 'analysis'
-			? [{ section, label: labelOf(section, words) }]
-			: fold && tasks.length > 1
-				? [analysisMenu(tasks)]
-				: tasks.map((t) => ({ section, taskId: t.taskId, label: t.title }))),
+			? [{ item: { section, label: labelOf(section, words) }, menu: null }]
+			: tasks.map((t) => ({
+					item: { section, taskId: t.taskId, label: t.title },
+					menu: tasks.length > 1 ? LABEL.analysis : null,
+				}))),
 		...host
-			.filter((item) => item.after === section)
-			.map((item) => ({ section: null, to: item.to, label: item.label })),
+			.filter((page) => page.after === section)
+			.map((page) => ({
+				item: { section: null, to: page.to, label: page.label },
+				menu: page.menu ?? null,
+			})),
 	])
 }
 
-const isMenu = (entry: HeaderEntry): entry is AnalysisMenuEntry => 'menu' in entry
+const isMenu = (entry: HeaderEntry): entry is MenuEntry => 'menu' in entry
 
-/** What a header entry is, across reloads of the run's words: the menu, a host page, or a section (and its task). */
+/** What a link is, across reloads of the run's words: a host page, or a section (and its task). */
+const navKey = (item: NavItem): string =>
+	item.section === null ? `page:${item.to}` : `section:${item.section}:${item.taskId ?? ''}`
+
+/** What a header entry is: a menu by its label, else its link. */
 const entryKey = (entry: HeaderEntry): string =>
-	isMenu(entry)
-		? 'menu:analysis'
-		: entry.section === null
-			? `page:${entry.to}`
-			: `section:${entry.section}:${entry.taskId ?? ''}`
+	isMenu(entry) ? `menu:${entry.menu}` : navKey(entry)
 
-/** Every entry as a link, each analysis task its own, in the site's order: the phone menu's list. */
+/** Every entry as a link, each analysis task and each host page its own, in the site's order: the phone menu's list. */
 export const reportNav = (words: RunWords, host: readonly HostNavItem[] = []): NavItem[] =>
-	entriesOf(words, host, false).flatMap((entry) => (isMenu(entry) ? [] : [entry]))
+	placedOf(words, host).map((p) => p.item)
 
-/** The header row's entries: as `reportNav`, with several analysis tasks folded into one "Analysis" menu so the row fits (settled 2026-10-21); a single task stays a link. */
-export const headerEntries = (words: RunWords, host: readonly HostNavItem[] = []) =>
-	entriesOf(words, host, true)
+/** The header row's entries: as `reportNav`, with the entries that name a menu folded into it where the first of them stands, so the row fits; a menu of one stays a link. */
+export function headerEntries(words: RunWords, host: readonly HostNavItem[] = []): HeaderEntry[] {
+	const menus = new Map<string, MenuEntry>()
+	const entries: HeaderEntry[] = []
+	for (const { item, menu } of placedOf(words, host)) {
+		if (menu === null) {
+			entries.push(item)
+			continue
+		}
+		const open = menus.get(menu)
+		if (open) open.items.push(item)
+		else {
+			const entry: MenuEntry = { menu, items: [item] }
+			menus.set(menu, entry)
+			entries.push(entry)
+		}
+	}
+	return entries.flatMap((entry) =>
+		isMenu(entry) && entry.items.length === 1 ? entry.items : [entry],
+	)
+}
 
-/** Several tasks' pages behind one header entry: ui-solid's Menu, each item the host's own Link (MenuItem `linkComponent`), so choosing one navigates in the app and the router marks it. The trigger reads as current when one of its pages is. */
-function AnalysisMenu(props: { surface: ReportSurface; entry: AnalysisMenuEntry }) {
+/**
+ * A host page's link, made ONCE: the host's link function is called with its
+ * path and label as getters, so a reload of the run's words (new objects, the
+ * same values) updates the link in place. Called again, the host's router Link
+ * would be rebuilt and re-read a menu item's attributes outside any tracking
+ * scope.
+ */
+function HostPageLink(props: {
+	link: HostLink | undefined
+	to: string
+	label: string
+	attributes?: MenuItemLinkProps
+}) {
+	const item = {
+		get to() {
+			return props.to
+		},
+		get label() {
+			return props.label
+		},
+	}
+	return <>{props.link?.(item, props.attributes)}</>
+}
+
+/** Several pages behind one header entry: ui-solid's Menu, each item the host's own Link (MenuItem `linkComponent`), so choosing one navigates in the app and the router marks it. The trigger reads as current when one of its pages is. */
+function HeaderMenu(props: { surface: ReportSurface; entry: MenuEntry; hostLink?: HostLink }) {
 	return (
 		<Menu
-			label={props.entry.label}
+			label={props.entry.menu}
 			class="ib-report-nav-menu"
 			trigger={(wiring) => (
 				<button
@@ -110,20 +165,50 @@ function AnalysisMenu(props: { surface: ReportSurface; entry: AnalysisMenuEntry 
 					popovertarget={wiring.popoverTarget}
 					style={wiring.style}
 				>
-					{props.entry.label}
+					{props.entry.menu}
 				</button>
 			)}
 		>
-			<For each={props.entry.tasks} keyed={(task) => task.taskId}>
-				{(task) => (
-					<MenuItem
-						linkComponent={(attributes) => (
-							<props.surface.Link section="analysis" taskId={task().taskId} {...attributes} />
-						)}
-					>
-						{task().label}
-					</MenuItem>
-				)}
+			<For each={props.entry.items} keyed={navKey}>
+				{(item) => {
+					const page = () => {
+						const i = item()
+						return i.section === null ? i : null
+					}
+					const section = () => {
+						const i = item()
+						return i.section === null ? null : i
+					}
+					return (
+						<MenuItem
+							linkComponent={(attributes) => (
+								<>
+									<Show when={section()}>
+										{(s) => (
+											<props.surface.Link
+												section={s().section}
+												taskId={s().taskId}
+												{...attributes}
+											/>
+										)}
+									</Show>
+									<Show when={page()}>
+										{(p) => (
+											<HostPageLink
+												link={props.hostLink}
+												to={p().to}
+												label={p().label}
+												attributes={attributes}
+											/>
+										)}
+									</Show>
+								</>
+							)}
+						>
+							{item().label}
+						</MenuItem>
+					)
+				}}
 			</For>
 		</Menu>
 	)
@@ -136,7 +221,7 @@ export function ReportSections(props: {
 	/** The host's own pages, and how it renders a link to one (through its router). */
 	host?: {
 		items: readonly HostNavItem[]
-		link: (item: { to: string; label: string }) => JSX.Element
+		link: HostLink
 	}
 }) {
 	return (
@@ -159,8 +244,14 @@ export function ReportSections(props: {
 				}
 				return (
 					<>
-						<Show when={menu()}>{(m) => <AnalysisMenu surface={props.surface} entry={m()} />}</Show>
-						<Show when={page()}>{(p) => <>{props.host?.link(p())}</>}</Show>
+						<Show when={menu()}>
+							{(m) => (
+								<HeaderMenu surface={props.surface} entry={m()} hostLink={props.host?.link} />
+							)}
+						</Show>
+						<Show when={page()}>
+							{(p) => <HostPageLink link={props.host?.link} to={p().to} label={p().label} />}
+						</Show>
 						<Show when={section()}>
 							{(s) => (
 								<props.surface.Link

@@ -50,6 +50,7 @@ import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { questionClause } from '../world/schema.ts'
+import { inRange, type ScoreRange, scoreRangeSchema } from './bands.ts'
 import { loadFacetCache } from './facets.ts'
 import { lensOf, lensRank, questionDetail } from './pages.ts'
 import { andKept, keepSources, type ReadScope, wordsOf } from './scope.ts'
@@ -301,9 +302,9 @@ export const analysisDrillSchema = z.discriminatedUnion('kind', [
 		cell: z
 			.object({
 				xCriterion: z.number().int(),
-				x: z.number(),
+				x: scoreRangeSchema,
 				yCriterion: z.number().int(),
-				y: z.number(),
+				y: scoreRangeSchema,
 			})
 			.optional(),
 	}),
@@ -981,7 +982,8 @@ export async function assessedDocuments(
 		sortBy?: number
 		order?: 'asc' | 'desc'
 		lensValue?: string | null
-		cell?: { xCriterion: number; x: number; yCriterion: number; y: number }
+		/** One band of each of two criteria: the documents scored in both. */
+		cell?: { xCriterion: number; x: ScoreRange; yCriterion: number; y: ScoreRange }
 	} = {},
 	scope?: ReadScope,
 ): Promise<AssessedDocuments | null> {
@@ -1005,7 +1007,7 @@ export async function assessedDocuments(
 			if (!cell) return true
 			const xv = scoreIn(mine, cell.xCriterion)
 			const yv = scoreIn(mine, cell.yCriterion)
-			return xv !== null && yv !== null && round2(xv) === cell.x && round2(yv) === cell.y
+			return xv !== null && yv !== null && inRange(cell.x, xv) && inRange(cell.y, yv)
 		})
 		.sort(([a, ma], [b, mb]) => {
 			const sa = sortBy === undefined ? null : scoreIn(ma, sortBy)

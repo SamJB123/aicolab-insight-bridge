@@ -16,7 +16,11 @@ import {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import { Match, Switch } from 'solid-js'
 import type { AnalysisDrill } from '../explorer/analysis.ts'
-import { type AssessedDocumentsLoader, AssessmentView } from './analysis/assessment-view.tsx'
+import {
+	type AssessedDocumentsLoader,
+	AssessmentView,
+	type ScoreBandsOf,
+} from './analysis/assessment-view.tsx'
 import { type MetricEntriesLoader, MetricsView } from './analysis/metrics-view.tsx'
 import { type PerspectiveFindingsLoader, PerspectiveView } from './analysis/perspective-view.tsx'
 import { type QuestionDetailLoader, QuestionsView } from './analysis/questions-view.tsx'
@@ -67,6 +71,8 @@ export function AnalysisPage(props: {
 	page: AnalysisPageData
 	loaders: AnalysisLoaders
 	surface: ReportSurface
+	/** An assessment's bands, by criterion, where the host names its own; else each whole point of the scale. */
+	scoreBands?: ScoreBandsOf
 }) {
 	return (
 		<ReportSurfaceProvider surface={props.surface}>
@@ -94,6 +100,7 @@ export function AnalysisPage(props: {
 						<AssessmentView
 							overview={overview()}
 							assessedDocuments={props.loaders.assessedDocuments}
+							bands={props.scoreBands}
 						/>
 					)}
 				</Match>

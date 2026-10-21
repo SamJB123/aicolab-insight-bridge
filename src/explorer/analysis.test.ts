@@ -106,10 +106,23 @@ describe('custom analysis reads', () => {
 		const y = o.joint?.y ?? 0
 		const cell = assessedDocumentsSchema.parse(
 			await analysis.assessedDocuments(db, words, 'severity', {
-				cell: { xCriterion: x, x: 2, yCriterion: y, y: 1 },
+				cell: { xCriterion: x, x: { min: 2, max: 2 }, yCriterion: y, y: { min: 1, max: 1 } },
 			}),
 		)
 		expect(cell.documents.map((d) => d.entityName)).toEqual(['Agency B'])
+		// a band, not a score: everything at 2 or below on the first criterion, anything on the second
+		const band = assessedDocumentsSchema.parse(
+			await analysis.assessedDocuments(db, words, 'severity', {
+				cell: {
+					xCriterion: x,
+					x: { min: null, max: 2 },
+					yCriterion: y,
+					y: { min: null, max: null },
+				},
+			}),
+		)
+		expect(band.documents.map((d) => d.entityName)).toContain('Agency B')
+		expect(band.documents.map((d) => d.entityName)).not.toContain('Agency A')
 	})
 
 	it('a metrics evaluation: names grouped across case and spacing, north stars with their documents', async () => {
