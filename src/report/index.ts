@@ -24,7 +24,7 @@ export {
 export { HeatCell, StatRow } from './figures.tsx'
 export { GalaxyPage, type GalaxyPageProps } from './galaxy-page.tsx'
 export { type MethodAdditions, MethodPage } from './method-page.tsx'
-export { type NavItem, ReportSections, reportNav } from './nav.tsx'
+export { type HostNavItem, type NavItem, ReportSections, reportNav } from './nav.tsx'
 export { type OverviewAdditions, OverviewPage } from './overview-page.tsx'
 export {
 	REPORT_SECTIONS,

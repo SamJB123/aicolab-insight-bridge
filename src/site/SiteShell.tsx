@@ -40,6 +40,12 @@ export interface SiteShellProps {
 	 * widths, so only omit it if the site has one section.
 	 */
 	menu?: JSX.Element
+	/**
+	 * The host's own masthead controls, before the theme toggle: a switch that
+	 * changes how the whole site reads (High Water's "collapse copies"), the
+	 * reader's account menu on a site that asks for sign-in.
+	 */
+	controls?: JSX.Element
 	/** Passed to ui-solid's ThemeToggle so several sites can keep separate choices. */
 	themeStorageKey?: string
 	/**
@@ -65,6 +71,7 @@ export function SiteShell(props: SiteShellProps) {
 	// differently between the two compilers, leaving the server DOM unbound.
 	const brand = children(() => props.brand)
 	const sections = children(() => props.sections)
+	const controls = children(() => props.controls)
 	const menu = children(() => props.menu)
 	const content = children(() => props.children)
 	return (
@@ -78,6 +85,7 @@ export function SiteShell(props: SiteShellProps) {
 					<nav class="mast-nav" aria-label="Sections">
 						{sections()}
 					</nav>
+					{controls()}
 					<ThemeToggle class="mast-theme" storageKey={props.themeStorageKey} />
 					{menu()}
 				</div>

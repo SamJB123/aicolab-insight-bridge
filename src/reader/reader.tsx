@@ -172,8 +172,11 @@ function NoticeSection(props: { notice: IBNotice }) {
 /** Key points as an accordion — headline as the summary, the elaboration and
  * that point's verbatim quotes inside. The first point starts open so
  * something is always readable without a click; opening another does not
- * close it (settled 2026-09-14). */
+ * close it (settled 2026-09-14). A headline with nothing beneath it (an
+ * answered question whose words are withheld) is a plain row in its place:
+ * an expander that opens onto nothing is noise. */
 function PointsSection(props: { points: IBPoint[]; label: string }) {
+	const hasBody = (point: IBPoint) => !!point.detail || (point.quotes?.length ?? 0) > 0
 	return (
 		<Accordion density="compact" spacing="joined" exclusive={false} label={props.label}>
 			<For each={props.points}>
@@ -186,12 +189,14 @@ function PointsSection(props: { points: IBPoint[]; label: string }) {
 							</div>
 						}
 					>
-						<AccordionItem summary={point.text} open={at() === 0}>
-							<div class="ib-reader-point">
-								<Show when={point.detail}>{(detail) => <p>{detail()}</p>}</Show>
-								<Quotes quotes={point.quotes} />
-							</div>
-						</AccordionItem>
+						<Show when={hasBody(point)} fallback={<p class="ib-reader-point-bare">{point.text}</p>}>
+							<AccordionItem summary={point.text} open={at() === 0}>
+								<div class="ib-reader-point">
+									<Show when={point.detail}>{(detail) => <p>{detail()}</p>}</Show>
+									<Quotes quotes={point.quotes} />
+								</div>
+							</AccordionItem>
+						</Show>
 					</Show>
 				)}
 			</For>

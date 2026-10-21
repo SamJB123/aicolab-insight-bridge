@@ -169,6 +169,15 @@
 		.ib-reader-point p {
 			margin: 0;
 		}
+		/* A headline with nothing beneath it, in the points accordion's place:
+		   the accordion's compact, joined row (its block padding, no inline
+		   padding, the divider under it) without the toggle. */
+		.ib-reader-point-bare {
+			margin: 0;
+			padding-block: 0.7rem;
+			border-bottom: 1px solid var(--ui-acc-divider, var(--color-border));
+			color: var(--color-base-content);
+		}
 		.ib-reader-point blockquote {
 			margin: 0.4rem 0 0;
 			padding-inline-start: 0.75rem;
