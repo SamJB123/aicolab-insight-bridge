@@ -253,7 +253,10 @@ export interface WorldRecordConfig {
 	 * withheld source keeps its name, facets, one-word positions, scores and
 	 * every count, and each text of its own (its quotes, its documents' points,
 	 * its perspectives' title and analysis, its answers) reads the notice.
-	 * The record's shape is unchanged.
+	 * An annotated source's words are carried as written: the record has no
+	 * place for a notice beside them, and an island shows them without one
+	 * (settled 2026-10-21; only the pages carry it). The record's shape is
+	 * unchanged.
 	 */
 	scope?: ReadScope
 }
