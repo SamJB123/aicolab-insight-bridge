@@ -38,10 +38,7 @@ import {
 } from '../reader/content-builders.ts'
 import type { ReadingView } from '../reader/detail-sheet.tsx'
 import { generationLabel } from '../tree.ts'
-import { MEMBERSHIP_GRADES, questionClause } from '../world/schema.ts'
-
-/** A strong link, the grade every count counts: a plain member is listed under its grade, never counted. */
-const isStrong = (grade: string) => MEMBERSHIP_GRADES.some((strong) => strong === grade)
+import { questionClause } from '../world/schema.ts'
 
 export type { ReadingView }
 
@@ -213,10 +210,8 @@ export function topicReading(
 		[name, lensOf(entityUuid)].filter(Boolean).join(' · ') || undefined
 	const stanceOf = new Map(d.entityPerspectives.map((p) => [p.entityUuid, p.position]))
 	const stances = d.entityPerspectives.length
-	// a strong member with no written stance; a plain member is never analysed, so never missing one
-	const unjudged = d.members.filter(
-		(m) => isStrong(m.membershipType) && !stanceOf.has(m.entityUuid),
-	).length
+	// a member (every one strongly linked) with no written stance
+	const unjudged = d.members.filter((m) => !stanceOf.has(m.entityUuid)).length
 	const lensValues = new Map<string, number>()
 	for (const p of d.entityPerspectives) {
 		const value = lensOf(p.entityUuid)
@@ -263,13 +258,11 @@ export function topicReading(
 		])
 	}
 
-	const row = (m: TopicDetail['members'][number], withPosition: boolean) => ({
+	const row = (m: TopicDetail['members'][number]) => ({
 		id: sourceNodeId(m.entityId),
 		label: m.entityName,
 		detail:
-			[lensOf(m.entityUuid), withPosition ? stanceOf.get(m.entityUuid) : null]
-				.filter(Boolean)
-				.join(' · ') || undefined,
+			[lensOf(m.entityUuid), stanceOf.get(m.entityUuid)].filter(Boolean).join(' · ') || undefined,
 	})
 	const graded = (grade: string) =>
 		d.members
@@ -280,15 +273,8 @@ export function topicReading(
 						rank(c, stanceOf.get(a.entityUuid) ?? null) || a.entityName.localeCompare(b.entityName),
 			)
 	const contributorGroups: ContributorGroup[] = [
-		{ label: 'Exemplars', rows: graded('exemplar').map((m) => row(m, true)) },
-		{ label: 'High-value', rows: graded('high_value').map((m) => row(m, true)) },
-		{
-			label: 'Members',
-			rows: d.members
-				.filter((m) => !isStrong(m.membershipType))
-				.sort((a, b) => a.entityName.localeCompare(b.entityName))
-				.map((m) => row(m, false)),
-		},
+		{ label: 'Exemplars', rows: graded('exemplar').map(row) },
+		{ label: 'High-value', rows: graded('high_value').map(row) },
 	]
 
 	return withAdditions(

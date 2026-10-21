@@ -56,12 +56,9 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		expect(first).toBeDefined()
 		if (!first) return
 		const topic = topicDetailSchema.parse(await x.topicById(db, first.topicClusterId))
-		// the topic counts its strong links; its members list every grade, each under its own
-		expect(
-			topic.members.filter(
-				(m) => m.membershipType === 'exemplar' || m.membershipType === 'high_value',
-			).length,
-		).toBe(first.entities)
+		// a topic's members are its strong links, as its count is
+		expect(topic.members.length).toBe(first.entities)
+		for (const m of topic.members) expect(['exemplar', 'high_value']).toContain(m.membershipType)
 		const stanceHolders = new Set(topic.entityPerspectives.map((p) => p.entityUuid))
 		for (const uuid of stanceHolders)
 			expect(topic.members.some((m) => m.entityUuid === uuid)).toBe(true)

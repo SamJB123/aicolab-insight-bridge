@@ -33,25 +33,24 @@ export function GalaxyInspectorNode(props: {
 	const tierMeta = createMemo(() =>
 		props.galaxy.tiers.find((tier) => tier.tier === props.node.tier),
 	)
-	/** A TOPIC's member sources, grouped by membership grade (settled
-	 * 2026-08-16): the grade semantics — exemplar progenitors, high-value
-	 * contributors, related members — become readable in prose land too.
-	 * Computed from the galaxy itself, so it needs no host content. */
+	/** A TOPIC's strongly linked sources, grouped by grade (settled
+	 * 2026-08-16): exemplar progenitors and high-value contributors. A plain
+	 * member is never listed (2026-10-21: user testing found it confused
+	 * readers). Computed from the galaxy itself, so it needs no host content. */
 	const contributors = createMemo(() => {
 		if (props.node.tier !== 0) return null
 		const byId = new Map(props.galaxy.nodes.map((node) => [node.id, node]))
 		const tiers: Array<{ label: string; rows: Array<{ id: IBNodeId; label: string }> }> = [
 			{ label: 'Exemplars', rows: [] },
 			{ label: 'High-value', rows: [] },
-			{ label: 'Members', rows: [] },
 		]
 		for (const edge of props.galaxy.edges) {
 			if (edge.parent !== props.node.id) continue
 			const child = byId.get(edge.child)
 			if (child?.tier !== -1) continue
 			const slot =
-				edge.membershipType === 'exemplar' ? 0 : edge.membershipType === 'high_value' ? 1 : 2
-			at(tiers, slot).rows.push({ id: child.id, label: child.title })
+				edge.membershipType === 'exemplar' ? 0 : edge.membershipType === 'high_value' ? 1 : null
+			if (slot !== null) at(tiers, slot).rows.push({ id: child.id, label: child.title })
 		}
 		for (const tier of tiers) tier.rows.sort((a, b) => a.label.localeCompare(b.label))
 		const filled = tiers.filter((tier) => tier.rows.length > 0)

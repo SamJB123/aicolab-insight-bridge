@@ -62,8 +62,8 @@ import { loadFacetCache, subjectConcepts } from './facets.ts'
 /**
  * The grades every count of the record counts: a source or a passage strongly
  * linked to its topic (exemplar or high value). A plain member has no written
- * analysis, so it is listed under its grade where a reading lists members,
- * never counted.
+ * analysis: it is never counted and never listed, a topic's members and a
+ * source's topics included (user testing found plain members confused readers).
  */
 export const STRONG = [...MEMBERSHIP_GRADES]
 const strongSource = inArray(s.currentEntityMembership.membershipType, STRONG)
@@ -454,7 +454,7 @@ export async function topicById(db: CorpusDb, topicClusterId: number): Promise<T
 		})
 		.from(s.currentEntityMembership)
 		.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
-		.where(eq(s.currentEntityMembership.topicClusterId, tc))
+		.where(and(eq(s.currentEntityMembership.topicClusterId, tc), strongSource))
 		.orderBy(asc(s.entity.entityName))
 	const tree = treeOf(await hierarchy(db))
 	const base = tree.baseOfTopic.get(tc)
@@ -759,7 +759,7 @@ export async function entityByKey(db: CorpusDb, key: string): Promise<EntityDeta
 			s.currentTopic,
 			eq(s.currentEntityMembership.topicClusterId, s.currentTopic.topicClusterId),
 		)
-		.where(eq(s.currentEntityMembership.entityUuid, row.id))
+		.where(and(eq(s.currentEntityMembership.entityUuid, row.id), strongSource))
 		.orderBy(asc(s.currentTopic.topicClusterId))
 	const persp = await db
 		.select()
