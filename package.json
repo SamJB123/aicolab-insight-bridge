@@ -27,6 +27,8 @@
 		"./explorer/pages": "./src/explorer/pages.ts",
 		"./explorer/scope": "./src/explorer/scope.ts",
 		"./explorer/embed": "./src/explorer/embed.ts",
+		"./prepare": "./src/prepare/index.ts",
+		"./prepare/tables": "./src/prepare/tables.ts",
 		"./explorer/mcp": "./src/explorer/mcp.ts",
 		"./explorer/tools": "./src/explorer/tools.ts",
 		"./brief/data": "./src/brief/data.ts",

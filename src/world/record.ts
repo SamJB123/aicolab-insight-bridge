@@ -527,7 +527,13 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		const appFacet = words.facets?.[key]
 		// The app's order first (an ordinal facet), else the profile's declared
 		// values, else by how many sources carry each.
-		const order = (appFacet?.order ?? declared?.values ?? []).filter((v) => !excluded.has(v))
+		// a derived facet's values are its buckets, in their order (the era is ordinal)
+		const order = (
+			appFacet?.order ??
+			declared?.values ??
+			declared?.derive?.buckets.map((b) => b.label) ??
+			[]
+		).filter((v) => !excluded.has(v))
 		const values = [...new Set([...order, ...counts.keys()])]
 			.filter((v) => !excluded.has(v) && (counts.get(v) ?? 0) > 0)
 			.sort((a, b) => {
