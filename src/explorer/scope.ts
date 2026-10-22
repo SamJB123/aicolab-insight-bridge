@@ -80,6 +80,18 @@ export function andKept(column: SQL, scope: ReadScope | undefined): SQL {
 export const isKept = (scope: ReadScope | undefined, entityUuid: string | null | undefined) =>
 	!entityUuid || !scope?.exclude?.has(entityUuid)
 
+/** A scope as a string, the same for equal scopes: what a memo keyed by the reader's scope is kept under. */
+export function scopeKey(scope?: ReadScope): string {
+	if (!scope) return ''
+	const ids = (set: ReadonlySet<string> | undefined) => (set ? [...set].sort() : [])
+	return JSON.stringify([
+		ids(scope.exclude),
+		scope.withhold ? [ids(scope.withhold.entities), scope.withhold.notice] : null,
+		scope.annotate ? [ids(scope.annotate.entities), scope.annotate.notice] : null,
+		scope.unserved ? [ids(scope.unserved.entities), scope.unserved.notice] : null,
+	])
+}
+
 /** How a source's words read here: withheld behind the notice, shown with a notice, or as written (empty). */
 export function wordsOf(
 	scope: ReadScope | undefined,

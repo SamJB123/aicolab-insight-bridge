@@ -41,7 +41,8 @@ import * as x from './data.ts'
 import { STRONG } from './data.ts'
 import { derivedFacets, type EffectiveFacets, loadFacetCache } from './facets.ts'
 import * as pages from './pages.ts'
-import { isKept, keepSources, type ReadScope, textOf, wordsOf } from './scope.ts'
+import { perRecord } from './reader.ts'
+import { isKept, keepSources, type ReadScope, scopeKey, textOf, wordsOf } from './scope.ts'
 
 /* ───────────────────────── what a tool reads with ───────────────────────── */
 
@@ -118,6 +119,20 @@ const lensValueOf = (words: RunWords, facets: EffectiveFacets | undefined) =>
 const lensKey = (words: RunWords) => words.lens ?? 'lens'
 
 /* ───────────────────────── shared loads ───────────────────────── */
+
+/** How many sources the scope keeps: the standing caveat's figure. */
+const sourceCount = (c: ToolReadContext) => c.db.$count(s.entity, keepSources(s.entity.id, c.scope))
+
+/** The lens value of each of `uuids`' sources, read for those sources alone. */
+async function lensValues(
+	c: ToolReadContext,
+	uuids: readonly string[],
+): Promise<Map<string, string | null>> {
+	const lens = c.words.lens
+	if (!lens || !uuids.length) return new Map()
+	const facets = await loadFacetCache(c.db, 'entity', [lens], [...new Set(uuids)])
+	return new Map([...facets].map(([id, f]) => [id, lensValueOf(c.words, f)]))
+}
 
 /** Each source's documents and each document's source, in the scope. */
 async function documentOwners(c: ToolReadContext) {
@@ -651,14 +666,11 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 		input: { topic_id: topicId },
 		examples: (t) => ({ topic_id: t.examples.topicId }),
 		read: async (c, a) => {
-			const [detail, { byId }] = await Promise.all([
-				x.topicById(c.db, a.topic_id, c.scope),
-				profiles(c),
-			])
+			// the synthesis: every stance's words, none of its own key points and quotes (source_perspectives reads those)
+			const detail = await x.topicSynthesis(c.db, a.topic_id, c.scope)
 			if (!detail) return { error: `no topic with id ${a.topic_id}` }
-			const profile = byId.get(a.topic_id)
 			const dissent = dissentOf(c.words.scale)
-			const stances = detail.entityPerspectives.map((p) => ({
+			const stances = detail.stances.map((p) => ({
 				...p,
 				lensValue: lensValueOf(c.words, p.facets),
 			}))
@@ -685,7 +697,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 								'This topic was confirmed as junk in review and is excluded from every aggregate.',
 						}
 					: {}),
-				lineage: profile?.lineage ?? [],
+				lineage: detail.lineage,
 				documents: detail.documents,
 				reach: { [c.words.nouns.entities]: detail.members.length, byTier: tiers },
 				positionMix: detail.positions,
@@ -728,7 +740,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 							stancesTruncated: `showing ${shown} of ${stances.length}, dissent first — call source_perspectives for all of them`,
 						}
 					: {}),
-				note: notPrevalence(c.words, (await x.overview(c.db, c.scope)).entities),
+				note: notPrevalence(c.words, await sourceCount(c)),
 			}
 		},
 	}),
@@ -741,17 +753,20 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 		input: { topic_id: topicId, limit: limitOf(60) },
 		examples: (t) => ({ topic_id: t.examples.topicId, limit: 10 }),
 		read: async (c, a) => {
-			const [detail, entityFacets] = await Promise.all([
-				x.topicById(c.db, a.topic_id, c.scope),
-				loadFacetCache(c.db, 'entity'),
-			])
+			const detail = await x.topicSynthesis(c.db, a.topic_id, c.scope)
 			if (!detail) return { error: `no topic with id ${a.topic_id}` }
+			const lens = await lensValues(
+				c,
+				detail.keyPointItems.flatMap((kp) =>
+					kp.quotes.flatMap((q) => (q.entityUuid ? [q.entityUuid] : [])),
+				),
+			)
 			return detail.keyPointItems
 				.flatMap((kp) =>
 					kp.quotes.map((q) => ({
 						quote: q.text,
 						source: q.entityName,
-						lensValue: q.entityUuid ? lensValueOf(c.words, entityFacets.get(q.entityUuid)) : null,
+						lensValue: q.entityUuid ? (lens.get(q.entityUuid) ?? null) : null,
 						finding: kp.keyPoint,
 						...(q.withheld ? { withheld: true } : {}),
 						...(q.notice === undefined ? {} : { notice: q.notice }),
@@ -772,7 +787,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 		},
 		examples: (t) => ({ topic_id: t.examples.topicId }),
 		read: async (c, a) => {
-			const detail = await x.topicById(c.db, a.topic_id, c.scope)
+			const detail = await x.topicSynthesis(c.db, a.topic_id, c.scope)
 			if (!detail) return { error: `no topic with id ${a.topic_id}` }
 			const facet = a.facet ?? c.words.lens
 			const dissent = dissentOf(c.words.scale)
@@ -863,7 +878,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 					...(p.notice === undefined ? {} : { notice: p.notice }),
 				})),
 				note:
-					notPrevalence(c.words, (await x.overview(c.db, c.scope)).entities) +
+					notPrevalence(c.words, await sourceCount(c)) +
 					(truncated > 0
 						? ` Dissent first; ${truncated} further matching stances — raise \`limit\` or narrow (see \`available\`).`
 						: '') +
@@ -1326,7 +1341,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 					.sort(
 						(t1, t2) => Number(t2[c.words.nouns.entities]) - Number(t1[c.words.nouns.entities]),
 					),
-				note: notPrevalence(c.words, (await x.overview(c.db, c.scope)).entities),
+				note: notPrevalence(c.words, await sourceCount(c)),
 			}
 		},
 	}),
@@ -1424,7 +1439,7 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 					.sort(
 						(r1, r2) => Number(r2[c.words.nouns.entities]) - Number(r1[c.words.nouns.entities]),
 					),
-				note: notPrevalence(c.words, (await x.overview(c.db, c.scope)).entities),
+				note: notPrevalence(c.words, await sourceCount(c)),
 			}
 		},
 	}),
@@ -1604,8 +1619,15 @@ export const EXPLORER_TOOLS: Readonly<Record<string, ExplorerTool>> = {
 
 /* ───────────────────────── serving the table ───────────────────────── */
 
-/** What the descriptions and examples say about this run, in the reader's scope. */
-export async function toolContext(db: CorpusDb, scope?: ReadScope): Promise<ToolContext> {
+/**
+ * What the descriptions and examples say about this run, in the reader's
+ * scope. Kept per record (./reader), under the scope it was read for: every
+ * connector request used to read the overview, every topic and the tree
+ * before its tool ran.
+ */
+export const toolContext = perRecord(readToolContext, scopeKey)
+
+async function readToolContext(db: CorpusDb, scope?: ReadScope): Promise<ToolContext> {
 	const words = await x.runWords(db)
 	const [overview, topics, hierarchy, documents, sources, facets, firstQuestion] =
 		await Promise.all([

@@ -13,7 +13,7 @@ import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
 import type { Profile } from '@aicolab/insight-bridge-contracts/profile'
 import { type CorpusDb, facetAssignment, runMeta } from '@aicolab/insight-bridge-contracts/schema'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
-import { perRequest } from './reader.ts'
+import { perRecord, perRequest } from './reader.ts'
 
 export type EffectiveFacets = Record<string, string[]>
 /** v7: the same, with the resolved concept beside each value (null = free facet or unresolved). */
@@ -103,12 +103,12 @@ async function readFacets(
 }
 
 /**
- * A whole-record read, once per request's reader (./reader): the record's
- * facets are read by several figures of one page, and a facet read is the
- * largest transfer a report makes (40,000 rows on Second Chair). The map is
- * shared by its readers, so none writes to it.
+ * A whole-record read, kept per record (./reader): a facet read is the
+ * largest transfer a report makes (40,000 rows on Second Chair), and the
+ * record's facets change only when the record does. The map is shared by its
+ * readers, so none writes to it.
  */
-const wholeFacets = perRequest(
+const wholeFacets = perRecord(
 	(db: CorpusDb, subjectType: SubjectType, only?: readonly string[]) =>
 		readFacets(db, subjectType, only, undefined),
 	facetKey,
@@ -126,7 +126,7 @@ export function loadConceptFacetCache(
 		: wholeConceptFacets(db, subjectType, only)
 }
 
-const wholeConceptFacets = perRequest(
+const wholeConceptFacets = perRecord(
 	(db: CorpusDb, subjectType: SubjectType, only?: readonly string[]) =>
 		readConceptFacets(db, subjectType, only, undefined),
 	facetKey,

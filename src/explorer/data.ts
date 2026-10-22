@@ -61,7 +61,7 @@ import { z } from 'zod'
 import { cap } from '../grammar.ts'
 import { treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
-import { loadFacetCache, subjectConcepts } from './facets.ts'
+import { type EffectiveFacets, loadFacetCache, subjectConcepts } from './facets.ts'
 import { perRecord, perRequest } from './reader.ts'
 import {
 	andKept,
@@ -530,6 +530,235 @@ export async function topics(
 	}))
 }
 
+// ---------------------------------------------------------------- a topic
+
+/** A stance on a topic as a listing shows it: whose, its words and position, with the source's facets. Its own key points and quotes are the detail's (topicById). */
+export type TopicStance = Omit<TopicDetail['entityPerspectives'][number], 'keyPoints' | 'quotes'>
+
+/**
+ * A topic's synthesis — what a reader opening a topic reads first: its
+ * summary, the cross-cutting key points with their quotes, every stance
+ * without its own key points and quotes, the facet perspectives, the members
+ * by grade, the grouping parents and the lineage. The detail (topicById) adds
+ * each stance's key points and quotes and the passages' documents, which on a
+ * topic of a thousand stances are most of its rows.
+ */
+export type TopicSynthesis = Omit<TopicDetail, 'entityPerspectives' | 'sourceDocuments'> & {
+	stances: TopicStance[]
+}
+
+/**
+ * The reads a topic's synthesis and its detail share. Child rows are reached
+ * through their parent's own predicate (a join back to the topic), never
+ * through an id list: DO SQLite binds ~100 parameters per statement, and a
+ * large topic's perspectives blew that on the galaxy (2026-09-04, run
+ * 7f7f06f7 — the playground audit-corpus app settled the same way).
+ */
+function topicReads(db: CorpusDb, tc: number, scope: ReadScope | undefined) {
+	return {
+		keyPoints: () =>
+			db
+				.select()
+				.from(s.clusterKeyPoint)
+				.where(eq(s.clusterKeyPoint.topicClusterId, tc))
+				.orderBy(asc(s.clusterKeyPoint.clusterKeyPointId)),
+		keyPointQuotes: () =>
+			db
+				.select({
+					kpId: s.clusterKeyPointQuote.clusterKeyPointId,
+					text: s.clusterKeyPointQuote.quoteText,
+					entityUuid: s.clusterKeyPointQuote.entityUuid,
+					entityName: s.entity.entityName,
+				})
+				.from(s.clusterKeyPointQuote)
+				.innerJoin(s.entity, eq(s.clusterKeyPointQuote.entityUuid, s.entity.id))
+				.innerJoin(
+					s.clusterKeyPoint,
+					eq(s.clusterKeyPointQuote.clusterKeyPointId, s.clusterKeyPoint.clusterKeyPointId),
+				)
+				.where(eq(s.clusterKeyPoint.topicClusterId, tc))
+				.orderBy(asc(s.clusterKeyPointQuote.quoteId)),
+		stances: () =>
+			db
+				.select({
+					id: s.clusterEntityPerspective.clusterEntityPerspectiveId,
+					entityUuid: s.clusterEntityPerspective.entityUuid,
+					entityId: s.entity.entityId,
+					entityName: s.entity.entityName,
+					title: s.clusterEntityPerspective.title,
+					description: s.clusterEntityPerspective.description,
+					position: s.clusterEntityPerspective.position,
+					positionAnalysis: s.clusterEntityPerspective.positionAnalysis,
+				})
+				.from(s.clusterEntityPerspective)
+				.innerJoin(s.entity, eq(s.clusterEntityPerspective.entityUuid, s.entity.id))
+				.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
+				.orderBy(asc(s.entity.entityName)),
+		facetPerspectives: () =>
+			db
+				.select()
+				.from(s.clusterKeyPerspective)
+				.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
+				.orderBy(asc(s.clusterKeyPerspective.facet), asc(s.clusterKeyPerspective.facetValue)),
+		facetQuotes: () =>
+			db
+				.select({
+					pid: s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
+					text: s.clusterPerspectiveQuote.quoteText,
+					entityUuid: s.clusterPerspectiveQuote.entityUuid,
+					entityName: s.entity.entityName,
+					rationale: s.clusterPerspectiveQuote.rationale,
+				})
+				.from(s.clusterPerspectiveQuote)
+				.innerJoin(s.entity, eq(s.clusterPerspectiveQuote.entityUuid, s.entity.id))
+				.innerJoin(
+					s.clusterKeyPerspective,
+					eq(
+						s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
+						s.clusterKeyPerspective.clusterKeyPerspectiveId,
+					),
+				)
+				.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
+				.orderBy(asc(s.clusterPerspectiveQuote.quoteId)),
+		members: () =>
+			db
+				.select({
+					entityUuid: s.entity.id,
+					entityId: s.entity.entityId,
+					entityName: s.entity.entityName,
+					membershipType: s.currentEntityMembership.membershipType,
+				})
+				.from(s.currentEntityMembership)
+				.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
+				.where(
+					and(
+						eq(s.currentEntityMembership.topicClusterId, tc),
+						strongSource,
+						keepSources(s.currentEntityMembership.entityUuid, scope),
+					),
+				)
+				.orderBy(asc(s.entity.entityName)),
+		parents: () =>
+			db.all<{
+				superclusterId: number
+				title: string | null
+				generation: number
+				isPrimary: number
+				membershipType: string | null
+				similarity: number | null
+			}>(sql`
+				SELECT p.supercluster_id AS superclusterId, p.title, p.generation, e.is_primary AS isPrimary, e.membership_type AS membershipType, e.similarity
+				FROM current_supercluster child JOIN current_supercluster_edge e ON e.child_supercluster_id = child.supercluster_id JOIN current_supercluster p ON p.supercluster_id = e.parent_supercluster_id
+				WHERE child.topic_cluster_id = ${tc} ORDER BY e.is_primary DESC, e.similarity DESC`),
+	}
+}
+
+/** The shared reads' rows, awaited. */
+type TopicRows = {
+	[K in keyof ReturnType<typeof topicReads>]: Awaited<ReturnType<ReturnType<typeof topicReads>[K]>>
+}
+
+/** The facets of the topic's stances' and members' sources — those sources alone, never the record's. */
+const topicFacets = (db: CorpusDb, rows: Pick<TopicRows, 'stances' | 'members'>) =>
+	loadFacetCache(db, 'entity', undefined, [
+		...new Set([
+			...rows.stances.map((p) => p.entityUuid),
+			...rows.members.map((m) => m.entityUuid),
+		]),
+	])
+
+/** The synthesis's parts, from the shared rows and the tree. */
+function synthesisOf(
+	scope: ReadScope | undefined,
+	tree: ReturnType<typeof treeOf>,
+	tc: number,
+	rows: TopicRows,
+	facetCache: Map<string, EffectiveFacets>,
+): Omit<TopicSynthesis, keyof TopicSummary> {
+	const base = tree.baseOfTopic.get(tc)
+	// a synthesis keeps every quote's slot: a withheld source's quote reads as the notice, attributed
+	const quoteOf = (q: {
+		text: string
+		entityName: string
+		entityUuid: string
+		rationale: string | null
+	}) => ({
+		text: textOf(scope, q.entityUuid, q.text),
+		entityName: q.entityName,
+		entityUuid: q.entityUuid,
+		rationale: wordsOf(scope, q.entityUuid).withheld ? null : q.rationale,
+		...wordsOf(scope, q.entityUuid),
+	})
+	// child rows by their parent, once: a wide topic holds thousands of each
+	const kpQuotesOf = groupBy(rows.keyPointQuotes, (q) => q.kpId)
+	const facetQuotesOf = groupBy(rows.facetQuotes, (q) => q.pid)
+	return {
+		keyPointItems: rows.keyPoints.map((r) => ({
+			keyPoint: r.keyPoint,
+			details: r.details,
+			quotes: (kpQuotesOf.get(r.clusterKeyPointId) ?? [])
+				.filter((q) => isKept(scope, q.entityUuid))
+				.map((q) => quoteOf({ ...q, rationale: null })),
+		})),
+		stances: rows.stances
+			.filter((p) => isKept(scope, p.entityUuid))
+			.map((p): TopicStance => {
+				const words = wordsOf(scope, p.entityUuid)
+				const text = (value: string) => (words.withheld ? '' : value)
+				return {
+					entityUuid: p.entityUuid,
+					entityId: p.entityId,
+					entityName: p.entityName,
+					// the stance's title reads the notice; its one-word position stays
+					title: textOf(scope, p.entityUuid, p.title),
+					description: text(p.description),
+					position: p.position,
+					positionAnalysis: text(p.positionAnalysis),
+					facets: facetCache.get(p.entityUuid) ?? {},
+					...words,
+				}
+			}),
+		facetPerspectives: rows.facetPerspectives.map((r) => ({
+			facet: r.facet,
+			facetValue: r.facetValue,
+			position: r.position,
+			positionAnalysis: r.positionAnalysis,
+			quotes: (facetQuotesOf.get(r.clusterKeyPerspectiveId) ?? [])
+				.filter((q) => isKept(scope, q.entityUuid))
+				.map(quoteOf),
+		})),
+		parents: rows.parents.map((p) => ({ ...p, isPrimary: p.isPrimary === 1 })),
+		members: rows.members.map((m) => ({ ...m, facets: facetCache.get(m.entityUuid) ?? {} })),
+		lineage: base ? tree.ancestorsOf(base.superclusterId) : [],
+	}
+}
+
+/** A topic's synthesis (TopicSynthesis), or null when there is no such topic. */
+export async function topicSynthesis(
+	db: CorpusDb,
+	topicClusterId: number,
+	scope?: ReadScope,
+): Promise<TopicSynthesis | null> {
+	const summary = (await topics(db, true, scope)).find((t) => t.topicClusterId === topicClusterId)
+	if (!summary) return null
+	const tc = summary.topicClusterId
+	const r = topicReads(db, tc, scope)
+	const [keyPoints, keyPointQuotes, stances, facetPerspectives, facetQuotes, members, parents, h] =
+		await Promise.all([
+			r.keyPoints(),
+			r.keyPointQuotes(),
+			r.stances(),
+			r.facetPerspectives(),
+			r.facetQuotes(),
+			r.members(),
+			r.parents(),
+			hierarchy(db),
+		])
+	const rows = { keyPoints, keyPointQuotes, stances, facetPerspectives, facetQuotes, members, parents }
+	const facetCache = await topicFacets(db, rows)
+	return { ...summary, ...synthesisOf(scope, treeOf(h), tc, rows, facetCache) }
+}
+
 export async function topicById(
 	db: CorpusDb,
 	topicClusterId: number,
@@ -538,62 +767,29 @@ export async function topicById(
 	const summary = (await topics(db, true, scope)).find((t) => t.topicClusterId === topicClusterId)
 	if (!summary) return null
 	const tc = summary.topicClusterId
-	// Child rows are reached through their parent's own predicate (a join back to
-	// the topic), never through an id list: DO SQLite binds ~100 parameters per
-	// statement, and a large topic's perspectives blew that on the galaxy
-	// (2026-09-04, run 7f7f06f7 — the playground audit-corpus app settled the same way).
-	// Every child table is read at once: each depends on the topic alone.
+	const r = topicReads(db, tc, scope)
+	// every child table at once: each depends on the topic alone
 	const [
-		kpRows,
-		kpQuotes,
-		facetCache,
-		persp,
+		keyPoints,
+		keyPointQuotes,
+		stances,
+		facetPerspectives,
+		facetQuotes,
+		members,
+		parents,
 		perspKp,
 		perspKpQuotes,
 		perspQuotes,
-		facetRows,
-		facetQuotes,
 		sourceDocs,
-		parents,
-		members,
 		h,
 	] = await Promise.all([
-		db
-			.select()
-			.from(s.clusterKeyPoint)
-			.where(eq(s.clusterKeyPoint.topicClusterId, tc))
-			.orderBy(asc(s.clusterKeyPoint.clusterKeyPointId)),
-		db
-			.select({
-				kpId: s.clusterKeyPointQuote.clusterKeyPointId,
-				text: s.clusterKeyPointQuote.quoteText,
-				entityUuid: s.clusterKeyPointQuote.entityUuid,
-				entityName: s.entity.entityName,
-			})
-			.from(s.clusterKeyPointQuote)
-			.innerJoin(s.entity, eq(s.clusterKeyPointQuote.entityUuid, s.entity.id))
-			.innerJoin(
-				s.clusterKeyPoint,
-				eq(s.clusterKeyPointQuote.clusterKeyPointId, s.clusterKeyPoint.clusterKeyPointId),
-			)
-			.where(eq(s.clusterKeyPoint.topicClusterId, tc))
-			.orderBy(asc(s.clusterKeyPointQuote.quoteId)),
-		loadFacetCache(db, 'entity'),
-		db
-			.select({
-				id: s.clusterEntityPerspective.clusterEntityPerspectiveId,
-				entityUuid: s.clusterEntityPerspective.entityUuid,
-				entityId: s.entity.entityId,
-				entityName: s.entity.entityName,
-				title: s.clusterEntityPerspective.title,
-				description: s.clusterEntityPerspective.description,
-				position: s.clusterEntityPerspective.position,
-				positionAnalysis: s.clusterEntityPerspective.positionAnalysis,
-			})
-			.from(s.clusterEntityPerspective)
-			.innerJoin(s.entity, eq(s.clusterEntityPerspective.entityUuid, s.entity.id))
-			.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
-			.orderBy(asc(s.entity.entityName)),
+		r.keyPoints(),
+		r.keyPointQuotes(),
+		r.stances(),
+		r.facetPerspectives(),
+		r.facetQuotes(),
+		r.members(),
+		r.parents(),
 		db
 			.select({
 				keyPointId: s.clusterEntityPerspectiveKeyPoint.keyPointId,
@@ -648,30 +844,6 @@ export async function topicById(
 			)
 			.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
 			.orderBy(asc(s.clusterEntityPerspectiveQuote.quoteId)),
-		db
-			.select()
-			.from(s.clusterKeyPerspective)
-			.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
-			.orderBy(asc(s.clusterKeyPerspective.facet), asc(s.clusterKeyPerspective.facetValue)),
-		db
-			.select({
-				pid: s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
-				text: s.clusterPerspectiveQuote.quoteText,
-				entityUuid: s.clusterPerspectiveQuote.entityUuid,
-				entityName: s.entity.entityName,
-				rationale: s.clusterPerspectiveQuote.rationale,
-			})
-			.from(s.clusterPerspectiveQuote)
-			.innerJoin(s.entity, eq(s.clusterPerspectiveQuote.entityUuid, s.entity.id))
-			.innerJoin(
-				s.clusterKeyPerspective,
-				eq(
-					s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
-					s.clusterKeyPerspective.clusterKeyPerspectiveId,
-				),
-			)
-			.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
-			.orderBy(asc(s.clusterPerspectiveQuote.quoteId)),
 		db.all<{
 			documentId: string
 			fileName: string
@@ -683,105 +855,47 @@ export async function topicById(
 			SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
 			FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
 			WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY d.document_id ORDER BY chunks DESC`),
-		db.all<{
-			superclusterId: number
-			title: string | null
-			generation: number
-			isPrimary: number
-			membershipType: string | null
-			similarity: number | null
-		}>(sql`
-			SELECT p.supercluster_id AS superclusterId, p.title, p.generation, e.is_primary AS isPrimary, e.membership_type AS membershipType, e.similarity
-			FROM current_supercluster child JOIN current_supercluster_edge e ON e.child_supercluster_id = child.supercluster_id JOIN current_supercluster p ON p.supercluster_id = e.parent_supercluster_id
-			WHERE child.topic_cluster_id = ${tc} ORDER BY e.is_primary DESC, e.similarity DESC`),
-		db
-			.select({
-				entityUuid: s.entity.id,
-				entityId: s.entity.entityId,
-				entityName: s.entity.entityName,
-				membershipType: s.currentEntityMembership.membershipType,
-			})
-			.from(s.currentEntityMembership)
-			.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
-			.where(
-				and(
-					eq(s.currentEntityMembership.topicClusterId, tc),
-					strongSource,
-					keepSources(s.currentEntityMembership.entityUuid, scope),
-				),
-			)
-			.orderBy(asc(s.entity.entityName)),
 		hierarchy(db),
 	])
-	const tree = treeOf(h)
-	const base = tree.baseOfTopic.get(tc)
-	// a synthesis keeps every quote's slot: a withheld source's quote reads as the notice, attributed
-	const quoteOf = (q: {
-		text: string
-		entityName: string
-		entityUuid: string
-		rationale: string | null
-	}) => ({
-		text: textOf(scope, q.entityUuid, q.text),
-		entityName: q.entityName,
-		entityUuid: q.entityUuid,
-		rationale: wordsOf(scope, q.entityUuid).withheld ? null : q.rationale,
-		...wordsOf(scope, q.entityUuid),
-	})
-	// child rows by their parent, once: a wide topic holds thousands of each
-	const kpQuotesOf = groupBy(kpQuotes, (q) => q.kpId)
+	const rows = { keyPoints, keyPointQuotes, stances, facetPerspectives, facetQuotes, members, parents }
+	const facetCache = await topicFacets(db, rows)
+	const synthesis = synthesisOf(scope, treeOf(h), tc, rows, facetCache)
+	// each stance's own key points and quotes, by the stance's row (one per source on a topic)
+	const idOf = new Map(stances.map((p) => [p.entityUuid, p.id]))
 	const perspKpOf = groupBy(perspKp, (k) => k.clusterEntityPerspectiveId)
 	const perspKpQuotesOf = groupBy(perspKpQuotes, (q) => q.keyPointId)
 	const perspQuotesOf = groupBy(perspQuotes, (q) => q.clusterEntityPerspectiveId)
-	const facetQuotesOf = groupBy(facetQuotes, (q) => q.pid)
 	return {
 		...summary,
-		keyPointItems: kpRows.map((r) => ({
-			keyPoint: r.keyPoint,
-			details: r.details,
-			quotes: (kpQuotesOf.get(r.clusterKeyPointId) ?? [])
-				.filter((q) => isKept(scope, q.entityUuid))
-				.map((q) => quoteOf({ ...q, rationale: null })),
-		})),
-		entityPerspectives: persp
-			.filter((p) => isKept(scope, p.entityUuid))
-			.map((p) => {
-				const words = wordsOf(scope, p.entityUuid)
-				const text = (value: string) => (words.withheld ? '' : value)
-				return {
-					entityUuid: p.entityUuid,
-					entityId: p.entityId,
-					entityName: p.entityName,
-					// the stance's title reads the notice; its one-word position stays
-					title: textOf(scope, p.entityUuid, p.title),
-					description: text(p.description),
-					position: p.position,
-					positionAnalysis: text(p.positionAnalysis),
-					keyPoints: words.withheld
-						? []
-						: (perspKpOf.get(p.id) ?? []).map((k) => ({
-								keyPoint: k.keyPoint,
-								details: k.details,
-								quotes: (perspKpQuotesOf.get(k.keyPointId) ?? []).map((q) => q.quoteText),
-							})),
-					quotes: words.withheld ? [] : (perspQuotesOf.get(p.id) ?? []).map((q) => q.quoteText),
-					facets: facetCache.get(p.entityUuid) ?? {},
-					...words,
-				}
-			}),
-		facetPerspectives: facetRows.map((r) => ({
-			facet: r.facet,
-			facetValue: r.facetValue,
-			position: r.position,
-			positionAnalysis: r.positionAnalysis,
-			quotes: (facetQuotesOf.get(r.clusterKeyPerspectiveId) ?? [])
-				.filter((q) => isKept(scope, q.entityUuid))
-				.map(quoteOf),
-		})),
+		keyPointItems: synthesis.keyPointItems,
+		entityPerspectives: synthesis.stances.map((p) => {
+			const id = idOf.get(p.entityUuid)
+			const own = id === undefined || p.withheld
+			return {
+				entityUuid: p.entityUuid,
+				entityId: p.entityId,
+				entityName: p.entityName,
+				title: p.title,
+				description: p.description,
+				position: p.position,
+				positionAnalysis: p.positionAnalysis,
+				keyPoints: own
+					? []
+					: (perspKpOf.get(id) ?? []).map((k) => ({
+							keyPoint: k.keyPoint,
+							details: k.details,
+							quotes: (perspKpQuotesOf.get(k.keyPointId) ?? []).map((q) => q.quoteText),
+						})),
+				quotes: own ? [] : (perspQuotesOf.get(id) ?? []).map((q) => q.quoteText),
+				facets: p.facets,
+				...wordsOf(scope, p.entityUuid),
+			}
+		}),
+		facetPerspectives: synthesis.facetPerspectives,
 		sourceDocuments: sourceDocs.map((d) => ({ ...d, chunks: n(d.chunks) })),
-		parents: parents.map((p) => ({ ...p, isPrimary: p.isPrimary === 1 })),
-		members: members.map((m) => ({ ...m, facets: facetCache.get(m.entityUuid) ?? {} })),
-		lineage: base ? tree.ancestorsOf(base.superclusterId) : [],
+		parents: synthesis.parents,
+		members: synthesis.members,
+		lineage: synthesis.lineage,
 	}
 }
 
