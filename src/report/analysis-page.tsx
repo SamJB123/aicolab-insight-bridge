@@ -11,6 +11,7 @@ import {
 	assessedDocumentsSchema,
 	metricEntriesSchema,
 	perspectiveDocumentsSchema,
+	perspectiveGroupsSchema,
 	questionDetailSchema,
 	tagDocumentsSchema,
 } from '@aicolab/insight-bridge-contracts/explorer'
@@ -22,7 +23,11 @@ import {
 	type ScoreBandsOf,
 } from './analysis/assessment-view.tsx'
 import { type MetricEntriesLoader, MetricsView } from './analysis/metrics-view.tsx'
-import { type PerspectiveDocumentsLoader, PerspectiveView } from './analysis/perspective-view.tsx'
+import {
+	type PerspectiveDocumentsLoader,
+	type PerspectiveGroupsLoader,
+	PerspectiveView,
+} from './analysis/perspective-view.tsx'
 import { type QuestionDetailLoader, QuestionsView } from './analysis/questions-view.tsx'
 import { type TagDocumentsLoader, TaggingView } from './analysis/tagging-view.tsx'
 import { type ReportSurface, ReportSurfaceProvider } from './surface.tsx'
@@ -33,6 +38,7 @@ export interface AnalysisLoaders {
 	tagDocuments: TagDocumentsLoader
 	questionDetail: QuestionDetailLoader
 	perspectiveDocuments: PerspectiveDocumentsLoader
+	perspectiveGroups: PerspectiveGroupsLoader
 	assessedDocuments: AssessedDocumentsLoader
 	metricEntries: MetricEntriesLoader
 }
@@ -56,6 +62,10 @@ export function analysisLoaders(
 			perspectiveDocumentsSchema
 				.nullable()
 				.parse(await fetch({ kind: 'perspectiveDocuments', taskId, ...options })),
+		perspectiveGroups: async (options) =>
+			perspectiveGroupsSchema
+				.nullable()
+				.parse(await fetch({ kind: 'perspectiveGroups', taskId, ...options })),
 		assessedDocuments: async (options) =>
 			assessedDocumentsSchema
 				.nullable()
@@ -92,6 +102,7 @@ export function AnalysisPage(props: {
 						<PerspectiveView
 							overview={overview()}
 							perspectiveDocuments={props.loaders.perspectiveDocuments}
+							perspectiveGroups={props.loaders.perspectiveGroups}
 						/>
 					)}
 				</Match>

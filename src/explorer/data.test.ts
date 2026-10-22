@@ -22,6 +22,7 @@ import {
 	methodDataSchema,
 	overviewSchema,
 	perspectiveDocumentsSchema,
+	perspectiveGroupsSchema,
 	questionDetailSchema,
 	questionsOverviewSchema,
 	reportOverviewSchema,
@@ -239,6 +240,28 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 			).documents)
 				entries += d.entries.length
 		expect(entries).toBe(overview.criteria.reduce((a, c) => a + c.findings, 0))
+		// every grouping: a group's count is what choosing it leaves; every document is in some group
+		const plain = perspectiveGroupsSchema.parse(
+			await analysis.perspectiveGroups(db, words, task.taskId),
+		)
+		expect(plain.total).toBe(all.total)
+		expect(plain.lens.reduce((a, l) => a + l.documents, 0)).toBe(all.total)
+		for (const grouping of plain.groupings) {
+			const grouped = perspectiveGroupsSchema.parse(
+				await analysis.perspectiveGroups(db, words, task.taskId, { groupBy: grouping.key }),
+			)
+			expect(grouped.groupBy).toBe(grouping.key)
+			expect(grouped.groups.reduce((a, g) => a + g.documents, 0)).toBeGreaterThanOrEqual(all.total)
+			for (const g of grouped.groups.slice(0, 3)) {
+				const inGroup = perspectiveDocumentsSchema.parse(
+					await analysis.perspectiveDocuments(db, words, task.taskId, {
+						group: { by: grouping.key, value: g.value },
+						limit: 1,
+					}),
+				)
+				expect(inGroup.total).toBe(g.documents)
+			}
+		}
 		// a search narrows to the documents whose findings mention it
 		const word = all.documents[0]?.entries[0]?.keyPoint.split(/\s+/).find((w) => w.length > 6)
 		if (word) {

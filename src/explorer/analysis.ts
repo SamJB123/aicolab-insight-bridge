@@ -35,6 +35,7 @@ import type {
 	MetricEntries,
 	MetricsOverview,
 	PerspectiveDocuments,
+	PerspectiveGroups,
 	PerspectiveOverview,
 	QuestionsOverview,
 	ReportTask,
@@ -51,6 +52,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { questionClause } from '../world/schema.ts'
 import { inRange, type ScoreRange, scoreRangeSchema } from './bands.ts'
+import { STRONG } from './data.ts'
 import { loadFacetCache } from './facets.ts'
 import { lensOf, lensRank, questionDetail } from './pages.ts'
 import { andKept, keepSources, type ReadScope, wordsOf } from './scope.ts'
@@ -290,6 +292,14 @@ export const analysisDrillSchema = z.discriminatedUnion('kind', [
 		offset,
 		lensValue: lensFilter,
 		query: z.string().optional(),
+		group: z.object({ by: z.string(), value: z.string().nullable() }).optional(),
+	}),
+	z.object({
+		kind: z.literal('perspectiveGroups'),
+		taskId: z.string(),
+		lensValue: lensFilter,
+		query: z.string().optional(),
+		groupBy: z.string().nullable().optional(),
 	}),
 	z.object({
 		kind: z.literal('assessedDocuments'),
@@ -331,6 +341,8 @@ export async function analysisDrill(
 			return questionDetail(db, words, request.questionId, scope)
 		case 'perspectiveDocuments':
 			return perspectiveDocuments(db, words, request.taskId, request, scope)
+		case 'perspectiveGroups':
+			return perspectiveGroups(db, words, request.taskId, request, scope)
 		case 'assessedDocuments':
 			return assessedDocuments(db, words, request.taskId, request, scope)
 		case 'metricEntries':
@@ -804,21 +816,21 @@ export async function perspectiveOverview(
 	}
 }
 
-/**
- * A perspective task's findings by document, a page at a time: each document
- * with every entry it has under every criterion, in the task's criterion
- * order, so a claim reads beside the evidence, timeframe and people its
- * document gives for it. By source, then document. `query` narrows to
- * documents with an entry (or a source name) that mentions it; a withheld
- * source's entries are searched as they read, by its name and the notice.
- */
-export async function perspectiveDocuments(
+/** What narrows a perspective task's documents: the reader's words, a lens value, one group. */
+interface PerspectiveFilter {
+	query?: string
+	lensValue?: string | null
+	/** A grouping (`lens`, `topic`, `facet:<facet>`) and one of its values (null: none). */
+	group?: { by: string; value: string | null }
+}
+
+/** A perspective task's documents and rows in the reader's scope, with the criteria's order. */
+async function perspectiveFrame(
 	db: CorpusDb,
 	words: RunWords,
 	taskId: string,
-	options: Paging & { lensValue?: string | null; query?: string } = {},
-	scope?: ReadScope,
-): Promise<PerspectiveDocuments | null> {
+	scope: ReadScope | undefined,
+) {
 	const frame = await taskFrame(db, words, taskId, scope)
 	if (frame?.task.kind !== 'perspective_analysis') return null
 	const rows = (await criterionRows(db, taskId)).filter((r) =>
@@ -827,31 +839,223 @@ export async function perspectiveDocuments(
 	const order = new Map(
 		criteriaOf(rows, declaredCriteria(frame.declaration)).map((c, i) => [c.criterionId, i]),
 	)
-	const needle = options.query?.trim().toLowerCase() ?? ''
-	// the analyses whose entries mention the words, found in the database rather than read whole
-	const mentioned = needle
-		? new Set(
-				(
-					await db.all<{ id: number }>(sql`
-						SELECT DISTINCT ca.custom_analysis_id AS id FROM criterion_analysis ca
-						JOIN doc_custom_analysis dca ON dca.custom_analysis_id = ca.custom_analysis_id
-						LEFT JOIN criterion_quote cq ON cq.criterion_analysis_id = ca.criterion_analysis_id
-						WHERE dca.task_id = ${taskId}
-							AND (instr(lower(ca.key_point), ${needle}) > 0 OR instr(lower(ca.details), ${needle}) > 0
-								OR instr(lower(cq.quote), ${needle}) > 0)`)
-				).map((r) => r.id),
-			)
-		: null
-	const analyses = [...new Set(rows.map((r) => r.customAnalysisId))].filter((id) => {
-		const doc = frame.byAnalysis.get(id)
-		if (!doc || !lensMatches(options.lensValue, doc.lensValue)) return false
-		if (!needle) return true
+	return { ...frame, rows, order, analyses: [...new Set(rows.map((r) => r.customAnalysisId))] }
+}
+type PerspectiveFrame = NonNullable<Awaited<ReturnType<typeof perspectiveFrame>>>
+
+/**
+ * The analyses the reader's words find: an entry (its key point, details or
+ * a quote) or the source's name mentions them; a withheld source's entries
+ * are searched as they read, by its name and the notice. Matched in the
+ * database, so a search never reads the task's every entry.
+ */
+async function searched(db: CorpusDb, f: PerspectiveFrame, taskId: string, query?: string) {
+	const needle = query?.trim().toLowerCase() ?? ''
+	if (!needle) return f.analyses
+	const mentioned = new Set(
+		(
+			await db.all<{ id: number }>(sql`
+				SELECT DISTINCT ca.custom_analysis_id AS id FROM criterion_analysis ca
+				JOIN doc_custom_analysis dca ON dca.custom_analysis_id = ca.custom_analysis_id
+				LEFT JOIN criterion_quote cq ON cq.criterion_analysis_id = ca.criterion_analysis_id
+				WHERE dca.task_id = ${taskId}
+					AND (instr(lower(ca.key_point), ${needle}) > 0 OR instr(lower(ca.details), ${needle}) > 0
+						OR instr(lower(cq.quote), ${needle}) > 0)`)
+		).map((r) => r.id),
+	)
+	return f.analyses.filter((id) => {
+		const doc = f.byAnalysis.get(id)
+		if (!doc) return false
 		const notice = doc.withheld ? `${doc.notice ?? ''}` : ''
 		return (
-			(!doc.withheld && mentioned?.has(id)) ||
+			(!doc.withheld && mentioned.has(id)) ||
 			`${doc.entityName}\n${notice}`.toLowerCase().includes(needle)
 		)
 	})
+}
+
+/** The groupings a perspective task's documents can take: the lens, each tag vocabulary they carry, the run's topics. */
+async function groupingsOf(db: CorpusDb, words: RunWords) {
+	const vocabularies = await db
+		.select({ facet: s.facet.facet })
+		.from(s.facet)
+		.where(eq(s.facet.kind, 'vocabulary'))
+		.orderBy(asc(s.facet.facet))
+	return [
+		...(words.lens
+			? [{ key: 'lens', label: words.facets[words.lens]?.heading ?? words.lens }]
+			: []),
+		...vocabularies.map((v) => ({
+			key: `facet:${v.facet}`,
+			label: words.facets[v.facet]?.heading ?? v.facet,
+		})),
+		{ key: 'topic', label: 'Topic' },
+	]
+}
+
+/**
+ * Each analysis's values under a grouping, labelled: its lens value; the
+ * first tier of every value a vocabulary tagged its document with; every
+ * topic its document is strongly linked to. A document with none is in the
+ * group of no value.
+ */
+async function groupValues(
+	db: CorpusDb,
+	words: RunWords,
+	f: PerspectiveFrame,
+	by: string,
+	analyses: readonly number[],
+): Promise<Map<number, { value: string | null; label: string }[]>> {
+	const none = { value: null, label: by === 'topic' ? 'No strong topic' : 'Unclassified' }
+	const out = new Map<number, { value: string | null; label: string }[]>()
+	const documentOf = (id: number) => f.byAnalysis.get(id)?.documentId
+	if (by === 'lens') {
+		const lens = words.lens
+		for (const id of analyses) {
+			const value = f.byAnalysis.get(id)?.lensValue ?? null
+			out.set(id, [
+				value === null
+					? none
+					: { value, label: (lens && words.facets[lens]?.values[value]) || value },
+			])
+		}
+		return out
+	}
+	const documents = analyses.flatMap((id) => documentOf(id) ?? [])
+	const byDocument = new Map<string, { value: string; label: string }[]>()
+	if (by === 'topic') {
+		for (const group of inGroups(documents))
+			for (const r of await db
+				.select({
+					documentId: s.currentDocumentMembership.documentId,
+					topicId: s.currentTopic.topicClusterId,
+					title: s.currentTopic.title,
+				})
+				.from(s.currentDocumentMembership)
+				.innerJoin(
+					s.currentTopic,
+					eq(s.currentTopic.topicClusterId, s.currentDocumentMembership.topicClusterId),
+				)
+				.where(
+					and(
+						inArray(s.currentDocumentMembership.documentId, group),
+						inArray(s.currentDocumentMembership.membershipType, STRONG),
+					),
+				))
+				byDocument.set(r.documentId, [
+					...(byDocument.get(r.documentId) ?? []),
+					{ value: String(r.topicId), label: r.title },
+				])
+	} else if (by.startsWith('facet:')) {
+		const facet = by.slice('facet:'.length)
+		const facets = await loadFacetCache(db, 'document', [facet], documents)
+		for (const [documentId, values] of facets) {
+			const tiers = [...new Set((values[facet] ?? []).map((v) => v.split(PATH_SEP)[0] ?? v))]
+			byDocument.set(
+				documentId,
+				tiers.map((value) => ({ value, label: words.facets[facet]?.values[value] ?? value })),
+			)
+		}
+	}
+	for (const id of analyses) {
+		const held = byDocument.get(documentOf(id) ?? '') ?? []
+		out.set(id, held.length ? held : [none])
+	}
+	return out
+}
+
+/** The analyses a filter leaves: the search, then the lens value, then the group. */
+async function filtered(
+	db: CorpusDb,
+	words: RunWords,
+	f: PerspectiveFrame,
+	taskId: string,
+	filter: PerspectiveFilter,
+) {
+	const found = (await searched(db, f, taskId, filter.query)).filter((id) => {
+		const doc = f.byAnalysis.get(id)
+		return !!doc && lensMatches(filter.lensValue, doc.lensValue)
+	})
+	const group = filter.group
+	if (!group) return found
+	const values = await groupValues(db, words, f, group.by, found)
+	return found.filter((id) => values.get(id)?.some((v) => v.value === group.value))
+}
+
+/**
+ * A perspective task's documents in groups, under the reader's search and
+ * lens value: the groupings the run offers, the chosen one's groups by
+ * documents (most first; the lens in its own order), and the lens values'
+ * counts under the same search, so a filter says what choosing it leaves.
+ */
+export async function perspectiveGroups(
+	db: CorpusDb,
+	words: RunWords,
+	taskId: string,
+	options: { query?: string; lensValue?: string | null; groupBy?: string | null } = {},
+	scope?: ReadScope,
+): Promise<PerspectiveGroups | null> {
+	const f = await perspectiveFrame(db, words, taskId, scope)
+	if (!f) return null
+	const [groupings, found] = await Promise.all([
+		groupingsOf(db, words),
+		searched(db, f, taskId, options.query),
+	])
+	const lensCounts = new Map<string | null, number>()
+	for (const id of found) {
+		const value = f.byAnalysis.get(id)?.lensValue ?? null
+		lensCounts.set(value, (lensCounts.get(value) ?? 0) + 1)
+	}
+	const inLens = found.filter((id) =>
+		lensMatches(options.lensValue, f.byAnalysis.get(id)?.lensValue ?? null),
+	)
+	const groupBy = groupings.some((g) => g.key === options.groupBy)
+		? (options.groupBy ?? null)
+		: null
+	const counts = new Map<string | null, { label: string; documents: number }>()
+	if (groupBy)
+		for (const values of (await groupValues(db, words, f, groupBy, inLens)).values())
+			for (const v of values) {
+				const c = counts.get(v.value) ?? { label: v.label, documents: 0 }
+				c.documents += 1
+				counts.set(v.value, c)
+			}
+	const rank = lensRank(words)
+	return {
+		groupings,
+		groupBy,
+		total: inLens.length,
+		groups: [...counts]
+			.map(([value, c]) => ({ value, ...c }))
+			.sort((a, b) =>
+				groupBy === 'lens'
+					? rank(a.value) - rank(b.value)
+					: (a.value === null ? 1 : 0) - (b.value === null ? 1 : 0) ||
+						b.documents - a.documents ||
+						a.label.localeCompare(b.label),
+			),
+		lens: f.lens.map((l) => ({ value: l.value, documents: lensCounts.get(l.value) ?? 0 })),
+	}
+}
+
+/**
+ * A perspective task's findings by document, a page at a time: each document
+ * with every entry it has under every criterion, in the task's criterion
+ * order, so a claim reads beside the evidence, timeframe and people its
+ * document gives for it. By source, then document; narrowed by the reader's
+ * words, a lens value and one group (`PerspectiveFilter`).
+ */
+export async function perspectiveDocuments(
+	db: CorpusDb,
+	words: RunWords,
+	taskId: string,
+	options: Paging & PerspectiveFilter = {},
+	scope?: ReadScope,
+): Promise<PerspectiveDocuments | null> {
+	const frame = await perspectiveFrame(db, words, taskId, scope)
+	if (!frame) return null
+	const { rows, order } = frame
+	const analyses = await filtered(db, words, frame, taskId, options)
 	const sorted = analyses.sort((a, b) => {
 		const da = frame.byAnalysis.get(a)
 		const db_ = frame.byAnalysis.get(b)
