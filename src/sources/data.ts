@@ -10,13 +10,15 @@
 
 import {
 	type CorpusDb,
+	currentEntityMembership,
+	currentTopic,
 	document,
 	entity,
 	facetAssignment,
 	facet as facetTable,
 } from '@aicolab/insight-bridge-contracts/schema'
-import { inArray, like, or } from 'drizzle-orm'
-import { likePattern } from '../explorer/data.ts'
+import { and, eq, inArray, like, or } from 'drizzle-orm'
+import { likePattern, STRONG } from '../explorer/data.ts'
 import { type EffectiveFacets, loadFacetCache } from '../explorer/facets.ts'
 import { isKept } from '../explorer/scope.ts'
 import type {
@@ -143,23 +145,41 @@ export async function sourcesData(
 		matching = new Set([...matching].filter((id) => held.has(id)))
 	}
 
-	// Free text matches the contributor's name or slug, or ANY facet value they
-	// hold — so searching an author, a publication or an episode's site title
+	// Free text matches the contributor's name or slug, a document's title or
+	// file name, a topic it is strongly linked to, or ANY facet value they hold —
+	// so searching an author, a publication, an episode's site title or a theme
 	// works without a corpus declaring that it should.
 	const q = typeof search.q === 'string' ? search.q.trim() : ''
 	if (q) {
 		const pattern = likePattern(q)
-		const [byName, byFacet] = await Promise.all([
+		const [byName, byDocument, byTopic, byFacet] = await Promise.all([
 			db
 				.select({ id: entity.id })
 				.from(entity)
 				.where(or(like(entity.entityName, pattern), like(entity.entityId, pattern))),
 			db
+				.select({ id: document.entityUuid })
+				.from(document)
+				.where(or(like(document.documentTitle, pattern), like(document.fileName, pattern))),
+			db
+				.select({ id: currentEntityMembership.entityUuid })
+				.from(currentEntityMembership)
+				.innerJoin(
+					currentTopic,
+					eq(currentTopic.topicClusterId, currentEntityMembership.topicClusterId),
+				)
+				.where(
+					and(
+						inArray(currentEntityMembership.membershipType, STRONG),
+						like(currentTopic.title, pattern),
+					),
+				),
+			db
 				.select({ id: facetAssignment.subjectId, subjectType: facetAssignment.subjectType })
 				.from(facetAssignment)
 				.where(like(facetAssignment.facetValue, pattern)),
 		])
-		const hit = new Set(byName.map((r) => r.id))
+		const hit = new Set([...byName, ...byDocument, ...byTopic].map((r) => r.id))
 		for (const r of byFacet) if (r.subjectType === 'entity') hit.add(r.id)
 		const docHits = byFacet.filter((r) => r.subjectType === 'document').map((r) => r.id)
 		for (const batch of chunked(docHits)) {

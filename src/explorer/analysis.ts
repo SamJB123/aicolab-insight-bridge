@@ -541,6 +541,8 @@ export async function tagDocuments(
 ): Promise<TagDocuments | null> {
 	const frame = await analysedBy(db, words, taskId, scope)
 	if (!frame.kind) return null
+	// the value or any path beneath it, by exact prefix: D1 refuses a LIKE pattern over 50
+	// characters ("pattern too complex"), and a theme three levels deep is longer than that
 	const rows = await db.all<{
 		documentId: string
 		value: string
@@ -552,7 +554,7 @@ export async function tagDocuments(
 			fa.is_primary AS isPrimary, fa.context AS context
 		FROM facet_assignment fa JOIN doc_custom_analysis dca ON dca.custom_analysis_id = fa.custom_analysis_id
 		WHERE dca.task_id = ${taskId} AND fa.subject_type = 'document' AND fa.facet = ${category}
-			AND (fa.facet_value = ${path} OR fa.facet_value LIKE ${`${path}${PATH_SEP}%`})`)
+			AND (fa.facet_value = ${path} OR instr(fa.facet_value, ${`${path}${PATH_SEP}`}) = 1)`)
 	// a document once, at its strongest tag here: primary, then relevance
 	const best = new Map<string, (typeof rows)[number]>()
 	for (const r of rows) {

@@ -13,7 +13,7 @@
  * the canonical `SourceRow` to draw from.
  */
 import type { JSX } from '@solidjs/web'
-import { For, Show } from 'solid-js'
+import { For, onCleanup, Show } from 'solid-js'
 import './sources.css'
 import { SourcesSurfaceProvider, useSourcesSurface } from './surface.tsx'
 import type { SourceRow, SourcesResult, SourcesSurface } from './types.ts'
@@ -95,14 +95,21 @@ function Filters(props: { d: SourcesResult }) {
 		...(s.search.q ? [`“${s.search.q}”`] : []),
 		...props.d.facets.map((f) => chosen(f.key)).filter((v) => v !== ''),
 	]
+	// the record searches as the reader types: a short pause after the last key sends the query
+	let typing: ReturnType<typeof setTimeout> | undefined
+	onCleanup(() => clearTimeout(typing))
+	const searchFor = (text: string) => {
+		clearTimeout(typing)
+		typing = setTimeout(() => s.onSearch({ q: text.trim() || undefined }, 'filter'), 250)
+	}
 	return (
 		<div class="ib-src-filters">
 			<input
 				class="ib-src-input ib-src-search"
 				type="search"
-				placeholder={`Search ${props.d.grandTotal.toLocaleString()} ${s.vocabulary.sources} by name…`}
+				placeholder={`Search ${props.d.grandTotal.toLocaleString()} ${s.vocabulary.sources} by name, document, topic or tag…`}
 				value={typeof s.search.q === 'string' ? s.search.q : ''}
-				onChange={(e) => s.onSearch({ q: e.currentTarget.value || undefined }, 'filter')}
+				onInput={(e) => searchFor(e.currentTarget.value)}
 				aria-label="Search"
 			/>
 			<For each={props.d.facets}>
