@@ -30,7 +30,7 @@ import {
 	facet as facetTable,
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { isKept, type ReadScope, textOf, wordsOf } from '../explorer/scope.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
@@ -229,6 +229,7 @@ export async function briefData(db: CorpusDb, config: BriefConfig): Promise<Brie
 				position: clusterEntityPerspective.position,
 			})
 			.from(clusterEntityPerspective),
+		// the analysed facets' assignments alone (the others were read and dropped before)
 		keys.length
 			? db
 					.select({
@@ -238,7 +239,7 @@ export async function briefData(db: CorpusDb, config: BriefConfig): Promise<Brie
 						isPrimary: facetAssignment.isPrimary,
 					})
 					.from(facetAssignment)
-					.where(eq(facetAssignment.subjectType, 'entity'))
+					.where(and(eq(facetAssignment.subjectType, 'entity'), inArray(facetAssignment.facet, keys)))
 			: Promise.resolve([]),
 		db
 			.select({ id: entity.id, entityId: entity.entityId, entityName: entity.entityName })
@@ -577,7 +578,7 @@ export async function chapterReading(
 						isPrimary: facetAssignment.isPrimary,
 					})
 					.from(facetAssignment)
-					.where(eq(facetAssignment.subjectType, 'entity'))
+					.where(and(eq(facetAssignment.subjectType, 'entity'), inArray(facetAssignment.facet, keys)))
 			: Promise.resolve([]),
 		db
 			.select({ id: entity.id, entityId: entity.entityId, entityName: entity.entityName })

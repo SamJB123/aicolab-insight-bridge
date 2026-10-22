@@ -13,6 +13,7 @@ import { provenanceRank } from '@aicolab/insight-bridge-contracts/manifest'
 import type { Profile } from '@aicolab/insight-bridge-contracts/profile'
 import { type CorpusDb, facetAssignment, runMeta } from '@aicolab/insight-bridge-contracts/schema'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { perRequest } from './reader.ts'
 
 export type EffectiveFacets = Record<string, string[]>
 /** v7: the same, with the resolved concept beside each value (null = free facet or unresolved). */
@@ -37,26 +38,34 @@ export function derivedValue(rule: DeriveRule, from: string | undefined): string
 	return bucket?.label ?? rule.unknown_label
 }
 
-/** The profile's derived facets at a granularity, where the run carries a profile. */
-export async function derivedFacets(
-	db: CorpusDb,
-	granularity: 'entity' | 'document',
-): Promise<{ name: string; rule: DeriveRule }[]> {
-	const [table] = await db.all<{ name: string }>(
-		sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_meta'`,
-	)
-	if (!table) return []
-	const [meta] = await db
-		.select({ profile: runMeta.profile })
-		.from(runMeta)
-		.where(eq(runMeta.singleton, 1))
-		.limit(1)
-	return (meta?.profile?.facets ?? []).flatMap((f) =>
-		f.derive && (f.granularity ?? 'entity') === granularity
-			? [{ name: f.name, rule: f.derive }]
-			: [],
-	)
-}
+/** The profile's derived facets at a granularity, where the run carries a profile; read once per request's reader. */
+export const derivedFacets = perRequest(
+	async (
+		db: CorpusDb,
+		granularity: 'entity' | 'document',
+	): Promise<{ name: string; rule: DeriveRule }[]> => {
+		const [table] = await db.all<{ name: string }>(
+			sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_meta'`,
+		)
+		if (!table) return []
+		const [meta] = await db
+			.select({ profile: runMeta.profile })
+			.from(runMeta)
+			.where(eq(runMeta.singleton, 1))
+			.limit(1)
+		return (meta?.profile?.facets ?? []).flatMap((f) =>
+			f.derive && (f.granularity ?? 'entity') === granularity
+				? [{ name: f.name, rule: f.derive }]
+				: [],
+		)
+	},
+	(granularity) => granularity,
+)
+
+type SubjectType = 'entity' | 'document' | 'chunk'
+/** A whole-record facet read's memo key: the subject type and the facets asked for. */
+const facetKey = (subjectType: SubjectType, only?: readonly string[]) =>
+	`${subjectType}|${only ? [...only].sort().join(',') : '*'}`
 
 /**
  * subject -> facet -> values (best provenance only; multi-valued within that
@@ -64,12 +73,21 @@ export async function derivedFacets(
  * db/exclusions.py load_facet_cache picks its single value — confidence
  * descending, then insertion — so `[0]` is the Python choice (ruling C2).
  */
-export async function loadFacetCache(
+export function loadFacetCache(
 	db: CorpusDb,
-	subjectType: 'entity' | 'document' | 'chunk',
+	subjectType: SubjectType,
 	/** Only these facets (a per-request rule that reads one facet need not read them all). */
 	only?: readonly string[],
 	/** Only these subjects (a page of rows need not read the whole record). */
+	subjects?: readonly string[],
+): Promise<Map<string, EffectiveFacets>> {
+	return subjects ? readFacets(db, subjectType, only, subjects) : wholeFacets(db, subjectType, only)
+}
+
+async function readFacets(
+	db: CorpusDb,
+	subjectType: SubjectType,
+	only?: readonly string[],
 	subjects?: readonly string[],
 ): Promise<Map<string, EffectiveFacets>> {
 	const withConcepts = await loadConceptFacetCache(db, subjectType, only, subjects)
@@ -84,10 +102,39 @@ export async function loadFacetCache(
 	return out
 }
 
+/**
+ * A whole-record read, once per request's reader (./reader): the record's
+ * facets are read by several figures of one page, and a facet read is the
+ * largest transfer a report makes (40,000 rows on Second Chair). The map is
+ * shared by its readers, so none writes to it.
+ */
+const wholeFacets = perRequest(
+	(db: CorpusDb, subjectType: SubjectType, only?: readonly string[]) =>
+		readFacets(db, subjectType, only, undefined),
+	facetKey,
+)
+
 /** As loadFacetCache, keeping each value's concept id (the hierarchy readers' input). */
-export async function loadConceptFacetCache(
+export function loadConceptFacetCache(
 	db: CorpusDb,
-	subjectType: 'entity' | 'document' | 'chunk',
+	subjectType: SubjectType,
+	only?: readonly string[],
+	subjects?: readonly string[],
+): Promise<Map<string, EffectiveConceptFacets>> {
+	return subjects
+		? readConceptFacets(db, subjectType, only, subjects)
+		: wholeConceptFacets(db, subjectType, only)
+}
+
+const wholeConceptFacets = perRequest(
+	(db: CorpusDb, subjectType: SubjectType, only?: readonly string[]) =>
+		readConceptFacets(db, subjectType, only, undefined),
+	facetKey,
+)
+
+async function readConceptFacets(
+	db: CorpusDb,
+	subjectType: SubjectType,
 	only?: readonly string[],
 	subjects?: readonly string[],
 ): Promise<Map<string, EffectiveConceptFacets>> {

@@ -26,6 +26,7 @@
 		"./explorer/analysis": "./src/explorer/analysis.ts",
 		"./explorer/bands": "./src/explorer/bands.ts",
 		"./explorer/pages": "./src/explorer/pages.ts",
+		"./explorer/reader": "./src/explorer/reader.ts",
 		"./explorer/scope": "./src/explorer/scope.ts",
 		"./explorer/embed": "./src/explorer/embed.ts",
 		"./prepare": "./src/prepare/index.ts",

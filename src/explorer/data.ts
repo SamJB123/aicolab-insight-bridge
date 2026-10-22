@@ -62,6 +62,7 @@ import { cap } from '../grammar.ts'
 import { treeOf } from '../tree.ts'
 import { MEMBERSHIP_GRADES } from '../world/schema.ts'
 import { loadFacetCache, subjectConcepts } from './facets.ts'
+import { perRecord, perRequest } from './reader.ts'
 import {
 	andKept,
 	andServed,
@@ -137,8 +138,14 @@ const granularitySchema = z.enum(['entity', 'document'])
  * world record reads by. A database with no run_meta, or one whose run cannot
  * account for itself (no profile), is not a canonical run: that throws.
  */
-export async function runWords(db: CorpusDb): Promise<RunWords> {
-	const [meta] = await db.select().from(s.runMeta).where(eq(s.runMeta.singleton, 1)).limit(1)
+export const runWords = perRequest(async (db: CorpusDb): Promise<RunWords> => {
+	// the three columns the words are read from, never the manifest records
+	// beside them in the row (2.9 MB on a large run, once read on every request)
+	const [meta] = await db
+		.select({ name: s.runMeta.name, profile: s.runMeta.profile, site: s.runMeta.site })
+		.from(s.runMeta)
+		.where(eq(s.runMeta.singleton, 1))
+		.limit(1)
 	const profile = meta?.profile
 	if (!meta || !profile)
 		throw new Error(
@@ -196,6 +203,196 @@ export async function runWords(db: CorpusDb): Promise<RunWords> {
 		),
 		sections: [...(site?.sections ?? SITE_SECTIONS)],
 	}
+})
+
+// ---------------------------------------------------------------- the record's rows, once per reader
+//
+// The rows every count and list of the record is made of, read once for a
+// request's reader (./reader) and derived from in memory: the pages that
+// used to read them again for each figure (the overview, the landscape, the
+// galaxy, a topic's summary, a tool's note) read the same rows. Each is the
+// record as written — no scope applied — so a read applies the reader's
+// scope with `isKept`, as the Brief does. Measured before (2026-10-23, the
+// deployed apps): the same memberships, stances and facets read two to three
+// times per page, and every topic's summary computed to show one topic's.
+
+/** Every published document and whose it is. */
+export const documentOwners = perRequest(async (db: CorpusDb) => {
+	const rows = await db
+		.select({
+			documentId: s.publishedDocument.documentId,
+			entityUuid: s.publishedDocument.entityUuid,
+		})
+		.from(s.publishedDocument)
+	return { rows, ownerOf: new Map(rows.map((r) => [r.documentId, r.entityUuid])) }
+})
+
+/** The current topics, by id. */
+export const topicRows = perRequest((db: CorpusDb) =>
+	db
+		.select({
+			topicClusterId: s.currentTopic.topicClusterId,
+			title: s.currentTopic.title,
+			description: s.currentTopic.description,
+			junkAiFlagged: s.currentTopic.junkAiFlagged,
+			junkAiReason: s.currentTopic.junkAiReason,
+			junkStatus: s.currentTopic.junkStatus,
+		})
+		.from(s.currentTopic)
+		.orderBy(asc(s.currentTopic.topicClusterId)),
+)
+
+/** The live topics by id, those a reviewer confirmed as junk included: the review surface's list. */
+const liveTopicRows = perRequest((db: CorpusDb) =>
+	db
+		.select({
+			topicClusterId: s.topicCluster.topicClusterId,
+			title: s.topicCluster.title,
+			description: s.topicCluster.description,
+			junkAiFlagged: s.topicCluster.junkAiFlagged,
+			junkAiReason: s.topicCluster.junkAiReason,
+			junkStatus: s.topicCluster.junkStatus,
+		})
+		.from(s.topicCluster)
+		.where(isNull(s.topicCluster.retiredBuildId))
+		.orderBy(asc(s.topicCluster.topicClusterId)),
+)
+
+/** The committed build's strong contributor memberships on current topics. */
+export const strongEntityMemberships = perRequest((db: CorpusDb) =>
+	db
+		.select({
+			topicClusterId: s.currentEntityMembership.topicClusterId,
+			entityUuid: s.currentEntityMembership.entityUuid,
+			membershipType: s.currentEntityMembership.membershipType,
+		})
+		.from(s.currentEntityMembership)
+		.where(strongSource),
+)
+
+/** The committed build's strong document memberships on current topics, each document with its source. */
+export const strongDocumentMemberships = perRequest((db: CorpusDb) =>
+	db
+		.select({
+			topicClusterId: s.currentDocumentMembership.topicClusterId,
+			documentId: s.currentDocumentMembership.documentId,
+			entityUuid: s.publishedDocument.entityUuid,
+		})
+		.from(s.currentDocumentMembership)
+		.innerJoin(
+			s.publishedDocument,
+			eq(s.publishedDocument.documentId, s.currentDocumentMembership.documentId),
+		)
+		.where(inArray(s.currentDocumentMembership.membershipType, STRONG)),
+)
+
+/**
+ * Every stance the record holds: who, which topic, which position — on
+ * retired and junk topics too, which the review surface still lists; a
+ * reader of current topics keeps those it names (pages.ts currentStances).
+ * By topic, then source: the unique index's own order, so a tie between
+ * lens values breaks the same way on every copy of the record.
+ */
+export const stanceRows = perRequest((db: CorpusDb) =>
+	db
+		.select({
+			topicClusterId: s.clusterEntityPerspective.topicClusterId,
+			entityUuid: s.clusterEntityPerspective.entityUuid,
+			position: s.clusterEntityPerspective.position,
+		})
+		.from(s.clusterEntityPerspective)
+		.orderBy(
+			asc(s.clusterEntityPerspective.topicClusterId),
+			asc(s.clusterEntityPerspective.entityUuid),
+		),
+)
+
+/** Each topic's cross-cutting key points, counted. */
+const keyPointCounts = perRequest(
+	async (db: CorpusDb) =>
+		new Map(
+			(
+				await db
+					.select({ id: s.clusterKeyPoint.topicClusterId, n: sql<number>`count(*)` })
+					.from(s.clusterKeyPoint)
+					.groupBy(s.clusterKeyPoint.topicClusterId)
+			).map((r) => [r.id, n(r.n)]),
+		),
+)
+
+/** What a published document holds: its passages, its key points, their quotes, and the verified quotes. */
+export interface DocumentCounts {
+	passages: number
+	keyPoints: number
+	quotes: number
+	verified: number
+}
+
+/**
+ * Every published document's counts, kept per record (./reader): the
+ * published views walk each quote to its point, its document and the append
+ * ledger, which for four whole-record figures read 1.9 M rows on the audit
+ * corpus; the base tables grouped by document, each kept only when its
+ * document is published, read the record once and the figures are sums.
+ */
+export const documentCounts = perRecord(
+	async (db: CorpusDb): Promise<ReadonlyMap<string, DocumentCounts>> => {
+		const published = db.select({ id: s.publishedDocument.documentId }).from(s.publishedDocument)
+		const [passages, keyPoints, quotes, verified] = await Promise.all([
+			db
+				.select({ id: s.chunk.documentId, n: sql<number>`count(*)` })
+				.from(s.chunk)
+				.where(inArray(s.chunk.documentId, published))
+				.groupBy(s.chunk.documentId),
+			db
+				.select({ id: s.keyPoint.documentId, n: sql<number>`count(*)` })
+				.from(s.keyPoint)
+				.where(inArray(s.keyPoint.documentId, published))
+				.groupBy(s.keyPoint.documentId),
+			db
+				.select({ id: s.keyPoint.documentId, n: sql<number>`count(*)` })
+				.from(s.keyQuote)
+				.innerJoin(s.keyPoint, eq(s.keyPoint.keyPointId, s.keyQuote.keyPointId))
+				.where(inArray(s.keyPoint.documentId, published))
+				.groupBy(s.keyPoint.documentId),
+			db
+				.select({ id: s.keyPoint.documentId, n: sql<number>`count(*)` })
+				.from(s.keyQuoteVerification)
+				.innerJoin(s.keyQuote, eq(s.keyQuote.keyQuoteId, s.keyQuoteVerification.keyQuoteId))
+				.innerJoin(s.keyPoint, eq(s.keyPoint.keyPointId, s.keyQuote.keyPointId))
+				.where(
+					and(eq(s.keyQuoteVerification.verified, 1), inArray(s.keyPoint.documentId, published)),
+				)
+				.groupBy(s.keyPoint.documentId),
+		])
+		const out = new Map<string, DocumentCounts>()
+		const of = (id: string) => {
+			const held = out.get(id)
+			if (held) return held
+			const made = { passages: 0, keyPoints: 0, quotes: 0, verified: 0 }
+			out.set(id, made)
+			return made
+		}
+		for (const r of passages) of(r.id).passages = n(r.n)
+		for (const r of keyPoints) of(r.id).keyPoints = n(r.n)
+		for (const r of quotes) of(r.id).quotes = n(r.n)
+		for (const r of verified) of(r.id).verified = n(r.n)
+		return out
+	},
+)
+
+/** A count over documents' counts: what `pick` reads of each document's, summed. */
+export const sumOf = (
+	documents: readonly { documentId: string }[],
+	counts: ReadonlyMap<string, DocumentCounts>,
+	pick: (c: DocumentCounts) => number,
+) => {
+	let total = 0
+	for (const d of documents) {
+		const c = counts.get(d.documentId)
+		if (c) total += pick(c)
+	}
+	return total
 }
 
 // ---------------------------------------------------------------- overview
@@ -204,7 +401,42 @@ export async function overview(db: CorpusDb, scope?: ReadScope): Promise<Overvie
 	const count = async (table: string, where = '') =>
 		n((await db.all<{ n: number }>(sql.raw(`SELECT COUNT(*) AS n FROM ${table} ${where}`)))[0]?.n)
 	const counted = async (query: SQL) => n((await db.all<{ n: number }>(query))[0]?.n)
-	const facetCache = await loadFacetCache(db, 'entity')
+	const [
+		facetCache,
+		owners,
+		counts,
+		tagged,
+		vocabularies,
+		stateRows,
+		entities,
+		clusteredChunks,
+		clusters,
+		junkConfirmedClusters,
+		superclusters,
+		questions,
+	] = await Promise.all([
+		loadFacetCache(db, 'entity'),
+		documentOwners(db),
+		documentCounts(db),
+		// v7: the subjects each facet tags with a concept, in the scope
+		db.all<{ facet: string; subjects: number }>(sql`
+			SELECT a.facet AS facet, COUNT(DISTINCT a.subject_id) AS subjects FROM facet_assignment a
+			WHERE a.concept_id IS NOT NULL${andKept(assignmentSource, scope)} GROUP BY a.facet`),
+		// every vocabulary facet (a tagging category or a manifest facet with concepts), with its concept count
+		db.all<{ category: string; tags: number }>(sql`
+			SELECT f.facet AS category, (SELECT COUNT(*) FROM concept k WHERE k.vocabulary_id = f.vocabulary_id) AS tags
+			FROM facet f WHERE f.kind = 'vocabulary' ORDER BY f.facet`),
+		db.select({ key: s.pipelineState.key, value: s.pipelineState.value }).from(s.pipelineState),
+		counted(sql`SELECT COUNT(*) AS n FROM entity e WHERE 1 = 1${andKept(sql`e.id`, scope)}`),
+		// the passages the committed build clustered, as the build recorded them
+		counted(
+			sql`SELECT b.points AS n FROM cluster_build b JOIN run_current_build r ON r.build_id = b.build_id`,
+		),
+		count('topic_cluster', 'WHERE retired_build_id IS NULL'),
+		count('topic_cluster', "WHERE junk_status = 'confirmed' AND retired_build_id IS NULL"),
+		count('current_supercluster', 'WHERE generation > 0'),
+		count('question'),
+	])
 	const facetValues = new Map<string, Map<string, number>>()
 	for (const [entityUuid, facets] of facetCache) {
 		if (!isKept(scope, entityUuid)) continue
@@ -215,56 +447,32 @@ export async function overview(db: CorpusDb, scope?: ReadScope): Promise<Overvie
 			facetValues.set(facet, m)
 		}
 	}
-	// v7: every vocabulary facet (a tagging category or a manifest facet with concepts), with its concept count and tagged subjects
-	const tagRows = await db.all<{ category: string; tags: number; documents: number }>(sql`
-		SELECT f.facet AS category,
-			(SELECT COUNT(*) FROM concept k WHERE k.vocabulary_id = f.vocabulary_id) AS tags,
-			(SELECT COUNT(DISTINCT a.subject_id) FROM facet_assignment a
-			 WHERE a.facet = f.facet AND a.concept_id IS NOT NULL${andKept(assignmentSource, scope)}) AS documents
-		FROM facet f WHERE f.kind = 'vocabulary' ORDER BY f.facet`)
-	const state = Object.fromEntries(
-		(
-			await db
-				.select({ key: s.pipelineState.key, value: s.pipelineState.value })
-				.from(s.pipelineState)
-		).map((r) => [r.key, r.value]),
-	)
+	const taggedOf = new Map(tagged.map((r) => [r.facet, n(r.subjects)]))
+	const kept = owners.rows.filter((d) => isKept(scope, d.entityUuid))
 	return {
-		documents: await counted(
-			sql`SELECT COUNT(*) AS n FROM published_document d WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
-		),
-		entities: await counted(
-			sql`SELECT COUNT(*) AS n FROM entity e WHERE 1 = 1${andKept(sql`e.id`, scope)}`,
-		),
-		chunks: await counted(
-			// a published passage's document is published: it is read by key only to name the source
-			sql`SELECT COUNT(*) AS n FROM published_chunk c JOIN document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
-		),
-		// the passages the committed build clustered, as the build recorded them
-		clusteredChunks: await counted(
-			sql`SELECT b.points AS n FROM cluster_build b JOIN run_current_build r ON r.build_id = b.build_id`,
-		),
-		clusters: await count('topic_cluster', 'WHERE retired_build_id IS NULL'),
-		junkConfirmedClusters: await count(
-			'topic_cluster',
-			"WHERE junk_status = 'confirmed' AND retired_build_id IS NULL",
-		),
-		keyPoints: await count('published_key_point'),
-		keyQuotes: await count('published_key_quote'),
-		superclusters: await count('current_supercluster', 'WHERE generation > 0'),
+		documents: kept.length,
+		entities,
+		chunks: sumOf(kept, counts, (c) => c.passages),
+		clusteredChunks,
+		clusters,
+		junkConfirmedClusters,
+		// the published points and quotes, as the record holds them
+		keyPoints: sumOf(owners.rows, counts, (c) => c.keyPoints),
+		keyQuotes: sumOf(owners.rows, counts, (c) => c.quotes),
+		superclusters,
 		facets: [...facetValues].map(([facet, values]) => ({
 			facet,
 			values: [...values]
 				.map(([value, entities]) => ({ value, entities }))
 				.sort((a, b) => b.entities - a.entities),
 		})),
-		tagCategories: tagRows.map((r) => ({
+		tagCategories: vocabularies.map((r) => ({
 			category: r.category,
 			tags: n(r.tags),
-			documentsTagged: n(r.documents),
+			documentsTagged: taggedOf.get(r.category) ?? 0,
 		})),
-		questions: await count('question'),
-		state,
+		questions,
+		state: Object.fromEntries(stateRows.map((r) => [r.key, r.value])),
 	}
 }
 
@@ -276,67 +484,38 @@ export async function topics(
 ): Promise<TopicSummary[]> {
 	// Readers get the view. The review surface (includeJunk) also lists the
 	// live topics a reviewer confirmed as junk, by name, from the table.
-	const rows = includeJunk
-		? await db
-				.select({
-					topicClusterId: s.topicCluster.topicClusterId,
-					title: s.topicCluster.title,
-					description: s.topicCluster.description,
-					junkAiFlagged: s.topicCluster.junkAiFlagged,
-					junkAiReason: s.topicCluster.junkAiReason,
-					junkStatus: s.topicCluster.junkStatus,
-				})
-				.from(s.topicCluster)
-				.where(isNull(s.topicCluster.retiredBuildId))
-				.orderBy(asc(s.topicCluster.topicClusterId))
-		: await db
-				.select({
-					topicClusterId: s.currentTopic.topicClusterId,
-					title: s.currentTopic.title,
-					description: s.currentTopic.description,
-					junkAiFlagged: s.currentTopic.junkAiFlagged,
-					junkAiReason: s.currentTopic.junkAiReason,
-					junkStatus: s.currentTopic.junkStatus,
-				})
-				.from(s.currentTopic)
-				.orderBy(asc(s.currentTopic.topicClusterId))
-	const kp = new Map(
-		(
-			await db
-				.select({ id: s.clusterKeyPoint.topicClusterId, n: sql<number>`count(*)` })
-				.from(s.clusterKeyPoint)
-				.groupBy(s.clusterKeyPoint.topicClusterId)
-		).map((r) => [r.id, n(r.n)]),
-	)
-	const ent = new Map(
-		(
-			await db
-				.select({ id: s.currentEntityMembership.topicClusterId, n: sql<number>`count(*)` })
-				.from(s.currentEntityMembership)
-				.where(and(strongSource, keepSources(s.currentEntityMembership.entityUuid, scope)))
-				.groupBy(s.currentEntityMembership.topicClusterId)
-		).map((r) => [r.id, n(r.n)]),
-	)
+	const [rows, kp, members, documents, stances] = await Promise.all([
+		includeJunk ? liveTopicRows(db) : topicRows(db),
+		keyPointCounts(db),
+		strongEntityMemberships(db),
+		strongDocumentMemberships(db),
+		stanceRows(db),
+	])
+	const tally = (rows: readonly { topicClusterId: number; entityUuid: string }[]) => {
+		const out = new Map<number, number>()
+		for (const r of rows)
+			if (isKept(scope, r.entityUuid))
+				out.set(r.topicClusterId, (out.get(r.topicClusterId) ?? 0) + 1)
+		return out
+	}
+	const ent = tally(members)
 	// a topic's documents are the ones it holds strongly: an exemplar or
 	// high-value grade, the rule every count of the record follows
-	const docs = new Map(
-		(
-			await db.all<{ id: number; n: number }>(
-				sql`SELECT m.topic_cluster_id AS id, COUNT(*) AS n FROM current_document_membership m JOIN published_document d ON d.document_id = m.document_id WHERE m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY m.topic_cluster_id`,
-			)
-		).map((r) => [r.id, n(r.n)]),
+	const docs = tally(documents)
+	const tallies = new Map<number, Map<string, number>>()
+	for (const p of stances) {
+		if (!isKept(scope, p.entityUuid)) continue
+		const held = tallies.get(p.topicClusterId) ?? new Map<string, number>()
+		held.set(p.position, (held.get(p.position) ?? 0) + 1)
+		tallies.set(p.topicClusterId, held)
+	}
+	// each mix's positions by name, as the grouped read listed them
+	const mix = new Map(
+		[...tallies].map(([id, held]) => [
+			id,
+			Object.fromEntries([...held].sort((a, b) => a[0].localeCompare(b[0]))),
+		]),
 	)
-	const positions = await db
-		.select({
-			id: s.clusterEntityPerspective.topicClusterId,
-			position: s.clusterEntityPerspective.position,
-			n: sql<number>`count(*)`,
-		})
-		.from(s.clusterEntityPerspective)
-		.where(keepSources(s.clusterEntityPerspective.entityUuid, scope))
-		.groupBy(s.clusterEntityPerspective.topicClusterId, s.clusterEntityPerspective.position)
-	const mix = new Map<number, Record<string, number>>()
-	for (const p of positions) mix.set(p.id, { ...(mix.get(p.id) ?? {}), [p.position]: n(p.n) })
 	return rows.map((c) => ({
 		topicClusterId: c.topicClusterId,
 		title: c.title,
@@ -363,160 +542,178 @@ export async function topicById(
 	// the topic), never through an id list: DO SQLite binds ~100 parameters per
 	// statement, and a large topic's perspectives blew that on the galaxy
 	// (2026-09-04, run 7f7f06f7 — the playground audit-corpus app settled the same way).
-	const kpRows = await db
-		.select()
-		.from(s.clusterKeyPoint)
-		.where(eq(s.clusterKeyPoint.topicClusterId, tc))
-		.orderBy(asc(s.clusterKeyPoint.clusterKeyPointId))
-	const kpQuotes = await db
-		.select({
-			kpId: s.clusterKeyPointQuote.clusterKeyPointId,
-			text: s.clusterKeyPointQuote.quoteText,
-			entityUuid: s.clusterKeyPointQuote.entityUuid,
-			entityName: s.entity.entityName,
-		})
-		.from(s.clusterKeyPointQuote)
-		.innerJoin(s.entity, eq(s.clusterKeyPointQuote.entityUuid, s.entity.id))
-		.innerJoin(
-			s.clusterKeyPoint,
-			eq(s.clusterKeyPointQuote.clusterKeyPointId, s.clusterKeyPoint.clusterKeyPointId),
-		)
-		.where(eq(s.clusterKeyPoint.topicClusterId, tc))
-		.orderBy(asc(s.clusterKeyPointQuote.quoteId))
-	const facetCache = await loadFacetCache(db, 'entity')
-	const persp = await db
-		.select({
-			id: s.clusterEntityPerspective.clusterEntityPerspectiveId,
-			entityUuid: s.clusterEntityPerspective.entityUuid,
-			entityId: s.entity.entityId,
-			entityName: s.entity.entityName,
-			title: s.clusterEntityPerspective.title,
-			description: s.clusterEntityPerspective.description,
-			position: s.clusterEntityPerspective.position,
-			positionAnalysis: s.clusterEntityPerspective.positionAnalysis,
-		})
-		.from(s.clusterEntityPerspective)
-		.innerJoin(s.entity, eq(s.clusterEntityPerspective.entityUuid, s.entity.id))
-		.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
-		.orderBy(asc(s.entity.entityName))
-	const perspKp = await db
-		.select({
-			keyPointId: s.clusterEntityPerspectiveKeyPoint.keyPointId,
-			clusterEntityPerspectiveId: s.clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId,
-			keyPoint: s.clusterEntityPerspectiveKeyPoint.keyPoint,
-			details: s.clusterEntityPerspectiveKeyPoint.details,
-		})
-		.from(s.clusterEntityPerspectiveKeyPoint)
-		.innerJoin(
-			s.clusterEntityPerspective,
-			eq(
-				s.clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId,
-				s.clusterEntityPerspective.clusterEntityPerspectiveId,
-			),
-		)
-		.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
-		.orderBy(asc(s.clusterEntityPerspectiveKeyPoint.keyPointId))
-	const perspKpQuotes = await db
-		.select({
-			keyPointId: s.clusterEntityPerspectiveKpQuote.keyPointId,
-			quoteText: s.clusterEntityPerspectiveKpQuote.quoteText,
-		})
-		.from(s.clusterEntityPerspectiveKpQuote)
-		.innerJoin(
-			s.clusterEntityPerspectiveKeyPoint,
-			eq(
-				s.clusterEntityPerspectiveKpQuote.keyPointId,
-				s.clusterEntityPerspectiveKeyPoint.keyPointId,
-			),
-		)
-		.innerJoin(
-			s.clusterEntityPerspective,
-			eq(
-				s.clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId,
-				s.clusterEntityPerspective.clusterEntityPerspectiveId,
-			),
-		)
-		.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
-		.orderBy(asc(s.clusterEntityPerspectiveKpQuote.quoteId))
-	const perspQuotes = await db
-		.select({
-			clusterEntityPerspectiveId: s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
-			quoteText: s.clusterEntityPerspectiveQuote.quoteText,
-		})
-		.from(s.clusterEntityPerspectiveQuote)
-		.innerJoin(
-			s.clusterEntityPerspective,
-			eq(
-				s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
-				s.clusterEntityPerspective.clusterEntityPerspectiveId,
-			),
-		)
-		.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
-		.orderBy(asc(s.clusterEntityPerspectiveQuote.quoteId))
-	const facetRows = await db
-		.select()
-		.from(s.clusterKeyPerspective)
-		.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
-		.orderBy(asc(s.clusterKeyPerspective.facet), asc(s.clusterKeyPerspective.facetValue))
-	const facetQuotes = await db
-		.select({
-			pid: s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
-			text: s.clusterPerspectiveQuote.quoteText,
-			entityUuid: s.clusterPerspectiveQuote.entityUuid,
-			entityName: s.entity.entityName,
-			rationale: s.clusterPerspectiveQuote.rationale,
-		})
-		.from(s.clusterPerspectiveQuote)
-		.innerJoin(s.entity, eq(s.clusterPerspectiveQuote.entityUuid, s.entity.id))
-		.innerJoin(
-			s.clusterKeyPerspective,
-			eq(
-				s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
-				s.clusterKeyPerspective.clusterKeyPerspectiveId,
-			),
-		)
-		.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
-		.orderBy(asc(s.clusterPerspectiveQuote.quoteId))
-	const sourceDocs = await db.all<{
-		documentId: string
-		fileName: string
-		title: string | null
-		entityName: string
-		entityUuid: string
-		chunks: number
-	}>(sql`
-		SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
-		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
-		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY d.document_id ORDER BY chunks DESC`)
-	const parents = await db.all<{
-		superclusterId: number
-		title: string | null
-		generation: number
-		isPrimary: number
-		membershipType: string | null
-		similarity: number | null
-	}>(sql`
-		SELECT p.supercluster_id AS superclusterId, p.title, p.generation, e.is_primary AS isPrimary, e.membership_type AS membershipType, e.similarity
-		FROM current_supercluster child JOIN current_supercluster_edge e ON e.child_supercluster_id = child.supercluster_id JOIN current_supercluster p ON p.supercluster_id = e.parent_supercluster_id
-		WHERE child.topic_cluster_id = ${tc} ORDER BY e.is_primary DESC, e.similarity DESC`)
-	const members = await db
-		.select({
-			entityUuid: s.entity.id,
-			entityId: s.entity.entityId,
-			entityName: s.entity.entityName,
-			membershipType: s.currentEntityMembership.membershipType,
-		})
-		.from(s.currentEntityMembership)
-		.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
-		.where(
-			and(
-				eq(s.currentEntityMembership.topicClusterId, tc),
-				strongSource,
-				keepSources(s.currentEntityMembership.entityUuid, scope),
-			),
-		)
-		.orderBy(asc(s.entity.entityName))
-	const tree = treeOf(await hierarchy(db))
+	// Every child table is read at once: each depends on the topic alone.
+	const [
+		kpRows,
+		kpQuotes,
+		facetCache,
+		persp,
+		perspKp,
+		perspKpQuotes,
+		perspQuotes,
+		facetRows,
+		facetQuotes,
+		sourceDocs,
+		parents,
+		members,
+		h,
+	] = await Promise.all([
+		db
+			.select()
+			.from(s.clusterKeyPoint)
+			.where(eq(s.clusterKeyPoint.topicClusterId, tc))
+			.orderBy(asc(s.clusterKeyPoint.clusterKeyPointId)),
+		db
+			.select({
+				kpId: s.clusterKeyPointQuote.clusterKeyPointId,
+				text: s.clusterKeyPointQuote.quoteText,
+				entityUuid: s.clusterKeyPointQuote.entityUuid,
+				entityName: s.entity.entityName,
+			})
+			.from(s.clusterKeyPointQuote)
+			.innerJoin(s.entity, eq(s.clusterKeyPointQuote.entityUuid, s.entity.id))
+			.innerJoin(
+				s.clusterKeyPoint,
+				eq(s.clusterKeyPointQuote.clusterKeyPointId, s.clusterKeyPoint.clusterKeyPointId),
+			)
+			.where(eq(s.clusterKeyPoint.topicClusterId, tc))
+			.orderBy(asc(s.clusterKeyPointQuote.quoteId)),
+		loadFacetCache(db, 'entity'),
+		db
+			.select({
+				id: s.clusterEntityPerspective.clusterEntityPerspectiveId,
+				entityUuid: s.clusterEntityPerspective.entityUuid,
+				entityId: s.entity.entityId,
+				entityName: s.entity.entityName,
+				title: s.clusterEntityPerspective.title,
+				description: s.clusterEntityPerspective.description,
+				position: s.clusterEntityPerspective.position,
+				positionAnalysis: s.clusterEntityPerspective.positionAnalysis,
+			})
+			.from(s.clusterEntityPerspective)
+			.innerJoin(s.entity, eq(s.clusterEntityPerspective.entityUuid, s.entity.id))
+			.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
+			.orderBy(asc(s.entity.entityName)),
+		db
+			.select({
+				keyPointId: s.clusterEntityPerspectiveKeyPoint.keyPointId,
+				clusterEntityPerspectiveId: s.clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId,
+				keyPoint: s.clusterEntityPerspectiveKeyPoint.keyPoint,
+				details: s.clusterEntityPerspectiveKeyPoint.details,
+			})
+			.from(s.clusterEntityPerspectiveKeyPoint)
+			.innerJoin(
+				s.clusterEntityPerspective,
+				eq(
+					s.clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId,
+					s.clusterEntityPerspective.clusterEntityPerspectiveId,
+				),
+			)
+			.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
+			.orderBy(asc(s.clusterEntityPerspectiveKeyPoint.keyPointId)),
+		db
+			.select({
+				keyPointId: s.clusterEntityPerspectiveKpQuote.keyPointId,
+				quoteText: s.clusterEntityPerspectiveKpQuote.quoteText,
+			})
+			.from(s.clusterEntityPerspectiveKpQuote)
+			.innerJoin(
+				s.clusterEntityPerspectiveKeyPoint,
+				eq(
+					s.clusterEntityPerspectiveKpQuote.keyPointId,
+					s.clusterEntityPerspectiveKeyPoint.keyPointId,
+				),
+			)
+			.innerJoin(
+				s.clusterEntityPerspective,
+				eq(
+					s.clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId,
+					s.clusterEntityPerspective.clusterEntityPerspectiveId,
+				),
+			)
+			.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
+			.orderBy(asc(s.clusterEntityPerspectiveKpQuote.quoteId)),
+		db
+			.select({
+				clusterEntityPerspectiveId: s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
+				quoteText: s.clusterEntityPerspectiveQuote.quoteText,
+			})
+			.from(s.clusterEntityPerspectiveQuote)
+			.innerJoin(
+				s.clusterEntityPerspective,
+				eq(
+					s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
+					s.clusterEntityPerspective.clusterEntityPerspectiveId,
+				),
+			)
+			.where(eq(s.clusterEntityPerspective.topicClusterId, tc))
+			.orderBy(asc(s.clusterEntityPerspectiveQuote.quoteId)),
+		db
+			.select()
+			.from(s.clusterKeyPerspective)
+			.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
+			.orderBy(asc(s.clusterKeyPerspective.facet), asc(s.clusterKeyPerspective.facetValue)),
+		db
+			.select({
+				pid: s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
+				text: s.clusterPerspectiveQuote.quoteText,
+				entityUuid: s.clusterPerspectiveQuote.entityUuid,
+				entityName: s.entity.entityName,
+				rationale: s.clusterPerspectiveQuote.rationale,
+			})
+			.from(s.clusterPerspectiveQuote)
+			.innerJoin(s.entity, eq(s.clusterPerspectiveQuote.entityUuid, s.entity.id))
+			.innerJoin(
+				s.clusterKeyPerspective,
+				eq(
+					s.clusterPerspectiveQuote.clusterKeyPerspectiveId,
+					s.clusterKeyPerspective.clusterKeyPerspectiveId,
+				),
+			)
+			.where(eq(s.clusterKeyPerspective.topicClusterId, tc))
+			.orderBy(asc(s.clusterPerspectiveQuote.quoteId)),
+		db.all<{
+			documentId: string
+			fileName: string
+			title: string | null
+			entityName: string
+			entityUuid: string
+			chunks: number
+		}>(sql`
+			SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
+			FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
+			WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY d.document_id ORDER BY chunks DESC`),
+		db.all<{
+			superclusterId: number
+			title: string | null
+			generation: number
+			isPrimary: number
+			membershipType: string | null
+			similarity: number | null
+		}>(sql`
+			SELECT p.supercluster_id AS superclusterId, p.title, p.generation, e.is_primary AS isPrimary, e.membership_type AS membershipType, e.similarity
+			FROM current_supercluster child JOIN current_supercluster_edge e ON e.child_supercluster_id = child.supercluster_id JOIN current_supercluster p ON p.supercluster_id = e.parent_supercluster_id
+			WHERE child.topic_cluster_id = ${tc} ORDER BY e.is_primary DESC, e.similarity DESC`),
+		db
+			.select({
+				entityUuid: s.entity.id,
+				entityId: s.entity.entityId,
+				entityName: s.entity.entityName,
+				membershipType: s.currentEntityMembership.membershipType,
+			})
+			.from(s.currentEntityMembership)
+			.innerJoin(s.entity, eq(s.currentEntityMembership.entityUuid, s.entity.id))
+			.where(
+				and(
+					eq(s.currentEntityMembership.topicClusterId, tc),
+					strongSource,
+					keepSources(s.currentEntityMembership.entityUuid, scope),
+				),
+			)
+			.orderBy(asc(s.entity.entityName)),
+		hierarchy(db),
+	])
+	const tree = treeOf(h)
 	const base = tree.baseOfTopic.get(tc)
 	// a synthesis keeps every quote's slot: a withheld source's quote reads as the notice, attributed
 	const quoteOf = (q: {
@@ -594,42 +791,35 @@ export async function groupById(
 	superclusterId: number,
 	scope?: ReadScope,
 ): Promise<GroupDetail | null> {
-	const tree = treeOf(await hierarchy(db))
+	const [h, allTopics, membership, facetCache, stances] = await Promise.all([
+		hierarchy(db),
+		topics(db, false, scope),
+		strongEntityMemberships(db),
+		loadFacetCache(db, 'entity'),
+		stanceRows(db),
+	])
+	const tree = treeOf(h)
 	const node = tree.byId.get(superclusterId)
 	if (!node || node.generation === 0) return null
-	const summaries = new Map((await topics(db, false, scope)).map((t) => [t.topicClusterId, t]))
-	const membership = await db
-		.select({
-			topicClusterId: s.currentEntityMembership.topicClusterId,
-			entityUuid: s.currentEntityMembership.entityUuid,
-		})
-		.from(s.currentEntityMembership)
-		.where(and(strongSource, keepSources(s.currentEntityMembership.entityUuid, scope)))
+	const summaries = new Map(allTopics.map((t) => [t.topicClusterId, t]))
 	const membersOf = new Map<number, Set<string>>()
-	for (const m of membership)
+	for (const m of membership) {
+		if (!isKept(scope, m.entityUuid)) continue
 		membersOf.set(
 			m.topicClusterId,
 			(membersOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid),
 		)
+	}
 	const reachOf = (topicIds: number[]) => {
 		const reach = new Set<string>()
 		for (const t of topicIds) for (const e of membersOf.get(t) ?? []) reach.add(e)
 		return reach.size
 	}
-	const facetCache = await loadFacetCache(db, 'entity')
-	const stances = await db
-		.select({
-			topicClusterId: s.clusterEntityPerspective.topicClusterId,
-			entityUuid: s.clusterEntityPerspective.entityUuid,
-			position: s.clusterEntityPerspective.position,
-		})
-		.from(s.clusterEntityPerspective)
-		.where(keepSources(s.clusterEntityPerspective.entityUuid, scope))
 	const under = new Set(tree.topicsUnder(superclusterId))
 	const positions: Record<string, number> = {}
 	const spreadOf = new Map<number, Map<string, Set<string>>>()
 	for (const st of stances) {
-		if (!under.has(st.topicClusterId)) continue
+		if (!under.has(st.topicClusterId) || !isKept(scope, st.entityUuid)) continue
 		positions[st.position] = (positions[st.position] ?? 0) + 1
 		const spread = spreadOf.get(st.topicClusterId) ?? new Map<string, Set<string>>()
 		for (const [facet, values] of Object.entries(facetCache.get(st.entityUuid) ?? {}))
@@ -762,45 +952,26 @@ export async function entities(
 ): Promise<EntitySummary[]> {
 	const one = (column: SQLiteColumn) =>
 		entityUuid === undefined ? undefined : eq(column, entityUuid)
-	const rows = await db
-		.select()
-		.from(s.entity)
-		.where(and(keepSources(s.entity.id, scope), one(s.entity.id)))
-		.orderBy(asc(s.entity.entityName))
-	const facets = await loadFacetCache(
-		db,
-		'entity',
-		undefined,
-		entityUuid === undefined ? undefined : [entityUuid],
-	)
-	const docs = new Map(
-		(
-			await db
-				.select({ id: s.publishedDocument.entityUuid, n: sql<number>`count(*)` })
-				.from(s.publishedDocument)
-				.where(one(s.publishedDocument.entityUuid))
-				.groupBy(s.publishedDocument.entityUuid)
-		).map((r) => [r.id, n(r.n)]),
-	)
-	const topicsN = new Map(
-		(
-			await db
-				.select({ id: s.currentEntityMembership.entityUuid, n: sql<number>`count(*)` })
-				.from(s.currentEntityMembership)
-				.where(and(strongSource, one(s.currentEntityMembership.entityUuid)))
-				.groupBy(s.currentEntityMembership.entityUuid)
-		).map((r) => [r.id, n(r.n)]),
-	)
-	const kp = new Map(
-		(
-			await db
-				.select({ id: s.document.entityUuid, n: sql<number>`count(*)` })
-				.from(s.publishedKeyPoint)
-				.innerJoin(s.document, eq(s.publishedKeyPoint.documentId, s.document.documentId))
-				.where(one(s.document.entityUuid))
-				.groupBy(s.document.entityUuid)
-		).map((r) => [r.id, n(r.n)]),
-	)
+	const [rows, facets, owners, memberships, counts] = await Promise.all([
+		db
+			.select()
+			.from(s.entity)
+			.where(and(keepSources(s.entity.id, scope), one(s.entity.id)))
+			.orderBy(asc(s.entity.entityName)),
+		loadFacetCache(db, 'entity', undefined, entityUuid === undefined ? undefined : [entityUuid]),
+		documentOwners(db),
+		strongEntityMemberships(db),
+		documentCounts(db),
+	])
+	// each source's published documents, its strong topics and its documents' key points, as the record holds them
+	const docs = new Map<string, number>()
+	const kp = new Map<string, number>()
+	for (const d of owners.rows) {
+		docs.set(d.entityUuid, (docs.get(d.entityUuid) ?? 0) + 1)
+		kp.set(d.entityUuid, (kp.get(d.entityUuid) ?? 0) + (counts.get(d.documentId)?.keyPoints ?? 0))
+	}
+	const topicsN = new Map<string, number>()
+	for (const m of memberships) topicsN.set(m.entityUuid, (topicsN.get(m.entityUuid) ?? 0) + 1)
 	return rows.map((e) => ({
 		entityUuid: e.id,
 		entityId: e.entityId,
@@ -833,71 +1004,64 @@ export async function entityByKey(
 				.where(eq(s.publishedDocument.documentId, key))
 		)[0]?.entity
 	if (!row || !isKept(scope, row.id)) return null
-	const [summary] = await entities(db, scope, row.id)
-	if (!summary) return null
 	const words = wordsOf(scope, row.id)
-	const docs = await db
-		.select({
-			documentId: s.publishedDocument.documentId,
-			fileName: s.publishedDocument.fileName,
-			title: s.publishedDocument.documentTitle,
-		})
-		.from(s.publishedDocument)
-		.where(eq(s.publishedDocument.entityUuid, row.id))
-		.orderBy(asc(s.publishedDocument.fileName))
-	// through the entity's own predicate, never an id list (see topicById)
-	const kp = new Map(
-		(
-			await db
-				.select({ id: s.publishedKeyPoint.documentId, n: sql<number>`count(*)` })
-				.from(s.publishedKeyPoint)
-				.innerJoin(s.document, eq(s.publishedKeyPoint.documentId, s.document.documentId))
-				.where(eq(s.document.entityUuid, row.id))
-				.groupBy(s.publishedKeyPoint.documentId)
-		).map((r) => [r.id, n(r.n)]),
-	)
-	// the questions each document answered, and how many distinct questions the source answered
-	const answered = await db
-		.select({
-			documentId: s.publishedQuestionResponse.documentId,
-			questionId: s.publishedQuestionResponse.questionId,
-		})
-		.from(s.publishedQuestionResponse)
-		.innerJoin(s.document, eq(s.publishedQuestionResponse.documentId, s.document.documentId))
-		.where(and(eq(s.document.entityUuid, row.id), eq(s.publishedQuestionResponse.addressed, 1)))
+	// through the entity's own predicate, never an id list (see topicById); every read at once
+	const [[summary], docs, counts, answered, memberships, persp, perspQuotes] = await Promise.all([
+		entities(db, scope, row.id),
+		db
+			.select({
+				documentId: s.publishedDocument.documentId,
+				fileName: s.publishedDocument.fileName,
+				title: s.publishedDocument.documentTitle,
+			})
+			.from(s.publishedDocument)
+			.where(eq(s.publishedDocument.entityUuid, row.id))
+			.orderBy(asc(s.publishedDocument.fileName)),
+		documentCounts(db),
+		// the questions each document answered, and how many distinct questions the source answered
+		db
+			.select({
+				documentId: s.publishedQuestionResponse.documentId,
+				questionId: s.publishedQuestionResponse.questionId,
+			})
+			.from(s.publishedQuestionResponse)
+			.innerJoin(s.document, eq(s.publishedQuestionResponse.documentId, s.document.documentId))
+			.where(and(eq(s.document.entityUuid, row.id), eq(s.publishedQuestionResponse.addressed, 1))),
+		db
+			.select({
+				topicClusterId: s.currentTopic.topicClusterId,
+				title: s.currentTopic.title,
+				membershipType: s.currentEntityMembership.membershipType,
+			})
+			.from(s.currentEntityMembership)
+			.innerJoin(
+				s.currentTopic,
+				eq(s.currentEntityMembership.topicClusterId, s.currentTopic.topicClusterId),
+			)
+			.where(and(eq(s.currentEntityMembership.entityUuid, row.id), strongSource))
+			.orderBy(asc(s.currentTopic.topicClusterId)),
+		db
+			.select()
+			.from(s.clusterEntityPerspective)
+			.where(eq(s.clusterEntityPerspective.entityUuid, row.id)),
+		db
+			.select({
+				clusterEntityPerspectiveId: s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
+				quoteText: s.clusterEntityPerspectiveQuote.quoteText,
+			})
+			.from(s.clusterEntityPerspectiveQuote)
+			.innerJoin(
+				s.clusterEntityPerspective,
+				eq(
+					s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
+					s.clusterEntityPerspective.clusterEntityPerspectiveId,
+				),
+			)
+			.where(eq(s.clusterEntityPerspective.entityUuid, row.id)),
+	])
+	if (!summary) return null
 	const answers = new Map<string, number>()
 	for (const a of answered) answers.set(a.documentId, (answers.get(a.documentId) ?? 0) + 1)
-	const memberships = await db
-		.select({
-			topicClusterId: s.currentTopic.topicClusterId,
-			title: s.currentTopic.title,
-			membershipType: s.currentEntityMembership.membershipType,
-		})
-		.from(s.currentEntityMembership)
-		.innerJoin(
-			s.currentTopic,
-			eq(s.currentEntityMembership.topicClusterId, s.currentTopic.topicClusterId),
-		)
-		.where(and(eq(s.currentEntityMembership.entityUuid, row.id), strongSource))
-		.orderBy(asc(s.currentTopic.topicClusterId))
-	const persp = await db
-		.select()
-		.from(s.clusterEntityPerspective)
-		.where(eq(s.clusterEntityPerspective.entityUuid, row.id))
-	const perspQuotes = await db
-		.select({
-			clusterEntityPerspectiveId: s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
-			quoteText: s.clusterEntityPerspectiveQuote.quoteText,
-		})
-		.from(s.clusterEntityPerspectiveQuote)
-		.innerJoin(
-			s.clusterEntityPerspective,
-			eq(
-				s.clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
-				s.clusterEntityPerspective.clusterEntityPerspectiveId,
-			),
-		)
-		.where(eq(s.clusterEntityPerspective.entityUuid, row.id))
 	const documentFacets = await loadFacetCache(
 		db,
 		'document',
@@ -911,7 +1075,7 @@ export async function entityByKey(
 		questionsAnswered: new Set(answered.map((a) => a.questionId)).size,
 		documentItems: docs.map((d) => ({
 			...d,
-			keyPoints: kp.get(d.documentId) ?? 0,
+			keyPoints: counts.get(d.documentId)?.keyPoints ?? 0,
 			answers: answers.get(d.documentId) ?? 0,
 			facets: documentFacets.get(d.documentId) ?? {},
 		})),
@@ -941,73 +1105,34 @@ export async function documents(
 	scope?: ReadScope,
 	documentId?: string,
 ): Promise<DocumentSummary[]> {
-	const rows = await db
-		.select({
-			documentId: s.publishedDocument.documentId,
-			fileName: s.publishedDocument.fileName,
-			title: s.publishedDocument.documentTitle,
-			entityUuid: s.entity.id,
-			entityName: s.entity.entityName,
-		})
-		.from(s.publishedDocument)
-		.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
-		.where(
-			and(
-				keepSources(s.entity.id, scope),
-				documentId === undefined ? undefined : eq(s.publishedDocument.documentId, documentId),
-			),
-		)
-		.orderBy(asc(s.entity.entityName), asc(s.publishedDocument.fileName))
-	const facets = await loadFacetCache(
-		db,
-		'document',
-		undefined,
-		documentId === undefined ? undefined : [documentId],
-	)
-	const ofDocument =
-		documentId === undefined ? undefined : eq(s.publishedKeyPoint.documentId, documentId)
-	const kp = new Map(
-		(
-			await db
-				.select({ id: s.publishedKeyPoint.documentId, n: sql<number>`count(*)` })
-				.from(s.publishedKeyPoint)
-				.where(ofDocument)
-				.groupBy(s.publishedKeyPoint.documentId)
-		).map((r) => [r.id, n(r.n)]),
-	)
-	// the quotes a reader is served: the verified ones (an unverified quote is never served)
-	const quotes = new Map(
-		(
-			await db
-				.select({ id: s.publishedKeyPoint.documentId, n: sql<number>`count(*)` })
-				.from(s.publishedKeyQuote)
-				.innerJoin(
-					s.publishedKeyPoint,
-					eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId),
-				)
-				.innerJoin(
-					s.publishedKeyQuoteVerification,
-					eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
-				)
-				.where(and(eq(s.publishedKeyQuoteVerification.verified, 1), ofDocument))
-				.groupBy(s.publishedKeyPoint.documentId)
-		).map((r) => [r.id, n(r.n)]),
-	)
-	const chunks = new Map(
-		(
-			await db
-				.select({ id: s.publishedChunk.documentId, n: sql<number>`count(*)` })
-				.from(s.publishedChunk)
-				.where(documentId === undefined ? undefined : eq(s.publishedChunk.documentId, documentId))
-				.groupBy(s.publishedChunk.documentId)
-		).map((r) => [r.id, n(r.n)]),
-	)
+	const [rows, facets, counts] = await Promise.all([
+		db
+			.select({
+				documentId: s.publishedDocument.documentId,
+				fileName: s.publishedDocument.fileName,
+				title: s.publishedDocument.documentTitle,
+				entityUuid: s.entity.id,
+				entityName: s.entity.entityName,
+			})
+			.from(s.publishedDocument)
+			.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
+			.where(
+				and(
+					keepSources(s.entity.id, scope),
+					documentId === undefined ? undefined : eq(s.publishedDocument.documentId, documentId),
+				),
+			)
+			.orderBy(asc(s.entity.entityName), asc(s.publishedDocument.fileName)),
+		loadFacetCache(db, 'document', undefined, documentId === undefined ? undefined : [documentId]),
+		documentCounts(db),
+	])
+	// the quotes a reader is served are the verified ones (an unverified quote is never served)
 	return rows.map((d) => ({
 		...d,
 		facets: facets.get(d.documentId) ?? {},
-		keyPoints: kp.get(d.documentId) ?? 0,
-		quotes: quotes.get(d.documentId) ?? 0,
-		chunks: chunks.get(d.documentId) ?? 0,
+		keyPoints: counts.get(d.documentId)?.keyPoints ?? 0,
+		quotes: counts.get(d.documentId)?.verified ?? 0,
+		chunks: counts.get(d.documentId)?.passages ?? 0,
 	}))
 }
 
@@ -1022,38 +1147,179 @@ export async function documentById(
 	// every text of its own is emptied, and the document carries the notice once
 	const words = wordsOf(scope, summary.entityUuid)
 	const own = (value: string) => (words.withheld ? '' : value)
-	const kpRows = await db
-		.select()
-		.from(s.publishedKeyPoint)
-		.where(eq(s.publishedKeyPoint.documentId, documentId))
-		.orderBy(asc(s.publishedKeyPoint.keyPointId))
-	// through the document's own predicate, never an id list (see topicById); verified
-	// quotes only: an unverified quote is never served (settled 2026-10-21, every report)
-	const kpQuotes = await db
-		.select({
-			keyPointId: s.publishedKeyQuote.keyPointId,
-			quote: s.publishedKeyQuote.quote,
-		})
-		.from(s.publishedKeyQuote)
-		.innerJoin(
-			s.publishedKeyPoint,
-			eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId),
-		)
-		.innerJoin(
-			s.publishedKeyQuoteVerification,
-			eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
-		)
-		.where(
-			and(
-				eq(s.publishedKeyPoint.documentId, documentId),
-				eq(s.publishedKeyQuoteVerification.verified, 1),
-			),
-		)
-		.orderBy(asc(s.publishedKeyQuote.keyQuoteId))
-	// v7: the document's model-assigned concepts (the former document_tag rows), direct assignments only
-	const tags = (
-		await subjectConcepts(db, 'document', documentId, { provenance: 'llm_inferred' })
-	).map((r) => ({
+	// through the document's own predicate, never an id list (see topicById); every
+	// child table at once. Verified quotes only: an unverified quote is never served
+	// (settled 2026-10-21, every report).
+	const [
+		kpRows,
+		kpQuotes,
+		concepts,
+		qr,
+		qrKp,
+		qrQuotes,
+		criteria,
+		criteriaQuotes,
+		metricRows,
+		metricReqs,
+		metricStars,
+		topicsOf,
+		textRows,
+	] = await Promise.all([
+		db
+			.select()
+			.from(s.publishedKeyPoint)
+			.where(eq(s.publishedKeyPoint.documentId, documentId))
+			.orderBy(asc(s.publishedKeyPoint.keyPointId)),
+		db
+			.select({
+				keyPointId: s.publishedKeyQuote.keyPointId,
+				quote: s.publishedKeyQuote.quote,
+			})
+			.from(s.publishedKeyQuote)
+			.innerJoin(
+				s.publishedKeyPoint,
+				eq(s.publishedKeyQuote.keyPointId, s.publishedKeyPoint.keyPointId),
+			)
+			.innerJoin(
+				s.publishedKeyQuoteVerification,
+				eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
+			)
+			.where(
+				and(
+					eq(s.publishedKeyPoint.documentId, documentId),
+					eq(s.publishedKeyQuoteVerification.verified, 1),
+				),
+			)
+			.orderBy(asc(s.publishedKeyQuote.keyQuoteId)),
+		// v7: the document's model-assigned concepts (the former document_tag rows), direct assignments only
+		subjectConcepts(db, 'document', documentId, { provenance: 'llm_inferred' }),
+		db
+			.select({
+				id: s.publishedQuestionResponse.questionResponseId,
+				questionKey: s.question.questionKey,
+				questionText: s.question.questionText,
+				ordinal: s.question.ordinal,
+				addressed: s.publishedQuestionResponse.addressed,
+				position: s.publishedQuestionResponse.position,
+			})
+			.from(s.publishedQuestionResponse)
+			.innerJoin(s.question, eq(s.publishedQuestionResponse.questionId, s.question.questionId))
+			.where(eq(s.publishedQuestionResponse.documentId, documentId))
+			.orderBy(asc(s.question.ordinal)),
+		db
+			.select({
+				questionResponseKeyPointId: s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId,
+				questionResponseId: s.publishedQuestionResponseKeyPoint.questionResponseId,
+				keyPoint: s.publishedQuestionResponseKeyPoint.keyPoint,
+				details: s.publishedQuestionResponseKeyPoint.details,
+			})
+			.from(s.publishedQuestionResponseKeyPoint)
+			.innerJoin(
+				s.publishedQuestionResponse,
+				eq(
+					s.publishedQuestionResponseKeyPoint.questionResponseId,
+					s.publishedQuestionResponse.questionResponseId,
+				),
+			)
+			.where(eq(s.publishedQuestionResponse.documentId, documentId))
+			.orderBy(asc(s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId)),
+		db
+			.select({
+				questionResponseKeyPointId: s.publishedQuestionResponseQuote.questionResponseKeyPointId,
+				quote: s.publishedQuestionResponseQuote.quote,
+			})
+			.from(s.publishedQuestionResponseQuote)
+			.innerJoin(
+				s.publishedQuestionResponseKeyPoint,
+				eq(
+					s.publishedQuestionResponseQuote.questionResponseKeyPointId,
+					s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId,
+				),
+			)
+			.innerJoin(
+				s.publishedQuestionResponse,
+				eq(
+					s.publishedQuestionResponseKeyPoint.questionResponseId,
+					s.publishedQuestionResponse.questionResponseId,
+				),
+			)
+			.where(eq(s.publishedQuestionResponse.documentId, documentId))
+			.orderBy(asc(s.publishedQuestionResponseQuote.questionResponseQuoteId)),
+		db.all<{
+			topic: string
+			subtopic: string
+			keyPoint: string
+			details: string
+			id: number
+		}>(sql`
+			SELECT t.topic_name AS topic, st.subtopic_name AS subtopic, ca.key_point AS keyPoint, ca.details, ca.criterion_analysis_id AS id
+			FROM criterion_analysis ca JOIN doc_custom_analysis dca ON dca.custom_analysis_id = ca.custom_analysis_id
+			JOIN analysis_subtopic st ON st.analysis_subtopic_id = ca.analysis_subtopic_id JOIN analysis_topic t ON t.analysis_topic_id = st.analysis_topic_id
+			WHERE dca.document_id = ${documentId} ORDER BY t.topic_name, st.subtopic_name, ca.criterion_analysis_id`),
+		db
+			.select({
+				criterionAnalysisId: s.criterionQuote.criterionAnalysisId,
+				quote: s.criterionQuote.quote,
+			})
+			.from(s.criterionQuote)
+			.innerJoin(
+				s.criterionAnalysis,
+				eq(s.criterionQuote.criterionAnalysisId, s.criterionAnalysis.criterionAnalysisId),
+			)
+			.innerJoin(
+				s.docCustomAnalysis,
+				eq(s.criterionAnalysis.customAnalysisId, s.docCustomAnalysis.customAnalysisId),
+			)
+			.where(eq(s.docCustomAnalysis.documentId, documentId))
+			.orderBy(asc(s.criterionQuote.quoteId)),
+		db.all<{
+			id: number
+			metricType: string
+			metricName: string
+			explicitness: string
+			metricDescription: string
+		}>(sql`
+			SELECT m.metric_id AS id, m.metric_type AS metricType, m.metric_name AS metricName, m.explicitness, m.metric_description AS metricDescription
+			FROM metric m JOIN doc_custom_analysis dca ON dca.custom_analysis_id = m.custom_analysis_id
+			WHERE dca.document_id = ${documentId} ORDER BY m.metric_type, m.metric_id`),
+		db
+			.select({
+				metricId: s.metricCollectionRequirement.metricId,
+				requirement: s.metricCollectionRequirement.requirement,
+			})
+			.from(s.metricCollectionRequirement)
+			.innerJoin(s.metric, eq(s.metricCollectionRequirement.metricId, s.metric.metricId))
+			.innerJoin(
+				s.docCustomAnalysis,
+				eq(s.metric.customAnalysisId, s.docCustomAnalysis.customAnalysisId),
+			)
+			.where(eq(s.docCustomAnalysis.documentId, documentId))
+			.orderBy(asc(s.metricCollectionRequirement.requirementId)),
+		db
+			.select({
+				metricId: s.metricNorthStarAlignment.metricId,
+				northStar: s.northStar.northStarName,
+				how: s.metricNorthStarAlignment.alignmentHow,
+			})
+			.from(s.metricNorthStarAlignment)
+			.innerJoin(s.northStar, eq(s.metricNorthStarAlignment.northStarId, s.northStar.northStarId))
+			.innerJoin(s.metric, eq(s.metricNorthStarAlignment.metricId, s.metric.metricId))
+			.innerJoin(
+				s.docCustomAnalysis,
+				eq(s.metric.customAnalysisId, s.docCustomAnalysis.customAnalysisId),
+			)
+			.where(eq(s.docCustomAnalysis.documentId, documentId))
+			.orderBy(asc(s.metricNorthStarAlignment.alignmentId)),
+		db.all<{ topicClusterId: number; title: string; chunks: number }>(sql`
+			SELECT tc.topic_cluster_id AS topicClusterId, tc.title, COUNT(*) AS chunks FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN current_topic tc ON tc.topic_cluster_id = m.topic_cluster_id
+			WHERE c.document_id = ${documentId} GROUP BY tc.topic_cluster_id ORDER BY chunks DESC`),
+		db
+			.select({ text: s.publishedChunk.text })
+			.from(s.publishedChunk)
+			.where(eq(s.publishedChunk.documentId, documentId))
+			.orderBy(asc(s.publishedChunk.chunkIndex)),
+	])
+	const tags = concepts.map((r) => ({
 		category: r.facet,
 		path: r.facet_value,
 		name: r.label,
@@ -1062,135 +1328,7 @@ export async function documentById(
 		context: r.context ?? '',
 		isPrimary: r.is_primary,
 	}))
-	const qr = await db
-		.select({
-			id: s.publishedQuestionResponse.questionResponseId,
-			questionKey: s.question.questionKey,
-			questionText: s.question.questionText,
-			ordinal: s.question.ordinal,
-			addressed: s.publishedQuestionResponse.addressed,
-			position: s.publishedQuestionResponse.position,
-		})
-		.from(s.publishedQuestionResponse)
-		.innerJoin(s.question, eq(s.publishedQuestionResponse.questionId, s.question.questionId))
-		.where(eq(s.publishedQuestionResponse.documentId, documentId))
-		.orderBy(asc(s.question.ordinal))
-	const qrKp = await db
-		.select({
-			questionResponseKeyPointId: s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId,
-			questionResponseId: s.publishedQuestionResponseKeyPoint.questionResponseId,
-			keyPoint: s.publishedQuestionResponseKeyPoint.keyPoint,
-			details: s.publishedQuestionResponseKeyPoint.details,
-		})
-		.from(s.publishedQuestionResponseKeyPoint)
-		.innerJoin(
-			s.publishedQuestionResponse,
-			eq(
-				s.publishedQuestionResponseKeyPoint.questionResponseId,
-				s.publishedQuestionResponse.questionResponseId,
-			),
-		)
-		.where(eq(s.publishedQuestionResponse.documentId, documentId))
-		.orderBy(asc(s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId))
-	const qrQuotes = await db
-		.select({
-			questionResponseKeyPointId: s.publishedQuestionResponseQuote.questionResponseKeyPointId,
-			quote: s.publishedQuestionResponseQuote.quote,
-		})
-		.from(s.publishedQuestionResponseQuote)
-		.innerJoin(
-			s.publishedQuestionResponseKeyPoint,
-			eq(
-				s.publishedQuestionResponseQuote.questionResponseKeyPointId,
-				s.publishedQuestionResponseKeyPoint.questionResponseKeyPointId,
-			),
-		)
-		.innerJoin(
-			s.publishedQuestionResponse,
-			eq(
-				s.publishedQuestionResponseKeyPoint.questionResponseId,
-				s.publishedQuestionResponse.questionResponseId,
-			),
-		)
-		.where(eq(s.publishedQuestionResponse.documentId, documentId))
-		.orderBy(asc(s.publishedQuestionResponseQuote.questionResponseQuoteId))
-	const criteria = await db.all<{
-		topic: string
-		subtopic: string
-		keyPoint: string
-		details: string
-		id: number
-	}>(sql`
-		SELECT t.topic_name AS topic, st.subtopic_name AS subtopic, ca.key_point AS keyPoint, ca.details, ca.criterion_analysis_id AS id
-		FROM criterion_analysis ca JOIN doc_custom_analysis dca ON dca.custom_analysis_id = ca.custom_analysis_id
-		JOIN analysis_subtopic st ON st.analysis_subtopic_id = ca.analysis_subtopic_id JOIN analysis_topic t ON t.analysis_topic_id = st.analysis_topic_id
-		WHERE dca.document_id = ${documentId} ORDER BY t.topic_name, st.subtopic_name, ca.criterion_analysis_id`)
-	const criteriaQuotes = await db
-		.select({
-			criterionAnalysisId: s.criterionQuote.criterionAnalysisId,
-			quote: s.criterionQuote.quote,
-		})
-		.from(s.criterionQuote)
-		.innerJoin(
-			s.criterionAnalysis,
-			eq(s.criterionQuote.criterionAnalysisId, s.criterionAnalysis.criterionAnalysisId),
-		)
-		.innerJoin(
-			s.docCustomAnalysis,
-			eq(s.criterionAnalysis.customAnalysisId, s.docCustomAnalysis.customAnalysisId),
-		)
-		.where(eq(s.docCustomAnalysis.documentId, documentId))
-		.orderBy(asc(s.criterionQuote.quoteId))
-	const metricRows = await db.all<{
-		id: number
-		metricType: string
-		metricName: string
-		explicitness: string
-		metricDescription: string
-	}>(sql`
-		SELECT m.metric_id AS id, m.metric_type AS metricType, m.metric_name AS metricName, m.explicitness, m.metric_description AS metricDescription
-		FROM metric m JOIN doc_custom_analysis dca ON dca.custom_analysis_id = m.custom_analysis_id
-		WHERE dca.document_id = ${documentId} ORDER BY m.metric_type, m.metric_id`)
-	const metricReqs = await db
-		.select({
-			metricId: s.metricCollectionRequirement.metricId,
-			requirement: s.metricCollectionRequirement.requirement,
-		})
-		.from(s.metricCollectionRequirement)
-		.innerJoin(s.metric, eq(s.metricCollectionRequirement.metricId, s.metric.metricId))
-		.innerJoin(
-			s.docCustomAnalysis,
-			eq(s.metric.customAnalysisId, s.docCustomAnalysis.customAnalysisId),
-		)
-		.where(eq(s.docCustomAnalysis.documentId, documentId))
-		.orderBy(asc(s.metricCollectionRequirement.requirementId))
-	const metricStars = await db
-		.select({
-			metricId: s.metricNorthStarAlignment.metricId,
-			northStar: s.northStar.northStarName,
-			how: s.metricNorthStarAlignment.alignmentHow,
-		})
-		.from(s.metricNorthStarAlignment)
-		.innerJoin(s.northStar, eq(s.metricNorthStarAlignment.northStarId, s.northStar.northStarId))
-		.innerJoin(s.metric, eq(s.metricNorthStarAlignment.metricId, s.metric.metricId))
-		.innerJoin(
-			s.docCustomAnalysis,
-			eq(s.metric.customAnalysisId, s.docCustomAnalysis.customAnalysisId),
-		)
-		.where(eq(s.docCustomAnalysis.documentId, documentId))
-		.orderBy(asc(s.metricNorthStarAlignment.alignmentId))
-	const topicRows = await db.all<{ topicClusterId: number; title: string; chunks: number }>(sql`
-		SELECT tc.topic_cluster_id AS topicClusterId, tc.title, COUNT(*) AS chunks FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN current_topic tc ON tc.topic_cluster_id = m.topic_cluster_id
-		WHERE c.document_id = ${documentId} GROUP BY tc.topic_cluster_id ORDER BY chunks DESC`)
-	const text = (
-		await db
-			.select({ text: s.publishedChunk.text })
-			.from(s.publishedChunk)
-			.where(eq(s.publishedChunk.documentId, documentId))
-			.orderBy(asc(s.publishedChunk.chunkIndex))
-	)
-		.map((r) => r.text)
-		.join(' ')
+	const text = textRows.map((r) => r.text).join(' ')
 	// a source whose passages are not served: the text reads empty and the document says why
 	const served = passagesServed(scope, summary.entityUuid)
 	const unservedNotice = served || words.withheld ? null : (scope?.unserved?.notice ?? null)
@@ -1247,7 +1385,7 @@ export async function documentById(
 				.filter((x) => x.metricId === m.id)
 				.map((x) => ({ northStar: x.northStar, how: own(x.how) })),
 		})),
-		topics: topicRows.map((t) => ({ ...t, chunks: n(t.chunks) })),
+		topics: topicsOf.map((t) => ({ ...t, chunks: n(t.chunks) })),
 		text: served ? own(text) : '',
 	}
 }
@@ -1850,33 +1988,37 @@ async function taskResultRows(db: CorpusDb, scope?: ReadScope): Promise<TaskResu
 }
 
 // ---------------------------------------------------------------- hierarchy
-export async function hierarchy(db: CorpusDb): Promise<Hierarchy> {
-	const nodes = await db
-		.select({
-			superclusterId: s.currentSupercluster.superclusterId,
-			generation: s.currentSupercluster.generation,
-			topicClusterId: s.currentSupercluster.topicClusterId,
-			title: sql<string | null>`COALESCE(${s.currentSupercluster.title}, ${s.currentTopic.title})`,
-			description: sql<
-				string | null
-			>`COALESCE(${s.currentSupercluster.description}, ${s.currentTopic.description})`,
-			nBaseTopics: s.currentSupercluster.nBaseTopics,
-		})
-		.from(s.currentSupercluster)
-		.leftJoin(
-			s.currentTopic,
-			eq(s.currentSupercluster.topicClusterId, s.currentTopic.topicClusterId),
-		)
-		.orderBy(desc(s.currentSupercluster.generation), asc(s.currentSupercluster.superclusterId))
-	const edges = await db
-		.select({
-			childSuperclusterId: s.currentSuperclusterEdge.childSuperclusterId,
-			parentSuperclusterId: s.currentSuperclusterEdge.parentSuperclusterId,
-			isPrimary: s.currentSuperclusterEdge.isPrimary,
-			membershipType: s.currentSuperclusterEdge.membershipType,
-			similarity: s.currentSuperclusterEdge.similarity,
-		})
-		.from(s.currentSuperclusterEdge)
+export const hierarchy = perRequest(async (db: CorpusDb): Promise<Hierarchy> => {
+	const [nodes, edges] = await Promise.all([
+		db
+			.select({
+				superclusterId: s.currentSupercluster.superclusterId,
+				generation: s.currentSupercluster.generation,
+				topicClusterId: s.currentSupercluster.topicClusterId,
+				title: sql<
+					string | null
+				>`COALESCE(${s.currentSupercluster.title}, ${s.currentTopic.title})`,
+				description: sql<
+					string | null
+				>`COALESCE(${s.currentSupercluster.description}, ${s.currentTopic.description})`,
+				nBaseTopics: s.currentSupercluster.nBaseTopics,
+			})
+			.from(s.currentSupercluster)
+			.leftJoin(
+				s.currentTopic,
+				eq(s.currentSupercluster.topicClusterId, s.currentTopic.topicClusterId),
+			)
+			.orderBy(desc(s.currentSupercluster.generation), asc(s.currentSupercluster.superclusterId)),
+		db
+			.select({
+				childSuperclusterId: s.currentSuperclusterEdge.childSuperclusterId,
+				parentSuperclusterId: s.currentSuperclusterEdge.parentSuperclusterId,
+				isPrimary: s.currentSuperclusterEdge.isPrimary,
+				membershipType: s.currentSuperclusterEdge.membershipType,
+				similarity: s.currentSuperclusterEdge.similarity,
+			})
+			.from(s.currentSuperclusterEdge),
+	])
 	return {
 		nodes,
 		edges: edges.map((e) => ({
@@ -1887,7 +2029,7 @@ export async function hierarchy(db: CorpusDb): Promise<Hierarchy> {
 			similarity: e.similarity,
 		})),
 	}
-}
+})
 
 // ---------------------------------------------------------------- search (text)
 export async function searchText(

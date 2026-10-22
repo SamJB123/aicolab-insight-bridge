@@ -31,16 +31,24 @@ import type {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
-import { and, asc, countDistinct, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { cap } from '../grammar.ts'
 import { generationLabel, treeOf } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
-import { hierarchy, STRONG } from './data.ts'
+import {
+	documentCounts,
+	documentOwners,
+	hierarchy,
+	stanceRows,
+	strongDocumentMemberships,
+	strongEntityMemberships,
+	sumOf,
+	topicRows,
+} from './data.ts'
 import { type EffectiveFacets, loadFacetCache } from './facets.ts'
 import { groupNodeId, sourceNodeId, topicNodeId } from './readings.ts'
-import { andKept, keepSources, type ReadScope, servedSources, textOf, wordsOf } from './scope.ts'
+import { isKept, keepSources, type ReadScope, servedSources, textOf, wordsOf } from './scope.ts'
 
-const n = (v: unknown) => Number(v ?? 0)
 const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0)
 const mixOf = (positions: readonly string[]) => {
 	const mix: Record<string, number> = {}
@@ -78,53 +86,47 @@ const generationsOf = (tree: ReturnType<typeof treeOf>): GenerationCount[] => {
 		}))
 }
 
+/** The record's rows (data.ts, read once per reader) on the topics `ids` names (every current topic when absent), the scope's sources only. */
+const inScope = <R extends { topicClusterId: number; entityUuid: string }>(
+	rows: readonly R[],
+	ids: number[] | undefined,
+	scope: ReadScope | undefined,
+): R[] => {
+	const wanted = ids ? new Set(ids) : null
+	return rows.filter(
+		(r) => (!wanted || wanted.has(r.topicClusterId)) && isKept(scope, r.entityUuid),
+	)
+}
+
 /** Every stance on a current topic (or on those `ids` names): who, which topic, which position. */
-const currentStances = (db: CorpusDb, ids: number[] | undefined, scope: ReadScope | undefined) =>
-	db
-		.select({
-			topicClusterId: s.clusterEntityPerspective.topicClusterId,
-			entityUuid: s.clusterEntityPerspective.entityUuid,
-			position: s.clusterEntityPerspective.position,
-		})
-		.from(s.clusterEntityPerspective)
-		.innerJoin(
-			s.currentTopic,
-			eq(s.currentTopic.topicClusterId, s.clusterEntityPerspective.topicClusterId),
-		)
-		.where(
-			and(
-				ids ? inArray(s.currentTopic.topicClusterId, ids) : undefined,
-				keepSources(s.clusterEntityPerspective.entityUuid, scope),
-			),
-		)
+const currentStances = async (
+	db: CorpusDb,
+	ids: number[] | undefined,
+	scope: ReadScope | undefined,
+) => {
+	const [stances, topics] = await Promise.all([stanceRows(db), topicRows(db)])
+	return inScope(stances, ids ?? topics.map((t) => t.topicClusterId), scope)
+}
 
 /** Each current topic's (or each of those `ids` names) strong documents. */
-const strongDocuments = (db: CorpusDb, ids: number[] | undefined, scope: ReadScope | undefined) =>
-	db
-		.select({
-			topicClusterId: s.currentDocumentMembership.topicClusterId,
-			documentId: s.currentDocumentMembership.documentId,
-		})
-		.from(s.currentDocumentMembership)
-		.innerJoin(
-			s.publishedDocument,
-			eq(s.publishedDocument.documentId, s.currentDocumentMembership.documentId),
-		)
-		.where(
-			and(
-				inArray(s.currentDocumentMembership.membershipType, STRONG),
-				ids ? inArray(s.currentDocumentMembership.topicClusterId, ids) : undefined,
-				keepSources(s.publishedDocument.entityUuid, scope),
-			),
-		)
+const strongDocuments = async (
+	db: CorpusDb,
+	ids: number[] | undefined,
+	scope: ReadScope | undefined,
+) => inScope(await strongDocumentMemberships(db), ids, scope)
 
 /** The current strong memberships (of those `ids` names), the scope's sources only. */
-const strongMemberships = (ids: number[] | undefined, scope: ReadScope | undefined) =>
-	and(
-		inArray(s.currentEntityMembership.membershipType, STRONG),
-		ids ? inArray(s.currentEntityMembership.topicClusterId, ids) : undefined,
-		keepSources(s.currentEntityMembership.entityUuid, scope),
-	)
+const strongMembers = async (
+	db: CorpusDb,
+	ids: number[] | undefined,
+	scope: ReadScope | undefined,
+) => inScope(await strongEntityMemberships(db), ids, scope)
+
+/** The record's facets a page reads: the lens alone (the facet its figures compare along), or nothing without one. */
+const lensFacets = (db: CorpusDb, words: RunWords) =>
+	words.lens
+		? loadFacetCache(db, 'entity', [words.lens])
+		: Promise.resolve(new Map<string, EffectiveFacets>())
 
 // ---------------------------------------------------------------- the overview
 
@@ -140,26 +142,26 @@ export async function reportOverview(
 ): Promise<ReportOverview> {
 	const supportive = new Set(words.scale.supportive)
 	const hard = new Set(words.scale.contesting.slice(-2))
-	const kept = andKept(sql`d.entity_uuid`, scope)
 	const [
 		entityFacets,
 		documentFacets,
 		stances,
 		lensPerspectives,
 		sources,
-		docRows,
-		analysedDocs,
+		owners,
 		counts,
-		topicCount,
+		topics,
 		junkCount,
-		memberships,
-		reach,
+		members,
 		h,
 		questionCount,
 		answerRows,
+		entityRows,
 	] = await Promise.all([
-		loadFacetCache(db, 'entity'),
-		loadFacetCache(db, 'document'),
+		lensFacets(db, words),
+		options.documentFacet
+			? loadFacetCache(db, 'document', [options.documentFacet])
+			: Promise.resolve(new Map<string, EffectiveFacets>()),
 		currentStances(db, undefined, scope),
 		words.lens
 			? db
@@ -172,58 +174,42 @@ export async function reportOverview(
 					.where(eq(s.clusterKeyPerspective.facet, words.lens))
 			: Promise.resolve([]),
 		db.$count(s.entity, keepSources(s.entity.id, scope)),
-		db
-			.select({
-				documentId: s.publishedDocument.documentId,
-				entityUuid: s.publishedDocument.entityUuid,
-			})
-			.from(s.publishedDocument)
-			.where(keepSources(s.publishedDocument.entityUuid, scope)),
-		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
-		// each count reads its published view; the rows behind it (a key point, a document) only name the source
-		// for the scope, so they are read by key from their tables: a published row's parents are published, and
-		// the views' check need not run twice per row
-		db.all<{ passages: number; keyPoints: number; quotes: number; verified: number }>(sql`
-			SELECT (SELECT COUNT(*) FROM published_chunk c JOIN document d ON d.document_id = c.document_id WHERE 1 = 1${kept}) AS passages,
-				(SELECT COUNT(*) FROM published_key_point k JOIN document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS keyPoints,
-				(SELECT COUNT(*) FROM published_key_quote q JOIN key_point k ON k.key_point_id = q.key_point_id JOIN document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS quotes,
-				(SELECT COUNT(*) FROM published_key_quote_verification v JOIN key_quote q ON q.key_quote_id = v.key_quote_id JOIN key_point k ON k.key_point_id = q.key_point_id JOIN document d ON d.document_id = k.document_id WHERE v.verified = 1${kept}) AS verified`),
-		db.$count(s.currentTopic),
+		documentOwners(db),
+		// the passages, points and quotes of each published document, kept per record
+		documentCounts(db),
+		topicRows(db),
 		db.$count(
 			s.topicCluster,
 			sql`${s.topicCluster.retiredBuildId} IS NULL AND ${s.topicCluster.junkStatus} = 'confirmed'`,
 		),
-		db.$count(s.currentEntityMembership, strongMemberships(undefined, scope)),
-		db
-			.select({
-				topicClusterId: s.currentEntityMembership.topicClusterId,
-				sources: countDistinct(s.currentEntityMembership.entityUuid),
-			})
-			.from(s.currentEntityMembership)
-			.where(strongMemberships(undefined, scope))
-			.groupBy(s.currentEntityMembership.topicClusterId),
+		strongMembers(db, undefined, scope),
 		hierarchy(db),
 		db.$count(s.question),
 		db
 			.select({ documentId: s.publishedQuestionResponse.documentId })
 			.from(s.publishedQuestionResponse)
 			.where(eq(s.publishedQuestionResponse.addressed, 1)),
+		db.select({ id: s.entity.id }).from(s.entity).where(keepSources(s.entity.id, scope)),
 	])
 	const tree = treeOf(h)
 	const positionMix = mixOf(stances.map((r) => r.position))
 	const lensMix = mixOf(lensPerspectives.map((r) => r.position))
 	const lensTotal = lensPerspectives.length
 	const hardFriction = countIn(positionMix, hard)
-	const total = counts[0]
-	const analysed = new Set(analysedDocs.map((d) => d.documentId))
+	const docRows = owners.rows.filter((d) => isKept(scope, d.entityUuid))
 	const ownerOf = new Map(docRows.map((d) => [d.documentId, d.entityUuid]))
 	// an excluded source's document is not in docRows, so its answers fall away here
 	const answers = answerRows.filter((r) => ownerOf.has(r.documentId))
+	// a document the pipeline analysed holds a published key point
+	const analysed = (d: { documentId: string }) => (counts.get(d.documentId)?.keyPoints ?? 0) > 0
+	const reachOf = new Map<number, Set<string>>()
+	for (const m of members)
+		reachOf.set(m.topicClusterId, (reachOf.get(m.topicClusterId) ?? new Set()).add(m.entityUuid))
+	const quotes = sumOf(docRows, counts, (c) => c.quotes)
+	const verified = sumOf(docRows, counts, (c) => c.verified)
 
 	const byLens = new Map<string | null, number>()
-	const entityIds = (
-		await db.select({ id: s.entity.id }).from(s.entity).where(keepSources(s.entity.id, scope))
-	).map((e) => e.id)
+	const entityIds = entityRows.map((e) => e.id)
 	for (const id of entityIds) {
 		const value = lensOf(words, entityFacets.get(id))
 		byLens.set(value, (byLens.get(value) ?? 0) + 1)
@@ -249,17 +235,17 @@ export async function reportOverview(
 		documentsBy: [...byDocumentValue]
 			.map(([value, documents]) => ({ value, documents }))
 			.sort((a, b) => documentRank(a.value) - documentRank(b.value) || b.documents - a.documents),
-		unanalysedDocuments: docRows.filter((d) => !analysed.has(d.documentId)).length,
-		passages: n(total?.passages),
-		keyPoints: n(total?.keyPoints),
-		quotes: n(total?.quotes),
-		quotesVerified: n(total?.verified),
-		quotesVerifiedPct: pct(n(total?.verified), n(total?.quotes)),
-		topics: topicCount,
+		unanalysedDocuments: docRows.filter((d) => !analysed(d)).length,
+		passages: sumOf(docRows, counts, (c) => c.passages),
+		keyPoints: sumOf(docRows, counts, (c) => c.keyPoints),
+		quotes,
+		quotesVerified: verified,
+		quotesVerifiedPct: pct(verified, quotes),
+		topics: topics.length,
 		junkTopics: junkCount,
 		generations: generationsOf(tree),
 		groups: [...tree.byId.values()].filter((node) => node.generation > 0).length,
-		memberships,
+		memberships: members.length,
 		stances: stances.length,
 		stancedSources: new Set(stances.map((r) => r.entityUuid)).size,
 		lensRows: lensTotal,
@@ -274,7 +260,7 @@ export async function reportOverview(
 		lensValues: [...byLens]
 			.map(([value, count]) => ({ value, sources: count }))
 			.sort((a, b) => b.sources - a.sources || rank(a.value) - rank(b.value)),
-		singleSourceTopics: reach.filter((r) => n(r.sources) === 1).length,
+		singleSourceTopics: [...reachOf.values()].filter((sources) => sources.size === 1).length,
 		questions: questionCount,
 		answers: answers.length,
 		answeringSources: new Set(answers.map((r) => ownerOf.get(r.documentId))).size,
@@ -295,24 +281,16 @@ async function topicFacts(
 ) {
 	const supportive = new Set(words.scale.supportive)
 	const contesting = new Set(words.scale.contesting)
-	const [h, entityFacets, topicRows, memberRows, stances, strong] = await Promise.all([
+	const [h, entityFacets, allTopics, memberRows, stances, strong] = await Promise.all([
 		hierarchy(db),
-		loadFacetCache(db, 'entity'),
-		db
-			.select({ topicClusterId: s.currentTopic.topicClusterId, title: s.currentTopic.title })
-			.from(s.currentTopic)
-			.where(ids ? inArray(s.currentTopic.topicClusterId, ids) : undefined),
-		db
-			.select({
-				topicClusterId: s.currentEntityMembership.topicClusterId,
-				entityUuid: s.currentEntityMembership.entityUuid,
-				membershipType: s.currentEntityMembership.membershipType,
-			})
-			.from(s.currentEntityMembership)
-			.where(strongMemberships(ids, scope)),
+		lensFacets(db, words),
+		topicRows(db),
+		strongMembers(db, ids, scope),
 		currentStances(db, ids, scope),
 		strongDocuments(db, ids, scope),
 	])
+	const wanted = ids ? new Set(ids) : null
+	const topicRows_ = wanted ? allTopics.filter((t) => wanted.has(t.topicClusterId)) : allTopics
 	const tree = treeOf(h)
 	const generations = generationsOf(tree)
 	const top = generations[0]?.generation ?? 0
@@ -337,7 +315,7 @@ async function topicFacts(
 		)
 	const lensValueOf = (entityUuid: string) => lensOf(words, entityFacets.get(entityUuid))
 
-	const topics: TopicProfile[] = topicRows.map((t) => {
+	const topics: TopicProfile[] = topicRows_.map((t) => {
 		const mine = stancesOf.get(t.topicClusterId) ?? []
 		const positions = mixOf(mine.map((r) => r.position))
 		const values = new Map<string, number>()
@@ -462,19 +440,19 @@ export async function galaxy(
 	const facts = await topicFacts(db, words, undefined, scope)
 	const [h, entityFacets, entityRows, strongRows] = await Promise.all([
 		hierarchy(db),
-		loadFacetCache(db, 'entity'),
+		// the facets the dust can be read by, and no other
+		options.facets.length
+			? loadFacetCache(
+					db,
+					'entity',
+					options.facets.map((f) => f.key),
+				)
+			: Promise.resolve(new Map<string, EffectiveFacets>()),
 		db
 			.select({ uuid: s.entity.id, entityId: s.entity.entityId, name: s.entity.entityName })
 			.from(s.entity)
 			.orderBy(asc(s.entity.entityId)),
-		db
-			.select({
-				entityUuid: s.currentEntityMembership.entityUuid,
-				topicClusterId: s.currentEntityMembership.topicClusterId,
-				membershipType: s.currentEntityMembership.membershipType,
-			})
-			.from(s.currentEntityMembership)
-			.where(strongMemberships(undefined, scope)),
+		strongMembers(db, undefined, scope),
 	])
 	const nouns = words.nouns
 	const lensHeading = words.lens ? (words.facets[words.lens]?.heading ?? words.lens) : null
@@ -839,7 +817,7 @@ export async function methodData(
 	words: RunWords,
 	scope?: ReadScope,
 ): Promise<MethodData> {
-	const [overview, junk, docRows, analysedDocs, builds] = await Promise.all([
+	const [overview, junk, docRows, counts, builds] = await Promise.all([
 		reportOverview(db, words, {}, scope),
 		db
 			.select({
@@ -863,7 +841,7 @@ export async function methodData(
 			.from(s.publishedDocument)
 			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
 			.where(keepSources(s.entity.id, scope)),
-		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
+		documentCounts(db),
 		db
 			.select({
 				buildId: s.clusterBuild.buildId,
@@ -878,12 +856,13 @@ export async function methodData(
 			.innerJoin(s.runCurrentBuild, eq(s.runCurrentBuild.buildId, s.clusterBuild.buildId))
 			.limit(1),
 	])
-	const analysed = new Set(analysedDocs.map((d) => d.documentId))
+	// a document the pipeline analysed holds a published key point
+	const analysed = (d: { documentId: string }) => (counts.get(d.documentId)?.keyPoints ?? 0) > 0
 	return {
 		overview,
 		junk: junk.map((t) => ({ ...t, aiFlagged: t.aiFlagged === 1 })),
 		unanalysed: docRows
-			.filter((d) => !analysed.has(d.documentId))
+			.filter((d) => !analysed(d))
 			.map((d) => ({ entityId: d.entityId, name: d.name, title: d.title ?? d.fileName }))
 			.sort((a, b) => a.name.localeCompare(b.name)),
 		build: builds[0] ?? null,

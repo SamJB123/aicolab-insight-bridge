@@ -53,7 +53,7 @@ import { z } from 'zod'
 import { questionClause } from '../world/schema.ts'
 import { inRange, type ScoreRange, scoreRangeSchema } from './bands.ts'
 import { STRONG } from './data.ts'
-import { loadFacetCache } from './facets.ts'
+import { type EffectiveFacets, loadFacetCache } from './facets.ts'
 import { lensOf, lensRank, questionDetail } from './pages.ts'
 import { andKept, keepSources, type ReadScope, wordsOf } from './scope.ts'
 
@@ -140,7 +140,10 @@ async function analysedBy(
 			)
 			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
 			.where(and(eq(s.docCustomAnalysis.taskId, taskId), keepSources(s.entity.id, scope))),
-		loadFacetCache(db, 'entity'),
+		// the lens alone: the one facet a document's source is read by here
+		words.lens
+			? loadFacetCache(db, 'entity', [words.lens])
+			: Promise.resolve(new Map<string, EffectiveFacets>()),
 	])
 	const byAnalysis = new Map<number, AnalysedDocument>()
 	const byDocument = new Map<string, AnalysedDocument>()

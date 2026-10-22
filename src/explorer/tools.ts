@@ -121,17 +121,15 @@ const lensKey = (words: RunWords) => words.lens ?? 'lens'
 
 /** Each source's documents and each document's source, in the scope. */
 async function documentOwners(c: ToolReadContext) {
-	const rows = await c.db
-		.select({
-			documentId: s.publishedDocument.documentId,
-			entityUuid: s.publishedDocument.entityUuid,
-		})
-		.from(s.publishedDocument)
-		.where(keepSources(s.publishedDocument.entityUuid, c.scope))
+	const { rows } = await x.documentOwners(c.db)
+	const ownerOf = new Map<string, string>()
 	const documentsOf = new Map<string, string[]>()
-	for (const r of rows)
+	for (const r of rows) {
+		if (!isKept(c.scope, r.entityUuid)) continue
+		ownerOf.set(r.documentId, r.entityUuid)
 		documentsOf.set(r.entityUuid, [...(documentsOf.get(r.entityUuid) ?? []), r.documentId])
-	return { ownerOf: new Map(rows.map((r) => [r.documentId, r.entityUuid])), documentsOf }
+	}
+	return { ownerOf, documentsOf }
 }
 
 /**
