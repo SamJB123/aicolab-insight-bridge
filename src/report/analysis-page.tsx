@@ -10,6 +10,7 @@ import {
 	type AnalysisPage as AnalysisPageData,
 	assessedDocumentsSchema,
 	metricEntriesSchema,
+	perspectiveDocumentsSchema,
 	perspectiveFindingsSchema,
 	questionDetailSchema,
 	tagDocumentsSchema,
@@ -22,7 +23,11 @@ import {
 	type ScoreBandsOf,
 } from './analysis/assessment-view.tsx'
 import { type MetricEntriesLoader, MetricsView } from './analysis/metrics-view.tsx'
-import { type PerspectiveFindingsLoader, PerspectiveView } from './analysis/perspective-view.tsx'
+import {
+	type PerspectiveDocumentsLoader,
+	type PerspectiveFindingsLoader,
+	PerspectiveView,
+} from './analysis/perspective-view.tsx'
 import { type QuestionDetailLoader, QuestionsView } from './analysis/questions-view.tsx'
 import { type TagDocumentsLoader, TaggingView } from './analysis/tagging-view.tsx'
 import { type ReportSurface, ReportSurfaceProvider } from './surface.tsx'
@@ -33,6 +38,7 @@ export interface AnalysisLoaders {
 	tagDocuments: TagDocumentsLoader
 	questionDetail: QuestionDetailLoader
 	perspectiveFindings: PerspectiveFindingsLoader
+	perspectiveDocuments: PerspectiveDocumentsLoader
 	assessedDocuments: AssessedDocumentsLoader
 	metricEntries: MetricEntriesLoader
 }
@@ -56,6 +62,10 @@ export function analysisLoaders(
 			perspectiveFindingsSchema
 				.nullable()
 				.parse(await fetch({ kind: 'perspectiveFindings', taskId, criterionId, ...options })),
+		perspectiveDocuments: async (options) =>
+			perspectiveDocumentsSchema
+				.nullable()
+				.parse(await fetch({ kind: 'perspectiveDocuments', taskId, ...options })),
 		assessedDocuments: async (options) =>
 			assessedDocumentsSchema
 				.nullable()
@@ -92,6 +102,7 @@ export function AnalysisPage(props: {
 						<PerspectiveView
 							overview={overview()}
 							perspectiveFindings={props.loaders.perspectiveFindings}
+							perspectiveDocuments={props.loaders.perspectiveDocuments}
 						/>
 					)}
 				</Match>

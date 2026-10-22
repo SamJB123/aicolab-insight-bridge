@@ -34,6 +34,7 @@ import type {
 	LensBase,
 	MetricEntries,
 	MetricsOverview,
+	PerspectiveDocuments,
 	PerspectiveFindings,
 	PerspectiveOverview,
 	QuestionsOverview,
@@ -293,6 +294,13 @@ export const analysisDrillSchema = z.discriminatedUnion('kind', [
 		query: z.string().optional(),
 	}),
 	z.object({
+		kind: z.literal('perspectiveDocuments'),
+		taskId: z.string(),
+		offset,
+		lensValue: lensFilter,
+		query: z.string().optional(),
+	}),
+	z.object({
 		kind: z.literal('assessedDocuments'),
 		taskId: z.string(),
 		offset,
@@ -332,6 +340,8 @@ export async function analysisDrill(
 			return questionDetail(db, words, request.questionId, scope)
 		case 'perspectiveFindings':
 			return perspectiveFindings(db, words, request.taskId, request.criterionId, request, scope)
+		case 'perspectiveDocuments':
+			return perspectiveDocuments(db, words, request.taskId, request, scope)
 		case 'assessedDocuments':
 			return assessedDocuments(db, words, request.taskId, request, scope)
 		case 'metricEntries':
@@ -886,6 +896,99 @@ export async function perspectiveFindings(
 							const t = texts.get(x.id)
 							return t ? [{ criterionId: x.criterionId, ...findingWords(doc, t) }] : []
 						}),
+				},
+			]
+		}),
+	}
+}
+
+/**
+ * A perspective task's findings by document, a page at a time: each document
+ * with every entry it has under every criterion, in the task's criterion
+ * order, so a claim reads beside the evidence, timeframe and people its
+ * document gives for it. By source, then document. `query` narrows to
+ * documents with an entry (or a source name) that mentions it; a withheld
+ * source's entries are searched as they read, by its name and the notice.
+ */
+export async function perspectiveDocuments(
+	db: CorpusDb,
+	words: RunWords,
+	taskId: string,
+	options: Paging & { lensValue?: string | null; query?: string } = {},
+	scope?: ReadScope,
+): Promise<PerspectiveDocuments | null> {
+	const frame = await taskFrame(db, words, taskId, scope)
+	if (frame?.task.kind !== 'perspective_analysis') return null
+	const rows = (await criterionRows(db, taskId)).filter((r) =>
+		frame.byAnalysis.has(r.customAnalysisId),
+	)
+	const order = new Map(
+		criteriaOf(rows, declaredCriteria(frame.declaration)).map((c, i) => [c.criterionId, i]),
+	)
+	const needle = options.query?.trim().toLowerCase() ?? ''
+	// the analyses whose entries mention the words, found in the database rather than read whole
+	const mentioned = needle
+		? new Set(
+				(
+					await db.all<{ id: number }>(sql`
+						SELECT DISTINCT ca.custom_analysis_id AS id FROM criterion_analysis ca
+						JOIN doc_custom_analysis dca ON dca.custom_analysis_id = ca.custom_analysis_id
+						LEFT JOIN criterion_quote cq ON cq.criterion_analysis_id = ca.criterion_analysis_id
+						WHERE dca.task_id = ${taskId}
+							AND (instr(lower(ca.key_point), ${needle}) > 0 OR instr(lower(ca.details), ${needle}) > 0
+								OR instr(lower(cq.quote), ${needle}) > 0)`)
+				).map((r) => r.id),
+			)
+		: null
+	const analyses = [...new Set(rows.map((r) => r.customAnalysisId))].filter((id) => {
+		const doc = frame.byAnalysis.get(id)
+		if (!doc || !lensMatches(options.lensValue, doc.lensValue)) return false
+		if (!needle) return true
+		const notice = doc.withheld ? `${doc.notice ?? ''}` : ''
+		return (
+			(!doc.withheld && mentioned?.has(id)) ||
+			`${doc.entityName}\n${notice}`.toLowerCase().includes(needle)
+		)
+	})
+	const sorted = analyses.sort((a, b) => {
+		const da = frame.byAnalysis.get(a)
+		const db_ = frame.byAnalysis.get(b)
+		return (
+			(da?.entityName ?? '').localeCompare(db_?.entityName ?? '') ||
+			(da?.documentTitle ?? da?.fileName ?? '').localeCompare(
+				db_?.documentTitle ?? db_?.fileName ?? '',
+			) ||
+			a - b
+		)
+	})
+	const page = pageOf(sorted, options)
+	const onPage = new Set(page)
+	const entries = rows
+		.filter((r) => onPage.has(r.customAnalysisId))
+		.sort(
+			(a, b) =>
+				(order.get(a.criterionId) ?? order.size) - (order.get(b.criterionId) ?? order.size) ||
+				(a.item ?? 0) - (b.item ?? 0) ||
+				a.id - b.id,
+		)
+	const texts = await findingTexts(
+		db,
+		entries.map((r) => r.id),
+	)
+	return {
+		total: sorted.length,
+		documents: page.flatMap((id) => {
+			const doc = frame.byAnalysis.get(id)
+			if (!doc) return []
+			return [
+				{
+					...evidence(doc),
+					entries: entries.flatMap((r) => {
+						const text = r.customAnalysisId === id ? texts.get(r.id) : undefined
+						return text
+							? [{ criterionId: r.criterionId, item: r.item, ...findingWords(doc, text) }]
+							: []
+					}),
 				},
 			]
 		}),

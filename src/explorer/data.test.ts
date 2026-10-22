@@ -21,6 +21,7 @@ import {
 	landscapeSchema,
 	methodDataSchema,
 	overviewSchema,
+	perspectiveDocumentsSchema,
 	questionDetailSchema,
 	questionsOverviewSchema,
 	reportOverviewSchema,
@@ -207,6 +208,45 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 				await pages.questionDetail(db, words, first.questionId),
 			)
 			expect(detail.byLensValue.reduce((a, v) => a + v.answers.length, 0)).toBe(first.responses)
+		}
+	})
+
+	it('a perspective task reads by document: every finding on its document’s card, search narrowing', async () => {
+		const words = runWordsSchema.parse(await x.runWords(db))
+		const task = (await analysis.analysisTasks(db, words)).find(
+			(t) => t.kind === 'perspective_analysis',
+		)
+		if (!task) return
+		const overview = await analysis.perspectiveOverview(db, words, task.taskId)
+		if (!overview) throw new Error('the perspective task did not read')
+		const all = perspectiveDocumentsSchema.parse(
+			await analysis.perspectiveDocuments(db, words, task.taskId, { limit: 100 }),
+		)
+		// the documents the task found something in: a document analysed to no finding has no card
+		expect(all.total).toBeGreaterThan(0)
+		expect(all.total).toBeLessThanOrEqual(task.documents)
+		// a page of cards holds every finding of its documents, under the task's criteria
+		const criteria = new Set(overview.criteria.map((c) => c.criterionId))
+		for (const d of all.documents) {
+			expect(d.entries.length).toBeGreaterThan(0)
+			for (const e of d.entries) expect(criteria.has(e.criterionId)).toBe(true)
+		}
+		// pages together account for every finding the task made
+		let entries = 0
+		for (let offset = 0; offset < all.total; offset += 100)
+			for (const d of perspectiveDocumentsSchema.parse(
+				await analysis.perspectiveDocuments(db, words, task.taskId, { offset, limit: 100 }),
+			).documents)
+				entries += d.entries.length
+		expect(entries).toBe(overview.criteria.reduce((a, c) => a + c.findings, 0))
+		// a search narrows to the documents whose findings mention it
+		const word = all.documents[0]?.entries[0]?.keyPoint.split(/\s+/).find((w) => w.length > 6)
+		if (word) {
+			const found = perspectiveDocumentsSchema.parse(
+				await analysis.perspectiveDocuments(db, words, task.taskId, { query: word, limit: 100 }),
+			)
+			expect(found.total).toBeGreaterThan(0)
+			expect(found.total).toBeLessThanOrEqual(all.total)
 		}
 	})
 
