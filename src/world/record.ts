@@ -58,7 +58,7 @@ import {
 	clusterPerspectiveQuote,
 	criterionAnalysis,
 	criterionQuote,
-	currentChunkMembership,
+	currentDocumentMembership,
 	currentEntityMembership,
 	currentSupercluster,
 	currentSuperclusterEdge,
@@ -86,16 +86,7 @@ import {
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
-import {
-	and,
-	asc,
-	type ChangeColumnTableName,
-	count,
-	countDistinct,
-	eq,
-	inArray,
-	sql,
-} from 'drizzle-orm'
+import { and, asc, type ChangeColumnTableName, count, eq, inArray, sql } from 'drizzle-orm'
 import type { AnySQLiteColumn, SQLiteTable, SQLiteViewWithSelection } from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
 import { loadFacetCache } from '../explorer/facets.ts'
@@ -311,7 +302,7 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	const site = meta?.site ?? null
 	const words = config.words ?? {}
 	const params = profile?.prompts.params ?? null
-	const { document, chunk, keyPoint } = publishedOf(config.shape)
+	const { document, keyPoint } = publishedOf(config.shape)
 	const scope = config.scope
 	const notice = scope?.withhold?.notice ?? ''
 	const withheld = (uuid: string | null | undefined) => wordsOf(scope, uuid).withheld === true
@@ -350,6 +341,7 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		perspectivePointCounts,
 		perspectiveQuoteRows,
 		entityFacets,
+		documentFacets,
 		facetDeclarations,
 		starRows,
 	] = await Promise.all([
@@ -398,23 +390,22 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 				grade: currentEntityMembership.membershipType,
 			})
 			.from(currentEntityMembership),
-		// Documents strongly linked to a topic: its exemplar and high-value
-		// passage memberships, whichever tiers the database kept.
+		// Documents strongly linked to a topic: an exemplar or high-value grade,
+		// a document's best passage grade there.
 		db
 			.select({
-				topicId: currentChunkMembership.topicClusterId,
-				documents: countDistinct(chunk.documentId),
+				topicId: currentDocumentMembership.topicClusterId,
+				documents: count(),
 			})
-			.from(currentChunkMembership)
-			.innerJoin(chunk, eq(chunk.id, currentChunkMembership.chunkId))
-			.innerJoin(document, eq(document.documentId, chunk.documentId))
+			.from(currentDocumentMembership)
+			.innerJoin(document, eq(document.documentId, currentDocumentMembership.documentId))
 			.where(
 				and(
-					inArray(currentChunkMembership.membershipType, [...MEMBERSHIP_GRADES]),
+					inArray(currentDocumentMembership.membershipType, [...MEMBERSHIP_GRADES]),
 					keepSources(document.entityUuid, scope),
 				),
 			)
-			.groupBy(currentChunkMembership.topicClusterId),
+			.groupBy(currentDocumentMembership.topicClusterId),
 		db
 			.select({
 				id: clusterKeyPoint.clusterKeyPointId,
@@ -472,8 +463,10 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 			})
 			.from(clusterEntityPerspectiveQuote),
 		// every reader's facet resolution (explorer/facets.ts): by provenance rank,
-		// and the facets the profile derives (era from year) included
+		// and the facets the profile derives (era from year) included — a
+		// source's own, and its documents' (a facet recorded per document)
 		loadFacetCache(db, 'entity'),
+		loadFacetCache(db, 'document'),
 		db.select({ facet: facet.facet, noun: facet.noun }).from(facet),
 		db.select().from(topicStar),
 	])
@@ -510,10 +503,19 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	const analysedSet = new Set(analysed)
 
 	/* ── a source's values on the analysed facets only ── */
+	// A facet recorded per document (the audit corpus's time range, derived from
+	// each report's year) is held by the source of every document that holds
+	// it — the rule the record's Sources page and the connector count by.
+	const heldBy = new Map<string, Record<string, string[]>>()
+	for (const e of entityRows) heldBy.set(e.uuid, { ...(entityFacets.get(e.uuid) ?? {}) })
+	for (const d of documentRows) {
+		const held = heldBy.get(d.entityUuid)
+		if (!held) continue
+		for (const [key, values] of Object.entries(documentFacets.get(d.id) ?? {}))
+			held[key] = [...new Set([...(held[key] ?? []), ...values])]
+	}
 	const facetsOf = (uuid: string): Record<string, string[]> =>
-		Object.fromEntries(
-			Object.entries(entityFacets.get(uuid) ?? {}).filter(([f]) => analysedSet.has(f)),
-		)
+		Object.fromEntries(Object.entries(heldBy.get(uuid) ?? {}).filter(([f]) => analysedSet.has(f)))
 
 	const nounOf = new Map(facetDeclarations.map((f) => [f.facet, f.noun]))
 	const facets = analysed.map((key) => {

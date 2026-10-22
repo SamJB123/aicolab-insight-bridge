@@ -170,12 +170,10 @@ describe.skipIf(!file || !existsSync(file))('explorer reads over a run database'
 		if (!source) return
 		const detail = await x.entityByKey(db, source.entityId)
 		if (!detail) throw new Error('the source did not read')
-		const docs = await Promise.all(
-			detail.documentItems.map((d) => x.documentById(db, d.documentId)),
-		)
-		const read = docs.flatMap((d) => (d ? [d] : []))
-		expect(sourceReading(detail, read, c).title).toBe(detail.entityName)
-		const [doc] = read
+		// a source reads its own document's detail only when it has one document (readings.ts sourceReading)
+		const [item] = detail.documentItems
+		const doc = item ? await x.documentById(db, item.documentId) : null
+		expect(sourceReading(detail, doc, c).title).toBe(detail.entityName)
 		if (doc) expect(documentReading(doc, c).detail).toBe(doc.entityName)
 	})
 

@@ -29,6 +29,8 @@
  *   • run_meta.site — the site's words, a typed RunSite
  *     (@aicolab/insight-bridge-contracts/site).
  *   • whatever the app's `extend` adds: its own layers, keyed to canonical rows.
+ *   • sqlite_stat1 — the query planner's statistics (ANALYZE). The D1 loader
+ *     has D1 make its own (`PRAGMA optimize`, ./load.ts).
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -298,6 +300,12 @@ export async function prepareRun(options: PrepareOptions): Promise<void> {
 	)
 
 	db.exec('VACUUM')
+	/* ── 7. the planner's statistics: without them SQLite takes every table for a large one and can
+	   read a one-row table (run_current_build) last, so a view cannot enter its build-keyed index ── */
+	db.exec('ANALYZE')
+	console.info(
+		`  · statistics for the query planner: ${count(db, 'SELECT COUNT(DISTINCT tbl) AS n FROM sqlite_stat1')} tables analysed`,
+	)
 	db.close()
 	console.info('\n✅ prepared — now `pnpm db:stars`, then `pnpm db:load:local`\n')
 }

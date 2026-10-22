@@ -129,7 +129,7 @@ describe.skipIf(!file || !existsSync(file))('the reader’s scope', () => {
 		expect(document?.text).toBe('')
 		expect(document?.keyPointItems).toEqual([])
 		if (detail && document) {
-			const view = sourceReading(detail, [document], { words, positionColors: {} })
+			const view = sourceReading(detail, document, { words, positionColors: {} })
 			expect(view.content.sections[0]?.kind).toBe('notice')
 		}
 	})

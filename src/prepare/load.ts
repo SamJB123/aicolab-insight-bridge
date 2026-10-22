@@ -210,5 +210,9 @@ export function seedD1(options: SeedOptions): void {
 		}
 	}
 	db.close()
+	// The query planner's statistics, as D1 documents it (developers.cloudflare.com/d1/sql-api/sql-statements:
+	// run after any change to the schema): without them SQLite takes every table for a large one and can
+	// read a one-row table (run_current_build) last, so a view cannot enter its build-keyed index.
+	if (!genOnly) sh(['d1', 'execute', database, ...target, '--yes', '--command', 'PRAGMA optimize;'])
 	console.info('\n✅ D1 seed complete\n')
 }

@@ -113,10 +113,31 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 		expect(stance?.quotes).toEqual([])
 		for (const d of held.sources.find((s) => s.id === source.slug)?.documents ?? [])
 			expect(d.points).toEqual([NOTICE])
-		// none of its own texts anywhere: passages' key points, stances, quotes, answers
-		const json = JSON.stringify(held)
+		// none of its own texts anywhere: passages' key points, stances, quotes, answers. Each is a value of
+		// its own in the record, so every string the record holds is gathered once (a body of 951 reports has
+		// thousands of texts; a search of the whole record per text cost the test seconds)
+		const heldTexts = new Set<string>()
+		const gather = (value: unknown): void => {
+			if (typeof value === 'string') heldTexts.add(value.trim())
+			else if (Array.isArray(value)) for (const v of value) gather(v)
+			else if (value && typeof value === 'object') for (const v of Object.values(value)) gather(v)
+		}
+		gather(held)
 		const named = held.sources.find((s) => s.id === source.slug)
 		const kept = new Set([named?.name ?? '', ...(named?.documents ?? []).map((d) => d.title)])
+		const saidByAnother = sqlite.prepare(
+			`WITH others AS (SELECT document_id FROM published_document WHERE entity_uuid <> ?1)
+			 SELECT 1 FROM published_key_quote q
+			   JOIN published_key_point k ON k.key_point_id = q.key_point_id
+			   WHERE k.document_id IN (SELECT document_id FROM others) AND instr(q.quote, ?2) > 0
+			 UNION ALL SELECT 1 FROM published_key_point k
+			   WHERE k.document_id IN (SELECT document_id FROM others) AND instr(k.key_point, ?3) > 0
+			 UNION ALL SELECT 1 FROM cluster_key_point_quote c
+			   WHERE c.entity_uuid <> ?1 AND instr(c.quote_text, ?4) > 0
+			 UNION ALL SELECT 1 FROM cluster_key_point p WHERE instr(p.key_point || ' ' || p.details, ?2) > 0
+			 UNION ALL SELECT 1 FROM topic_cluster t WHERE instr(t.title || ' ' || t.description, ?2) > 0
+			 LIMIT 1`,
+		)
 		const theirs = [
 			...sqlite
 				.prepare(
@@ -155,7 +176,12 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 			// name or a document's title, which are kept (a paper's stance may be titled as the paper)
 			.filter((t) => t.length >= 40 && !kept.has(t))
 		expect(theirs.length).toBeGreaterThan(0)
-		for (const t of theirs) expect(json.includes(JSON.stringify(t).slice(1, -1))).toBe(false)
+		// Any of its texts found in the record must be words said elsewhere too: one body's report
+		// may quote another's verbatim (the audit corpus's Inspector-General quoting the ANAO), and
+		// a topic's own synthesis may use a source's phrase word for word; the record keeps both.
+		// (Found first, then checked: the check reads every quote.) A failure names the text.
+		const found = theirs.filter((t) => heldTexts.has(t))
+		expect(found.filter((t) => !saidByAnother.get(source.uuid, t, t, t))).toEqual([])
 		// its readings are the notice
 		const readings = await Promise.all([
 			worldReading(

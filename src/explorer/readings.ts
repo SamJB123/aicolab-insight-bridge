@@ -538,18 +538,26 @@ const keyPointsOf = (c: ReadingContext, doc: DocumentDetail): IBPoint[] =>
 
 /* ── a source ──────────────────────────────────────────────────────────── */
 
-/** A source: its stances, its documents, and every document's points and answers. */
+/**
+ * A source: its stances, its topics and its documents, each listed with its
+ * key points and answers counted. A source with ONE document reads that
+ * document's points and analysis too (`sole`, its detail): there the source's
+ * reading is the document's. A source with several lists them and each opens
+ * its own reading, as every deployed report read a source: points gathered
+ * from many documents would read as the source's own findings, and reading
+ * every document's detail to show them cost a drawer one read per document
+ * (951 for one audit body).
+ */
 export function sourceReading(
 	e: EntityDetail,
-	documents: readonly DocumentDetail[],
+	sole: DocumentDetail | null,
 	c: ReadingContext,
 	add?: ReadingAdditions,
 ): ReadingView {
 	const { nouns, lens } = c.words
 	const order =
 		c.documentOrder ?? ((a: DocumentLine, b: DocumentLine) => a.fileName.localeCompare(b.fileName))
-	const docs = [...documents].sort(order)
-	const several = docs.length >= 2
+	const docs = sole && e.documentItems.length === 1 ? [sole] : []
 	const lensValues = lens ? (e.facets[lens] ?? []).map((v) => valueWord(c, lens, v)) : []
 	const flags: IBFlag[] = lensValues.slice(1).map((v) => ({
 		label: `also ${v}`,
@@ -561,9 +569,6 @@ export function sourceReading(
 			tip: `The pipeline's own reading of the ${nouns.entity}'s name; the record's name stands.`,
 		})
 	const stanced = e.topicItems.filter((t) => t.position !== null)
-	const answered = new Set(
-		docs.flatMap((d) => d.questionResponses.filter((r) => r.addressed).map((r) => r.questionKey)),
-	)
 	const view = withAdditions(
 		{
 			eyebrow: cap(nouns.entity),
@@ -594,24 +599,20 @@ export function sourceReading(
 						.filter((t) => t.position === null)
 						.sort((a, b) => a.title.localeCompare(b.title))
 						.map((t) => ({ id: topicNodeId(t.topicClusterId), label: t.title })),
-					documents: [...e.documentItems].sort(order).map((d) => {
-						const doc = docs.find((x) => x.documentId === d.documentId)
-						const answers = doc?.questionResponses.filter((r) => r.addressed).length ?? 0
-						return {
-							documentId: d.documentId,
-							label: documentLabel(c, d),
-							detail: [`${d.keyPoints} key points`, answers ? `${answers} answered` : null]
-								.filter(Boolean)
-								.join(' · '),
-						}
-					}),
+					documents: [...e.documentItems].sort(order).map((d) => ({
+						documentId: d.documentId,
+						label: documentLabel(c, d),
+						detail: [`${d.keyPoints} key points`, d.answers ? `${d.answers} answered` : null]
+							.filter(Boolean)
+							.join(' · '),
+					})),
 					keyPoints: docs.flatMap((doc) => keyPointsOf(c, doc)),
-					analysis: analysisBlocks(docs, c, several),
-					stats: answered.size
+					analysis: analysisBlocks(docs, c, false),
+					stats: e.questionsAnswered
 						? [
 								{
 									label: c.vocabulary?.answeredUnit ?? 'questions answered',
-									value: String(answered.size),
+									value: String(e.questionsAnswered),
 								},
 							]
 						: [],

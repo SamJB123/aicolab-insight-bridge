@@ -56,6 +56,7 @@ import { SITE_SECTIONS } from '@aicolab/insight-bridge-contracts/site'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
 import { PATH_SEP } from '@aicolab/insight-bridge-contracts/vocabulary'
 import { and, asc, desc, eq, inArray, isNull, like, or, type SQL, sql } from 'drizzle-orm'
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import { z } from 'zod'
 import { cap } from '../grammar.ts'
 import { treeOf } from '../tree.ts'
@@ -236,10 +237,12 @@ export async function overview(db: CorpusDb, scope?: ReadScope): Promise<Overvie
 			sql`SELECT COUNT(*) AS n FROM entity e WHERE 1 = 1${andKept(sql`e.id`, scope)}`,
 		),
 		chunks: await counted(
-			sql`SELECT COUNT(*) AS n FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
+			// a published passage's document is published: it is read by key only to name the source
+			sql`SELECT COUNT(*) AS n FROM published_chunk c JOIN document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
 		),
+		// the passages the committed build clustered, as the build recorded them
 		clusteredChunks: await counted(
-			sql`SELECT COUNT(DISTINCT m.chunk_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`,
+			sql`SELECT b.points AS n FROM cluster_build b JOIN run_current_build r ON r.build_id = b.build_id`,
 		),
 		clusters: await count('topic_cluster', 'WHERE retired_build_id IS NULL'),
 		junkConfirmedClusters: await count(
@@ -315,11 +318,11 @@ export async function topics(
 		).map((r) => [r.id, n(r.n)]),
 	)
 	// a topic's documents are the ones it holds strongly: an exemplar or
-	// high-value passage, the rule every count of the record follows
+	// high-value grade, the rule every count of the record follows
 	const docs = new Map(
 		(
 			await db.all<{ id: number; n: number }>(
-				sql`SELECT m.topic_cluster_id AS id, COUNT(DISTINCT c.document_id) AS n FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id WHERE m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY m.topic_cluster_id`,
+				sql`SELECT m.topic_cluster_id AS id, COUNT(*) AS n FROM current_document_membership m JOIN published_document d ON d.document_id = m.document_id WHERE m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY m.topic_cluster_id`,
 			)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -483,7 +486,7 @@ export async function topicById(
 		chunks: number
 	}>(sql`
 		SELECT d.document_id AS documentId, d.file_name AS fileName, d.document_title AS title, e.entity_name AS entityName, e.id AS entityUuid, COUNT(*) AS chunks
-		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
+		FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id JOIN document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
 		WHERE m.topic_cluster_id = ${tc} AND m.membership_type IN ${STRONG}${andKept(sql`d.entity_uuid`, scope)} GROUP BY d.document_id ORDER BY chunks DESC`)
 	const parents = await db.all<{
 		superclusterId: number
@@ -751,18 +754,31 @@ export async function relatedTopics(
 }
 
 // ---------------------------------------------------------------- entities
-export async function entities(db: CorpusDb, scope?: ReadScope): Promise<EntitySummary[]> {
+/** Every source's summary, or (`entityUuid`) that one source's: each count is then read for it alone. */
+export async function entities(
+	db: CorpusDb,
+	scope?: ReadScope,
+	entityUuid?: string,
+): Promise<EntitySummary[]> {
+	const one = (column: SQLiteColumn) =>
+		entityUuid === undefined ? undefined : eq(column, entityUuid)
 	const rows = await db
 		.select()
 		.from(s.entity)
-		.where(keepSources(s.entity.id, scope))
+		.where(and(keepSources(s.entity.id, scope), one(s.entity.id)))
 		.orderBy(asc(s.entity.entityName))
-	const facets = await loadFacetCache(db, 'entity')
+	const facets = await loadFacetCache(
+		db,
+		'entity',
+		undefined,
+		entityUuid === undefined ? undefined : [entityUuid],
+	)
 	const docs = new Map(
 		(
 			await db
 				.select({ id: s.publishedDocument.entityUuid, n: sql<number>`count(*)` })
 				.from(s.publishedDocument)
+				.where(one(s.publishedDocument.entityUuid))
 				.groupBy(s.publishedDocument.entityUuid)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -771,20 +787,18 @@ export async function entities(db: CorpusDb, scope?: ReadScope): Promise<EntityS
 			await db
 				.select({ id: s.currentEntityMembership.entityUuid, n: sql<number>`count(*)` })
 				.from(s.currentEntityMembership)
-				.where(strongSource)
+				.where(and(strongSource, one(s.currentEntityMembership.entityUuid)))
 				.groupBy(s.currentEntityMembership.entityUuid)
 		).map((r) => [r.id, n(r.n)]),
 	)
 	const kp = new Map(
 		(
 			await db
-				.select({ id: s.publishedDocument.entityUuid, n: sql<number>`count(*)` })
+				.select({ id: s.document.entityUuid, n: sql<number>`count(*)` })
 				.from(s.publishedKeyPoint)
-				.innerJoin(
-					s.publishedDocument,
-					eq(s.publishedKeyPoint.documentId, s.publishedDocument.documentId),
-				)
-				.groupBy(s.publishedDocument.entityUuid)
+				.innerJoin(s.document, eq(s.publishedKeyPoint.documentId, s.document.documentId))
+				.where(one(s.document.entityUuid))
+				.groupBy(s.document.entityUuid)
 		).map((r) => [r.id, n(r.n)]),
 	)
 	return rows.map((e) => ({
@@ -819,7 +833,7 @@ export async function entityByKey(
 				.where(eq(s.publishedDocument.documentId, key))
 		)[0]?.entity
 	if (!row || !isKept(scope, row.id)) return null
-	const summary = (await entities(db, scope)).find((e) => e.entityUuid === row.id)
+	const [summary] = await entities(db, scope, row.id)
 	if (!summary) return null
 	const words = wordsOf(scope, row.id)
 	const docs = await db
@@ -837,14 +851,22 @@ export async function entityByKey(
 			await db
 				.select({ id: s.publishedKeyPoint.documentId, n: sql<number>`count(*)` })
 				.from(s.publishedKeyPoint)
-				.innerJoin(
-					s.publishedDocument,
-					eq(s.publishedKeyPoint.documentId, s.publishedDocument.documentId),
-				)
-				.where(eq(s.publishedDocument.entityUuid, row.id))
+				.innerJoin(s.document, eq(s.publishedKeyPoint.documentId, s.document.documentId))
+				.where(eq(s.document.entityUuid, row.id))
 				.groupBy(s.publishedKeyPoint.documentId)
 		).map((r) => [r.id, n(r.n)]),
 	)
+	// the questions each document answered, and how many distinct questions the source answered
+	const answered = await db
+		.select({
+			documentId: s.publishedQuestionResponse.documentId,
+			questionId: s.publishedQuestionResponse.questionId,
+		})
+		.from(s.publishedQuestionResponse)
+		.innerJoin(s.document, eq(s.publishedQuestionResponse.documentId, s.document.documentId))
+		.where(and(eq(s.document.entityUuid, row.id), eq(s.publishedQuestionResponse.addressed, 1)))
+	const answers = new Map<string, number>()
+	for (const a of answered) answers.set(a.documentId, (answers.get(a.documentId) ?? 0) + 1)
 	const memberships = await db
 		.select({
 			topicClusterId: s.currentTopic.topicClusterId,
@@ -876,14 +898,21 @@ export async function entityByKey(
 			),
 		)
 		.where(eq(s.clusterEntityPerspective.entityUuid, row.id))
-	const documentFacets = await loadFacetCache(db, 'document')
+	const documentFacets = await loadFacetCache(
+		db,
+		'document',
+		undefined,
+		docs.map((d) => d.documentId),
+	)
 	return {
 		...summary,
 		...words,
 		inferredName: row.inferredName ?? summary.facets.llm_entity_name?.[0] ?? null,
+		questionsAnswered: new Set(answered.map((a) => a.questionId)).size,
 		documentItems: docs.map((d) => ({
 			...d,
 			keyPoints: kp.get(d.documentId) ?? 0,
+			answers: answers.get(d.documentId) ?? 0,
 			facets: documentFacets.get(d.documentId) ?? {},
 		})),
 		topicItems: memberships.map((m) => {
@@ -906,7 +935,12 @@ export async function entityByKey(
 }
 
 // ---------------------------------------------------------------- documents
-export async function documents(db: CorpusDb, scope?: ReadScope): Promise<DocumentSummary[]> {
+/** Every document's summary, or (`documentId`) that one document's: each count is then read for it alone. */
+export async function documents(
+	db: CorpusDb,
+	scope?: ReadScope,
+	documentId?: string,
+): Promise<DocumentSummary[]> {
 	const rows = await db
 		.select({
 			documentId: s.publishedDocument.documentId,
@@ -917,14 +951,27 @@ export async function documents(db: CorpusDb, scope?: ReadScope): Promise<Docume
 		})
 		.from(s.publishedDocument)
 		.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
-		.where(keepSources(s.entity.id, scope))
+		.where(
+			and(
+				keepSources(s.entity.id, scope),
+				documentId === undefined ? undefined : eq(s.publishedDocument.documentId, documentId),
+			),
+		)
 		.orderBy(asc(s.entity.entityName), asc(s.publishedDocument.fileName))
-	const facets = await loadFacetCache(db, 'document')
+	const facets = await loadFacetCache(
+		db,
+		'document',
+		undefined,
+		documentId === undefined ? undefined : [documentId],
+	)
+	const ofDocument =
+		documentId === undefined ? undefined : eq(s.publishedKeyPoint.documentId, documentId)
 	const kp = new Map(
 		(
 			await db
 				.select({ id: s.publishedKeyPoint.documentId, n: sql<number>`count(*)` })
 				.from(s.publishedKeyPoint)
+				.where(ofDocument)
 				.groupBy(s.publishedKeyPoint.documentId)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -942,7 +989,7 @@ export async function documents(db: CorpusDb, scope?: ReadScope): Promise<Docume
 					s.publishedKeyQuoteVerification,
 					eq(s.publishedKeyQuoteVerification.keyQuoteId, s.publishedKeyQuote.keyQuoteId),
 				)
-				.where(eq(s.publishedKeyQuoteVerification.verified, 1))
+				.where(and(eq(s.publishedKeyQuoteVerification.verified, 1), ofDocument))
 				.groupBy(s.publishedKeyPoint.documentId)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -951,6 +998,7 @@ export async function documents(db: CorpusDb, scope?: ReadScope): Promise<Docume
 			await db
 				.select({ id: s.publishedChunk.documentId, n: sql<number>`count(*)` })
 				.from(s.publishedChunk)
+				.where(documentId === undefined ? undefined : eq(s.publishedChunk.documentId, documentId))
 				.groupBy(s.publishedChunk.documentId)
 		).map((r) => [r.id, n(r.n)]),
 	)
@@ -968,7 +1016,7 @@ export async function documentById(
 	documentId: string,
 	scope?: ReadScope,
 ): Promise<DocumentDetail | null> {
-	const summary = (await documents(db, scope)).find((d) => d.documentId === documentId)
+	const [summary] = await documents(db, scope, documentId)
 	if (!summary) return null
 	// a withheld source's document keeps its facts (what it answered, its tags' names, its topics);
 	// every text of its own is emptied, and the document carries the notice once
@@ -1636,14 +1684,11 @@ export async function questionSummary(db: CorpusDb, scope?: ReadScope): Promise<
 			position: s.publishedQuestionResponse.position,
 			entityUuid: s.entity.id,
 			entityName: s.entity.entityName,
-			title: s.publishedDocument.documentTitle,
+			title: s.document.documentTitle,
 		})
 		.from(s.publishedQuestionResponse)
-		.innerJoin(
-			s.publishedDocument,
-			eq(s.publishedQuestionResponse.documentId, s.publishedDocument.documentId),
-		)
-		.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
+		.innerJoin(s.document, eq(s.publishedQuestionResponse.documentId, s.document.documentId))
+		.innerJoin(s.entity, eq(s.document.entityUuid, s.entity.id))
 		.where(keepSources(s.entity.id, scope))
 	return qs.map((q) => {
 		const mine = rows.filter((r) => r.questionId === q.questionId)
@@ -1854,7 +1899,7 @@ export async function searchText(
 	const pattern = likePattern(query)
 	const rows = await db.all<TextHit & { entityUuid: string }>(sql`
 		SELECT c.id AS chunkId, d.document_id AS documentId, d.document_title AS title, d.file_name AS fileName, e.entity_name AS entityName, e.id AS entityUuid, c.text
-		FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
+		FROM published_chunk c JOIN document d ON d.document_id = c.document_id JOIN entity e ON e.id = d.entity_uuid
 		WHERE c.text LIKE ${pattern}${andKept(sql`e.id`, scope)}${andServed(sql`e.id`, scope)} LIMIT ${limit}`)
 	// a withheld source's hit stays, its passage read as the notice; an unserved source's never comes
 	return rows.map(({ entityUuid, ...hit }) => ({
@@ -1875,19 +1920,16 @@ export async function hydrateChunks(
 		const found = await db
 			.select({
 				chunkId: s.publishedChunk.id,
-				documentId: s.publishedDocument.documentId,
-				title: s.publishedDocument.documentTitle,
-				fileName: s.publishedDocument.fileName,
+				documentId: s.document.documentId,
+				title: s.document.documentTitle,
+				fileName: s.document.fileName,
 				entityName: s.entity.entityName,
 				entityUuid: s.entity.id,
 				text: s.publishedChunk.text,
 			})
 			.from(s.publishedChunk)
-			.innerJoin(
-				s.publishedDocument,
-				eq(s.publishedChunk.documentId, s.publishedDocument.documentId),
-			)
-			.innerJoin(s.entity, eq(s.publishedDocument.entityUuid, s.entity.id))
+			.innerJoin(s.document, eq(s.publishedChunk.documentId, s.document.documentId))
+			.innerJoin(s.entity, eq(s.document.entityUuid, s.entity.id))
 			.where(
 				and(
 					inArray(s.publishedChunk.id, group),

@@ -101,17 +101,19 @@ const currentStances = (db: CorpusDb, ids: number[] | undefined, scope: ReadScop
 /** Each current topic's (or each of those `ids` names) strong documents. */
 const strongDocuments = (db: CorpusDb, ids: number[] | undefined, scope: ReadScope | undefined) =>
 	db
-		.selectDistinct({
-			topicClusterId: s.currentChunkMembership.topicClusterId,
-			documentId: s.publishedChunk.documentId,
+		.select({
+			topicClusterId: s.currentDocumentMembership.topicClusterId,
+			documentId: s.currentDocumentMembership.documentId,
 		})
-		.from(s.currentChunkMembership)
-		.innerJoin(s.publishedChunk, eq(s.publishedChunk.id, s.currentChunkMembership.chunkId))
-		.innerJoin(s.publishedDocument, eq(s.publishedDocument.documentId, s.publishedChunk.documentId))
+		.from(s.currentDocumentMembership)
+		.innerJoin(
+			s.publishedDocument,
+			eq(s.publishedDocument.documentId, s.currentDocumentMembership.documentId),
+		)
 		.where(
 			and(
-				inArray(s.currentChunkMembership.membershipType, STRONG),
-				ids ? inArray(s.currentChunkMembership.topicClusterId, ids) : undefined,
+				inArray(s.currentDocumentMembership.membershipType, STRONG),
+				ids ? inArray(s.currentDocumentMembership.topicClusterId, ids) : undefined,
 				keepSources(s.publishedDocument.entityUuid, scope),
 			),
 		)
@@ -178,11 +180,14 @@ export async function reportOverview(
 			.from(s.publishedDocument)
 			.where(keepSources(s.publishedDocument.entityUuid, scope)),
 		db.selectDistinct({ documentId: s.publishedKeyPoint.documentId }).from(s.publishedKeyPoint),
+		// each count reads its published view; the rows behind it (a key point, a document) only name the source
+		// for the scope, so they are read by key from their tables: a published row's parents are published, and
+		// the views' check need not run twice per row
 		db.all<{ passages: number; keyPoints: number; quotes: number; verified: number }>(sql`
-			SELECT (SELECT COUNT(*) FROM published_chunk c JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${kept}) AS passages,
-				(SELECT COUNT(*) FROM published_key_point k JOIN published_document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS keyPoints,
-				(SELECT COUNT(*) FROM published_key_quote q JOIN published_key_point k ON k.key_point_id = q.key_point_id JOIN published_document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS quotes,
-				(SELECT COUNT(*) FROM published_key_quote_verification v JOIN published_key_quote q ON q.key_quote_id = v.key_quote_id JOIN published_key_point k ON k.key_point_id = q.key_point_id JOIN published_document d ON d.document_id = k.document_id WHERE v.verified = 1${kept}) AS verified`),
+			SELECT (SELECT COUNT(*) FROM published_chunk c JOIN document d ON d.document_id = c.document_id WHERE 1 = 1${kept}) AS passages,
+				(SELECT COUNT(*) FROM published_key_point k JOIN document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS keyPoints,
+				(SELECT COUNT(*) FROM published_key_quote q JOIN key_point k ON k.key_point_id = q.key_point_id JOIN document d ON d.document_id = k.document_id WHERE 1 = 1${kept}) AS quotes,
+				(SELECT COUNT(*) FROM published_key_quote_verification v JOIN key_quote q ON q.key_quote_id = v.key_quote_id JOIN key_point k ON k.key_point_id = q.key_point_id JOIN document d ON d.document_id = k.document_id WHERE v.verified = 1${kept}) AS verified`),
 		db.$count(s.currentTopic),
 		db.$count(
 			s.topicCluster,
@@ -648,16 +653,13 @@ export async function topicSearch(
 					})
 					.from(s.currentChunkMembership)
 					.innerJoin(s.publishedChunk, eq(s.publishedChunk.id, s.currentChunkMembership.chunkId))
-					.innerJoin(
-						s.publishedDocument,
-						eq(s.publishedDocument.documentId, s.publishedChunk.documentId),
-					)
+					.innerJoin(s.document, eq(s.document.documentId, s.publishedChunk.documentId))
 					.where(
 						and(
 							inArray(s.currentChunkMembership.chunkId, batch),
-							keepSources(s.publishedDocument.entityUuid, scope),
+							keepSources(s.document.entityUuid, scope),
 							// a source whose passages are not served is never a search's match
-							servedSources(s.publishedDocument.entityUuid, scope),
+							servedSources(s.document.entityUuid, scope),
 						),
 					),
 			),
@@ -721,15 +723,12 @@ export async function questionDetail(
 				entityUuid: s.entity.id,
 				entityId: s.entity.entityId,
 				name: s.entity.entityName,
-				documentTitle: s.publishedDocument.documentTitle,
-				fileName: s.publishedDocument.fileName,
+				documentTitle: s.document.documentTitle,
+				fileName: s.document.fileName,
 			})
 			.from(s.publishedQuestionResponse)
-			.innerJoin(
-				s.publishedDocument,
-				eq(s.publishedDocument.documentId, s.publishedQuestionResponse.documentId),
-			)
-			.innerJoin(s.entity, eq(s.entity.id, s.publishedDocument.entityUuid))
+			.innerJoin(s.document, eq(s.document.documentId, s.publishedQuestionResponse.documentId))
+			.innerJoin(s.entity, eq(s.entity.id, s.document.entityUuid))
 			.where(
 				and(
 					sql`${s.publishedQuestionResponse.questionId} = ${questionId} AND ${s.publishedQuestionResponse.addressed} = 1`,
@@ -840,7 +839,7 @@ export async function methodData(
 	words: RunWords,
 	scope?: ReadScope,
 ): Promise<MethodData> {
-	const [overview, junk, docRows, analysedDocs, builds, clustered] = await Promise.all([
+	const [overview, junk, docRows, analysedDocs, builds] = await Promise.all([
 		reportOverview(db, words, {}, scope),
 		db
 			.select({
@@ -878,10 +877,6 @@ export async function methodData(
 			.from(s.clusterBuild)
 			.innerJoin(s.runCurrentBuild, eq(s.runCurrentBuild.buildId, s.clusterBuild.buildId))
 			.limit(1),
-		db.all<{ passages: number }>(sql`
-			SELECT COUNT(DISTINCT m.chunk_id) AS passages
-			FROM current_chunk_membership m JOIN published_chunk c ON c.id = m.chunk_id
-			JOIN published_document d ON d.document_id = c.document_id WHERE 1 = 1${andKept(sql`d.entity_uuid`, scope)}`),
 	])
 	const analysed = new Set(analysedDocs.map((d) => d.documentId))
 	return {
@@ -892,6 +887,7 @@ export async function methodData(
 			.map((d) => ({ entityId: d.entityId, name: d.name, title: d.title ?? d.fileName }))
 			.sort((a, b) => a.name.localeCompare(b.name)),
 		build: builds[0] ?? null,
-		clusteredPassages: n(clustered[0]?.passages),
+		// the passages the committed build clustered, as the build recorded them
+		clusteredPassages: builds[0]?.points ?? 0,
 	}
 }
