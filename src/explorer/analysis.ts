@@ -8,7 +8,7 @@
  *                  the values tagged together; then a value's documents with
  *                  the model's own evidence for the tag.
  *   questions      the task's questions in order, who answered each, by lens.
- *   perspective    the task's criteria with their findings, sources and lens;
+ *   perspective    the task's criteria, and its findings by document;
  *                  then a criterion's findings, a page at a time.
  *   assessment     each scored criterion's distribution, overall and by lens,
  *                  the first two scored together; then the documents ranked.
@@ -35,7 +35,6 @@ import type {
 	MetricEntries,
 	MetricsOverview,
 	PerspectiveDocuments,
-	PerspectiveFindings,
 	PerspectiveOverview,
 	QuestionsOverview,
 	ReportTask,
@@ -286,14 +285,6 @@ export const analysisDrillSchema = z.discriminatedUnion('kind', [
 	}),
 	z.object({ kind: z.literal('questionDetail'), questionId: z.number().int() }),
 	z.object({
-		kind: z.literal('perspectiveFindings'),
-		taskId: z.string(),
-		criterionId: z.number().int(),
-		offset,
-		lensValue: lensFilter,
-		query: z.string().optional(),
-	}),
-	z.object({
 		kind: z.literal('perspectiveDocuments'),
 		taskId: z.string(),
 		offset,
@@ -338,8 +329,6 @@ export async function analysisDrill(
 			return tagDocuments(db, words, request.taskId, request.category, request.path, request, scope)
 		case 'questionDetail':
 			return questionDetail(db, words, request.questionId, scope)
-		case 'perspectiveFindings':
-			return perspectiveFindings(db, words, request.taskId, request.criterionId, request, scope)
 		case 'perspectiveDocuments':
 			return perspectiveDocuments(db, words, request.taskId, request, scope)
 		case 'assessedDocuments':
@@ -812,93 +801,6 @@ export async function perspectiveOverview(
 		lens: frame.lens,
 		criteria,
 		itemized: rows.some((r) => r.item !== null),
-	}
-}
-
-/**
- * A criterion's findings, a page at a time, by source: each with its quotes
- * and, where the run numbered its findings, the other entries of its finding.
- * `query` narrows to findings whose text or source mentions it.
- */
-export async function perspectiveFindings(
-	db: CorpusDb,
-	words: RunWords,
-	taskId: string,
-	criterionId: number,
-	options: Paging & { lensValue?: string | null; query?: string } = {},
-	scope?: ReadScope,
-): Promise<PerspectiveFindings | null> {
-	const frame = await analysedBy(db, words, taskId, scope)
-	if (!frame.kind) return null
-	const rows = (await criterionRows(db, taskId)).filter((r) =>
-		frame.byAnalysis.has(r.customAnalysisId),
-	)
-	const needle = options.query?.trim().toLowerCase() ?? ''
-	let mine = rows.filter((r) => {
-		if (r.criterionId !== criterionId) return false
-		const doc = frame.byAnalysis.get(r.customAnalysisId)
-		return !!doc && lensMatches(options.lensValue, doc.lensValue)
-	})
-	if (needle) {
-		const texts = await findingTexts(
-			db,
-			mine.map((r) => r.id),
-		)
-		mine = mine.filter((r) => {
-			const raw = texts.get(r.id)
-			const doc = frame.byAnalysis.get(r.customAnalysisId)
-			// a withheld finding is searched as it reads: its source's name and the notice
-			const t = doc && raw ? findingWords(doc, raw) : undefined
-			return (
-				!!t &&
-				`${t.keyPoint}\n${t.details}\n${t.quotes.join('\n')}\n${doc?.entityName ?? ''}`
-					.toLowerCase()
-					.includes(needle)
-			)
-		})
-	}
-	const sorted = mine.sort((a, b) => {
-		const da = frame.byAnalysis.get(a.customAnalysisId)
-		const db_ = frame.byAnalysis.get(b.customAnalysisId)
-		return (da?.entityName ?? '').localeCompare(db_?.entityName ?? '') || a.id - b.id
-	})
-	const page = pageOf(sorted, options)
-	const siblings = rows.filter((r) =>
-		page.some(
-			(p) =>
-				p.item !== null &&
-				r.item === p.item &&
-				r.customAnalysisId === p.customAnalysisId &&
-				r.id !== p.id,
-		),
-	)
-	const texts = await findingTexts(
-		db,
-		[...page, ...siblings].map((r) => r.id),
-	)
-	return {
-		criterionId,
-		total: sorted.length,
-		findings: page.flatMap((r) => {
-			const doc = frame.byAnalysis.get(r.customAnalysisId)
-			const text = texts.get(r.id)
-			if (!doc || !text) return []
-			return [
-				{
-					...evidence(doc),
-					findingId: r.id,
-					item: r.item,
-					criterionId: r.criterionId,
-					...findingWords(doc, text),
-					alongside: siblings
-						.filter((x) => x.customAnalysisId === r.customAnalysisId && x.item === r.item)
-						.flatMap((x) => {
-							const t = texts.get(x.id)
-							return t ? [{ criterionId: x.criterionId, ...findingWords(doc, t) }] : []
-						}),
-				},
-			]
-		}),
 	}
 }
 

@@ -988,7 +988,6 @@
 	.ib-report-an-caret:focus-visible,
 	.ib-report-an-node-name:focus-visible,
 	.ib-report-an-rung-head:focus-visible,
-	.ib-report-an-criterion:focus-visible,
 	.ib-report-an-metric-head:focus-visible,
 	.ib-report-an-star:focus-visible {
 		outline: 2px solid var(--color-primary);
@@ -1071,37 +1070,7 @@
 		margin: 0 1rem 1rem;
 	}
 
-	/* ── perspective: the criteria and the register ── */
-	.ib-report-an-criteria {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-		gap: 0.7rem;
-		margin-bottom: 0.8rem;
-	}
-	.ib-report-an-criterion {
-		all: unset;
-		box-sizing: border-box;
-		cursor: pointer;
-		display: grid;
-		gap: 0.45rem;
-		align-content: start;
-		padding: 0.8rem 0.9rem;
-		border: 1px solid var(--color-border);
-		border-radius: 10px;
-		background: var(--color-base-100);
-	}
-	.ib-report-an-criterion.ib-report-on {
-		border-color: var(--color-primary);
-		background: var(--color-primary-soft);
-	}
-	.ib-report-an-criterion-text {
-		line-height: 1.4;
-		font-weight: 500;
-	}
-	.ib-report-an-finding-head {
-		font-weight: 600;
-		line-height: 1.4;
-	}
+	/* ── perspective: the register of documents ── */
 	.ib-report-an-alongside {
 		display: grid;
 		grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);

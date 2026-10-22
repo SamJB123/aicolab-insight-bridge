@@ -11,7 +11,6 @@ import {
 	assessedDocumentsSchema,
 	metricEntriesSchema,
 	perspectiveDocumentsSchema,
-	perspectiveFindingsSchema,
 	questionDetailSchema,
 	tagDocumentsSchema,
 } from '@aicolab/insight-bridge-contracts/explorer'
@@ -23,11 +22,7 @@ import {
 	type ScoreBandsOf,
 } from './analysis/assessment-view.tsx'
 import { type MetricEntriesLoader, MetricsView } from './analysis/metrics-view.tsx'
-import {
-	type PerspectiveDocumentsLoader,
-	type PerspectiveFindingsLoader,
-	PerspectiveView,
-} from './analysis/perspective-view.tsx'
+import { type PerspectiveDocumentsLoader, PerspectiveView } from './analysis/perspective-view.tsx'
 import { type QuestionDetailLoader, QuestionsView } from './analysis/questions-view.tsx'
 import { type TagDocumentsLoader, TaggingView } from './analysis/tagging-view.tsx'
 import { type ReportSurface, ReportSurfaceProvider } from './surface.tsx'
@@ -37,7 +32,6 @@ import './report.css'
 export interface AnalysisLoaders {
 	tagDocuments: TagDocumentsLoader
 	questionDetail: QuestionDetailLoader
-	perspectiveFindings: PerspectiveFindingsLoader
 	perspectiveDocuments: PerspectiveDocumentsLoader
 	assessedDocuments: AssessedDocumentsLoader
 	metricEntries: MetricEntriesLoader
@@ -58,10 +52,6 @@ export function analysisLoaders(
 				.parse(await fetch({ kind: 'tagDocuments', taskId, category, path, ...options })),
 		questionDetail: async (questionId) =>
 			questionDetailSchema.nullable().parse(await fetch({ kind: 'questionDetail', questionId })),
-		perspectiveFindings: async (criterionId, options) =>
-			perspectiveFindingsSchema
-				.nullable()
-				.parse(await fetch({ kind: 'perspectiveFindings', taskId, criterionId, ...options })),
 		perspectiveDocuments: async (options) =>
 			perspectiveDocumentsSchema
 				.nullable()
@@ -101,7 +91,6 @@ export function AnalysisPage(props: {
 					{(overview) => (
 						<PerspectiveView
 							overview={overview()}
-							perspectiveFindings={props.loaders.perspectiveFindings}
 							perspectiveDocuments={props.loaders.perspectiveDocuments}
 						/>
 					)}
