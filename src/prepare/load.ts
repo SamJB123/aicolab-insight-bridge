@@ -24,11 +24,20 @@
  *   … --generate-only   write the dump files, load nothing
  */
 import { execFileSync } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, openSync, statSync, writeSync } from 'node:fs'
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	statSync,
+	writeSync,
+} from 'node:fs'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 import { RUN_STORE_TABLE_OBJECTS } from '@aicolab/insight-bridge-contracts/schema'
 import { getTableColumns, getTableName } from 'drizzle-orm'
 import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
+import { z } from 'zod'
 import { chunkPrimaryTopic, docDominantTopic } from './tables.ts'
 
 export interface SeedOptions {
@@ -50,6 +59,21 @@ export interface SeedOptions {
 
 /** Rows per dump file — a shard stays well inside D1's per-batch limits. */
 const SHARD = 4000
+/** Tries per call before a load stops: a connection to the API drops now and then over a long load. */
+const ATTEMPTS = 4
+
+/** `wrangler d1 execute --json`'s reply to one statement. */
+const countReply = z.array(z.object({ results: z.array(z.object({ n: z.number() })) }))
+
+/** Wait before trying again: 2, 4, 8 seconds. */
+const pause = (attempt: number) =>
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt)
+
+/** The rows a dump file inserts: one INSERT per row (an oversized value grows by UPDATEs after it). */
+const rowsIn = (file: string) =>
+	readFileSync(file, 'utf8')
+		.split('\n')
+		.filter((line) => line.startsWith('INSERT INTO ')).length
 /** D1's statement cap is 100 KB; a literal longer than this is grown in pieces. */
 const PIECE = 60_000
 
@@ -154,6 +178,68 @@ export function seedD1(options: SeedOptions): void {
 	const target = remote ? ['--remote'] : ['--local', '--persist-to', options.localState]
 	const sh = (args: string[]) =>
 		execFileSync(options.wrangler, args, { stdio: 'inherit', maxBuffer: 1 << 30 })
+	/** One SQL statement against the D1. */
+	const statement = (sql: string) => [
+		'd1',
+		'execute',
+		database,
+		...target,
+		'--yes',
+		'--command',
+		sql,
+	]
+	/** A table's rows in the D1, read back. */
+	const countOf = (table: string): number => {
+		const out = execFileSync(
+			options.wrangler,
+			[
+				'd1',
+				'execute',
+				database,
+				...target,
+				'--json',
+				'--command',
+				`SELECT COUNT(*) AS n FROM ${table};`,
+			],
+			{ encoding: 'utf8', maxBuffer: 1 << 30 },
+		)
+		return countReply.parse(JSON.parse(out))[0]?.results[0]?.n ?? 0
+	}
+	/** A statement that is the same done twice (a clear, the planner's statistics), tried again when the call fails. */
+	const idempotent = (args: string[]) => {
+		for (let attempt = 1; ; attempt++) {
+			try {
+				return sh(args)
+			} catch (error) {
+				if (attempt === ATTEMPTS) throw error
+				pause(attempt)
+			}
+		}
+	}
+	/**
+	 * One shard of a table already holding `loaded` rows. D1 runs a file as one
+	 * transaction, so a failed call either committed the whole shard or none of
+	 * it — but the reply can be lost after the commit (a dropped connection:
+	 * "fetch failed", "terminated"). The table's count says which: the shard's
+	 * rows there, it committed; the count unchanged, it is tried again; anything
+	 * else stops the load.
+	 */
+	const loadShard = (table: string, file: string, loaded: number, rows: number) => {
+		for (let attempt = 1; ; attempt++) {
+			try {
+				return sh(['d1', 'execute', database, ...target, '--yes', '--file', file])
+			} catch (error) {
+				const n = countOf(table)
+				if (n === loaded + rows) {
+					console.info(`    … ${file.split('/').pop()} committed; only its reply was lost`)
+					return
+				}
+				if (n !== loaded || attempt === ATTEMPTS) throw error
+				console.info(`    … ${file.split('/').pop()} did not commit; trying again`)
+				pause(attempt)
+			}
+		}
+	}
 
 	/** Parents before children: the canon in its declared dependency order, the derived tables, then the app's own. */
 	const tables: Table[] = [
@@ -179,7 +265,7 @@ export function seedD1(options: SeedOptions): void {
 	// Clear children first, so no foreign key refuses a delete …
 	if (!genOnly)
 		for (const t of [...chosen].reverse())
-			sh(['d1', 'execute', database, ...target, '--yes', '--command', `DELETE FROM ${t.name};`])
+			idempotent(statement(`DELETE FROM ${t.name};`))
 
 	// … then load parents first.
 	for (const t of chosen) {
@@ -203,16 +289,19 @@ export function seedD1(options: SeedOptions): void {
 					`--skip-generate: no dump files for ${t.name} — run without --skip-generate first`,
 				)
 		}
+		let loaded = 0
 		for (const f of files) {
 			if (statSync(f).size === 0) continue
 			console.info(`    ↑ load ${f.split('/').pop()}`)
-			if (!genOnly) sh(['d1', 'execute', database, ...target, '--yes', '--file', f])
+			const rows = rowsIn(f)
+			if (!genOnly) loadShard(t.name, f, loaded, rows)
+			loaded += rows
 		}
 	}
 	db.close()
 	// The query planner's statistics, as D1 documents it (developers.cloudflare.com/d1/sql-api/sql-statements:
 	// run after any change to the schema): without them SQLite takes every table for a large one and can
 	// read a one-row table (run_current_build) last, so a view cannot enter its build-keyed index.
-	if (!genOnly) sh(['d1', 'execute', database, ...target, '--yes', '--command', 'PRAGMA optimize;'])
+	if (!genOnly) idempotent(statement('PRAGMA optimize;'))
 	console.info('\n✅ D1 seed complete\n')
 }
