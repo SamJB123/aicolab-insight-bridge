@@ -36,7 +36,7 @@ import { loadFacetCache } from '../facets.ts'
 import * as pages from '../pages.ts'
 import { looksLikeQuote } from '../readings.ts'
 import { keepSources, passagesServed, textOf, wordsOf } from '../scope.ts'
-import { type ReportCtx, readContext } from './context.ts'
+import { type ReportCtx, readContext, siteOf } from './context.ts'
 import {
 	clip,
 	DOCUMENT_FINDINGS_SHOWN,
@@ -423,7 +423,7 @@ export function readsFor(t: ToolContext) {
 					query: a.query,
 					mode: searchMode(nearest),
 					returned: hits.length,
-					topics: hits.map((h) => topicRowOf(h, ctx.origin, w, { relevance: h.relevance })),
+					topics: hits.map((h) => topicRowOf(h, siteOf(ctx), w, { relevance: h.relevance })),
 				}
 			}
 			// no index: topics whose title or description holds the words
@@ -444,7 +444,7 @@ export function readsFor(t: ToolContext) {
 			const topics = land.topics
 				.filter((tp) => ids.has(tp.topicClusterId))
 				.slice(0, a.limit)
-				.map((tp) => topicRowOf(tp, ctx.origin, w))
+				.map((tp) => topicRowOf(tp, siteOf(ctx), w))
 			return { query: a.query, mode: searchMode(undefined), returned: topics.length, topics }
 		},
 	})
@@ -465,7 +465,7 @@ export function readsFor(t: ToolContext) {
 				total: page.total,
 				offset: page.offset,
 				returned: page.returned,
-				topics: page.rows.map((tp) => topicRowOf(tp, ctx.origin, words(ctx))),
+				topics: page.rows.map((tp) => topicRowOf(tp, siteOf(ctx), words(ctx))),
 			}
 		},
 	})
@@ -492,7 +492,7 @@ export function readsFor(t: ToolContext) {
 					id: p.passage_id,
 					title: `${p.documentTitle} — ${p.source}`,
 					url: p.source_id
-						? documentUrl(ctx.origin, words(ctx), p.source_id, p.document_id)
+						? documentUrl(siteOf(ctx), words(ctx), p.source_id, p.document_id)
 						: ctx.origin,
 					text: clip(p.text, PASSAGE_CHARS),
 				})),
@@ -520,7 +520,7 @@ export function readsFor(t: ToolContext) {
 			if (!land.top) return { total: 0, families: [], note: NO_TREE }
 			const families = land.groups
 				.filter((g) => g.generation === land.top)
-				.map((g) => groupRowOf(g, ctx.origin, words(ctx)))
+				.map((g) => groupRowOf(g, siteOf(ctx), words(ctx)))
 			return { total: families.length, families, note: null }
 		},
 	})
@@ -547,7 +547,7 @@ export function readsFor(t: ToolContext) {
 			const superclusters = land.groups
 				.filter((g) => g.generation === generation)
 				.filter((g) => a.family_id === undefined || g.parentId === a.family_id)
-				.map((g) => groupRowOf(g, ctx.origin, words(ctx)))
+				.map((g) => groupRowOf(g, siteOf(ctx), words(ctx)))
 			return {
 				total: superclusters.length,
 				superclusters,
@@ -603,7 +603,7 @@ export function readsFor(t: ToolContext) {
 				total: page.total,
 				offset: page.offset,
 				returned: page.returned,
-				topics: page.rows.map((tp) => topicRowOf(tp, ctx.origin, words(ctx))),
+				topics: page.rows.map((tp) => topicRowOf(tp, siteOf(ctx), words(ctx))),
 			}
 		},
 	})
@@ -821,7 +821,7 @@ export function readsFor(t: ToolContext) {
 						quote: k.quotes[0] === undefined ? null : clip(k.quotes[0], QUOTE_CHARS),
 					})),
 					findingsTotal: p.keyPoints.length,
-					url: sourceUrl(ctx.origin, w, p.entityId),
+					url: sourceUrl(siteOf(ctx), w, p.entityId),
 					...(p.withheld ? { withheld: true } : {}),
 					...(p.notice === undefined ? {} : { notice: p.notice }),
 				})),
@@ -882,7 +882,7 @@ export function readsFor(t: ToolContext) {
 					basis: sharedSources,
 					topics: related.flatMap((r) => {
 						const tp = byId.get(r.topicClusterId)
-						return tp ? [topicRowOf(tp, ctx.origin, w, { sharedSources: r.sharedEntities })] : []
+						return tp ? [topicRowOf(tp, siteOf(ctx), w, { sharedSources: r.sharedEntities })] : []
 					}),
 				}
 			}
@@ -907,7 +907,7 @@ export function readsFor(t: ToolContext) {
 				topics: [...shared]
 					.flatMap(([id, n]) => {
 						const tp = byId.get(id)
-						return tp ? [topicRowOf(tp, ctx.origin, w, { sharedGroups: n })] : []
+						return tp ? [topicRowOf(tp, siteOf(ctx), w, { sharedGroups: n })] : []
 					})
 					.sort(
 						(t1, t2) => (t2.sharedGroups ?? 0) - (t1.sharedGroups ?? 0) || t2.sources - t1.sources,
@@ -1024,7 +1024,7 @@ export function readsFor(t: ToolContext) {
 				out.push({
 					topic_id: id,
 					title: topic?.title ?? '',
-					url: topicUrl(ctx.origin, w, id),
+					url: topicUrl(siteOf(ctx), w, id),
 					lineage: topic?.lineage ?? [],
 					supportingStances: supporters.length,
 					contestingStances: contesters.length,
@@ -1262,7 +1262,7 @@ export function readsFor(t: ToolContext) {
 					documents: e.documents,
 					stances: stancesOf.get(e.entityUuid) ?? 0,
 					strongTopics: reachOf.get(e.entityUuid) ?? 0,
-					url: sourceUrl(ctx.origin, w, e.entityId),
+					url: sourceUrl(siteOf(ctx), w, e.entityId),
 				})),
 			}
 		},
@@ -1352,7 +1352,7 @@ export function readsFor(t: ToolContext) {
 						source_id: slug,
 						facets: readerFacetValues(documentFacets.get(d.documentId)),
 						analysed: done.has(d.documentId),
-						url: slug ? documentUrl(ctx.origin, w, slug, d.documentId) : ctx.origin,
+						url: slug ? documentUrl(siteOf(ctx), w, slug, d.documentId) : ctx.origin,
 					}
 				}),
 			}
@@ -1997,7 +1997,7 @@ export function readsFor(t: ToolContext) {
 						quote: k.quotes[0] === undefined ? null : clip(k.quotes[0], QUOTE_CHARS),
 					})),
 					keyPointsTotal: r.keyPoints.length,
-					url: documentUrl(ctx.origin, w, r.entityId, r.documentId),
+					url: documentUrl(siteOf(ctx), w, r.entityId, r.documentId),
 					...(r.withheld ? { withheld: true } : {}),
 					...(r.notice === undefined ? {} : { notice: r.notice }),
 				})),
@@ -2153,7 +2153,7 @@ async function topicOutput(ctx: ReportCtx, topicId: number): Promise<TopicOutput
 		topic_id: detail.topicClusterId,
 		title: detail.title,
 		description: detail.description,
-		url: topicUrl(ctx.origin, w, detail.topicClusterId),
+		url: topicUrl(siteOf(ctx), w, detail.topicClusterId),
 		junk: detail.junkStatus === 'confirmed',
 		junkReason: detail.junkStatus === 'confirmed' ? detail.junkAiReason : null,
 		lineage: detail.lineage,
@@ -2226,7 +2226,7 @@ async function sourceOutput(ctx: ReportCtx, key: string): Promise<SourceOutput> 
 				.filter((q) => looksLikeQuote(q, 40))
 				.slice(0, 2)
 				.map((q) => clip(q, QUOTE_CHARS)),
-			url: topicUrl(ctx.origin, w, tp.topicClusterId),
+			url: topicUrl(siteOf(ctx), w, tp.topicClusterId),
 		}))
 	const documents = found.documentItems.map((d) => ({
 		document_id: d.documentId,
@@ -2234,12 +2234,12 @@ async function sourceOutput(ctx: ReportCtx, key: string): Promise<SourceOutput> 
 		keyPoints: d.keyPoints,
 		answers: d.answers,
 		facets: readerFacetValues(d.facets),
-		url: documentUrl(ctx.origin, w, found.entityId, d.documentId),
+		url: documentUrl(siteOf(ctx), w, found.entityId, d.documentId),
 	}))
 	return {
 		source: found.entityName,
 		source_id: found.entityId,
-		url: sourceUrl(ctx.origin, w, found.entityId),
+		url: sourceUrl(siteOf(ctx), w, found.entityId),
 		lensValue: lensValueOf(w, found.facets),
 		facets: readerFacetValues(found.facets),
 		inferredName: found.inferredName,
@@ -2298,7 +2298,7 @@ async function documentOutput(
 		fileName: d.fileName,
 		source: d.entityName,
 		source_id: sourceId,
-		url: documentUrl(ctx.origin, w, sourceId, d.documentId),
+		url: documentUrl(siteOf(ctx), w, sourceId, d.documentId),
 		facets: readerFacetValues(facets.get(d.documentId)),
 		counts: { keyPoints: d.keyPoints, quotes: d.quotes, passages: d.chunks },
 		keyPoints: d.keyPointItems

@@ -40,7 +40,7 @@ import { buildMethod } from '../../method.ts'
 import { type ReadingView, readingViewSchema } from '../../reader/reading-view.ts'
 import { positionColors } from '../../site/palette.ts'
 import { sourcesData } from '../../sources/data.ts'
-import { type SourcesConfig, sourcesResultSchema } from '../../sources/types.ts'
+import { type SourcesConfig, sourceRowSchema, sourcesResultSchema } from '../../sources/types.ts'
 import { treeOf } from '../../tree.ts'
 import * as analysis from '../analysis.ts'
 import * as x from '../data.ts'
@@ -52,7 +52,7 @@ import {
 	sourceReading,
 	topicReading,
 } from '../readings.ts'
-import { type ReportCtx, readContext } from './context.ts'
+import { type ReportCtx, readContext, siteOf } from './context.ts'
 import { GROUP } from './reads.ts'
 import {
 	clip,
@@ -76,6 +76,8 @@ const CONTRIBUTORS_SHOWN = 30
 /** How many points a reading's section lists, and how many rows a lens or topics section has, as a tool. */
 const POINTS_SHOWN = 12
 const ROWS_SHOWN = 30
+/** How many documents a row of the record lists as a tool (an audit office holds hundreds); get_source pages the rest. */
+const RECORD_DOCUMENTS_SHOWN = 8
 
 /**
  * A reading cut to a model's measure: every points section its first POINTS_SHOWN points
@@ -169,19 +171,32 @@ const limitOf = (max: number, fallback: number) =>
 
 /* ───────────────────────── what the pages read with, from the run ───────────────────────── */
 
-/** The Brief's configuration from the run's own words: how its lens reads, and its scale. */
+/**
+ * Whether a facet's values are ordered: the profile derived it into buckets of another
+ * facet (an era or a period from the year), and buckets are ranges in order. A facet the
+ * profile lists as values is a vocabulary, which is no guarantee of order.
+ */
+const isOrdinal = (w: RunWords, key: string): boolean => w.facets[key]?.derivedFrom != null
+
+/**
+ * The Brief's configuration from the run's own words: how every facet the run names
+ * reads (its heading, its value order and words, and whether it is ordinal), and the
+ * scale. Which facets the Brief surfaces is the analysis's (../../brief/data).
+ */
 export const briefConfigOf = (ctx: ReportCtx): BriefConfig => {
 	const w = words(ctx)
 	return {
-		facets: w.lens
-			? {
-					[w.lens]: {
-						label: w.facets[w.lens]?.heading,
-						order: [...(w.facets[w.lens]?.order ?? [])],
-						labels: w.facets[w.lens]?.values,
-					},
-				}
-			: {},
+		facets: Object.fromEntries(
+			Object.entries(w.facets).map(([key, said]) => [
+				key,
+				{
+					label: said.heading,
+					order: [...said.order],
+					labels: said.values,
+					...(isOrdinal(w, key) ? { ordinal: true } : {}),
+				},
+			]),
+		),
 		positions: {
 			order: w.scale.order,
 			supportive: w.scale.supportive,
@@ -205,22 +220,41 @@ export async function sourcesConfigOf(ctx: ReportCtx): Promise<SourcesConfig> {
 		.limit(1)
 	const site = meta?.site ?? null
 	const own = ctx.host.sources ?? {}
-	const filters = site?.filters ?? own.filters ?? (w.lens ? [w.lens] : [])
-	const groupBy = site?.groupBy ?? own.groupBy ?? w.lens
+	const declared = site?.filters ?? own.filters ?? (w.lens ? [w.lens] : [])
+	// a facet the host derives itself is always a filter: the site's words cannot name it
+	const filters = [
+		...declared,
+		...(own.derived ?? []).map((facet) => facet.key).filter((key) => !declared.includes(key)),
+	]
+	// the host's null says "no grouping"; absent, the lens groups
+	const groupBy = site?.groupBy ?? (own.groupBy === undefined ? w.lens : own.groupBy)
 	return {
 		filters: filters.map((key) => {
 			const said = w.facets[key]
 			const order = own.order?.[key] ?? (said?.order.length ? [...said.order] : null)
 			const labels =
 				said && Object.keys(said.values).length ? said.values : (own.labels?.[key] ?? null)
+			const label = said?.heading ?? own.headings?.[key]
 			return {
 				key,
-				...(said?.heading ? { label: said.heading } : {}),
+				...(label ? { label } : {}),
+				...(isOrdinal(w, key) ? { ordinal: true } : {}),
 				...(order ? { order } : {}),
 				...(labels ? { labels } : {}),
 			}
 		}),
-		...(groupBy ? { groupBy, sort: [{ facet: groupBy }] } : {}),
+		...(groupBy || own.sort
+			? {
+					...(groupBy ? { groupBy } : {}),
+					// the grouping facet first, in the host's direction where it names one
+					sort: [
+						...(groupBy
+							? [own.sort?.find((by) => by.facet === groupBy) ?? { facet: groupBy }]
+							: []),
+						...(own.sort ?? []).filter((by) => by.facet !== groupBy),
+					],
+				}
+			: {}),
 		...(ctx.scope ? { scope: ctx.scope } : {}),
 		...(own.derived ? { derived: own.derived } : {}),
 	}
@@ -284,6 +318,21 @@ const briefNodeSchema = z.object({
 	url: z.string(),
 })
 
+/** A theme as the structure lists it: where it sits and its reach; its facts are `brief` with `node`. */
+const briefRowSchema = briefNodeSchema.pick({
+	id: true,
+	kind: true,
+	title: true,
+	claim: true,
+	topics: true,
+	sources: true,
+	stances: true,
+	positionMix: true,
+	contesting: true,
+	supportivePct: true,
+	url: true,
+})
+
 const briefTopicSchema = z.object({
 	id: z.number().int(),
 	title: z.string(),
@@ -323,7 +372,7 @@ const briefNodeOf = (n: BriefNode, ctx: ReportCtx, w: RunWords) => ({
 		count: c.count,
 	})),
 	contributorTotal: n.contributorTotal,
-	url: n.kind === 'topic' ? topicUrl(ctx.origin, w, n.id) : groupUrl(ctx.origin, w, n.id),
+	url: n.kind === 'topic' ? topicUrl(siteOf(ctx), w, n.id) : groupUrl(siteOf(ctx), w, n.id),
 })
 
 const briefTopicOf = (d: BriefData, id: number, ctx: ReportCtx, w: RunWords) => {
@@ -342,7 +391,7 @@ const briefTopicOf = (d: BriefData, id: number, ctx: ReportCtx, w: RunWords) => 
 					contesting: t.contesting,
 					facetCounts: t.facetCounts,
 					singleValue: t.singleValue,
-					url: topicUrl(ctx.origin, w, t.id),
+					url: topicUrl(siteOf(ctx), w, t.id),
 				},
 			]
 		: []
@@ -418,7 +467,7 @@ export function readersFor(t: ToolContext) {
 	const brief = define({
 		name: 'brief',
 		summary: 'The Brief: the record’s structure, in parts',
-		description: `The Brief (the /topics page) read in parts: the record's scale and the facets it is read along, then the families with their themes (each node's reach, stances, position mix, facet shares and most-cited ${nouns.entities}); pass \`node\` (a family or theme id) for that node's facts and a page of its topics; a run with no tree lists its topics by reach. chapter_reading has a node's key points, pins and pushback.`,
+		description: `The Brief (the /topics page) read in parts: the record's scale and the facets it is read along, then the families (each with its reach, stances, position mix, facet shares and most-cited ${nouns.entities}) and their themes as rows (reach, stances, position mix); pass \`node\` (a family or theme id) for that node's facts and a page of its topics; a run with no tree lists its topics by reach. chapter_reading has a node's key points, pins and pushback.`,
 		...grouped(GROUP.readers),
 		input: z.object({
 			node: z.coerce
@@ -438,8 +487,8 @@ export function readersFor(t: ToolContext) {
 			singleGeneration: z.boolean(),
 			/** The node asked for, with its facts; null for the whole structure. */
 			node: briefNodeSchema.nullable(),
-			/** Without `node`: every family with its themes (topics counted, listed by `node`). */
-			families: z.array(briefNodeSchema.extend({ themes: z.array(briefNodeSchema) })),
+			/** Without `node`: every family with its facts, and its themes as rows (a theme's facts and topics are `node`'s). */
+			families: z.array(briefNodeSchema.extend({ themes: z.array(briefRowSchema) })),
 			/** The topics listed: the node's, or every topic by reach for a run with no tree. */
 			topics: z.object({ ...pageShape, rows: z.array(briefTopicSchema) }),
 		}),
@@ -505,7 +554,7 @@ export function readersFor(t: ToolContext) {
 						? []
 						: f.themeIds.flatMap((id) => {
 								const theme = d.themes[id]
-								return theme ? [nodeOf(theme)] : []
+								return theme ? [briefRowSchema.parse(nodeOf(theme))] : []
 							}),
 				})),
 				topics: { total: 0, offset: 0, returned: 0, rows: [] },
@@ -573,7 +622,7 @@ export function readersFor(t: ToolContext) {
 	const sources_record = define({
 		name: 'sources_record',
 		summary: `The record of ${nouns.entities}, a page at a time`,
-		description: `The /sources page: every ${nouns.entity} in the record with its facets and its ${nouns.documents}' facets, filtered by the facets the site declares (each with its vocabulary and counts over the whole record) and by free text over names, ${nouns.document} titles, topic titles and facet values; grouped and ordered as the site reads it. list_sources is the flatter listing with stance counts.`,
+		description: `The /sources page: every ${nouns.entity} in the record with its facets and its ${nouns.documents}' facets (the first ${RECORD_DOCUMENTS_SHOWN} ${nouns.documents} per row, with how many more; get_source lists them), filtered by the facets the site declares (each with its vocabulary and counts over the whole record) and by free text over names, ${nouns.document} titles, topic titles and facet values; grouped and ordered as the site reads it. list_sources is the flatter listing with stance counts.`,
 		...grouped(GROUP.readers),
 		input: z.object({
 			query: z.string().optional().describe('Free text: a name, a title, a topic, a facet value'),
@@ -588,6 +637,8 @@ export function readersFor(t: ToolContext) {
 		}),
 		// the page's result, its groups naming their rows by source_id rather than repeating them
 		output: sourcesResultSchema.omit({ groups: true }).extend({
+			/** The page's rows, each with its first RECORD_DOCUMENTS_SHOWN documents and how many more it has. */
+			rows: z.array(sourceRowSchema.extend({ documentsTruncated: z.number().int() })),
 			/** The page's rows under their `groupBy` value, each named by its `entityId`; one group when ungrouped. */
 			groups: z.array(z.object({ value: z.string().nullable(), sources: z.array(z.string()) })),
 		}),
@@ -604,7 +655,10 @@ export function readersFor(t: ToolContext) {
 				rows: result.rows.map((row) => ({
 					...row,
 					facets: readerFacetValues(row.facets),
-					documents: row.documents.map((d) => ({ ...d, facets: readerFacetValues(d.facets) })),
+					documents: row.documents
+						.slice(0, RECORD_DOCUMENTS_SHOWN)
+						.map((d) => ({ ...d, facets: readerFacetValues(d.facets) })),
+					documentsTruncated: Math.max(0, row.documents.length - RECORD_DOCUMENTS_SHOWN),
 				})),
 				groups: result.groups.map((g) => ({
 					value: g.value,
@@ -617,29 +671,50 @@ export function readersFor(t: ToolContext) {
 	const galaxy = define({
 		name: 'galaxy',
 		summary: 'The record as a sky',
-		description: `The galaxy the /galaxy page draws: every grouping node and every topic as a star with its reach and position mix, and the tree's primary edges between them; with \`all_edges\`, every edge a topic has to a group (the cross-links, with their similarity); with \`include_dust\`, every ${nouns.entity} strongly linked to a topic as dust bound to those topics (large: thousands of edges on a wide record). Node ids are the readings' (g:, t:, s:), so a node opens the same reading the drawer does.`,
+		description: `The galaxy the /galaxy page draws: every grouping node as a star, and the topics a page at a time by weight (\`offset\`, \`limit\`), each with its reach and position mix, and the tree's primary edges between the stars returned; with \`all_edges\`, every edge a returned topic has to a group (the cross-links, with their similarity); with \`include_dust\`, every ${nouns.entity} strongly linked to a returned topic as dust bound to it (large: thousands of edges on a wide record). Node ids are the readings' (g:, t:, s:), so a node opens the same reading the drawer does.`,
 		...grouped(GROUP.readers),
 		input: z.object({
+			offset,
+			limit: limitOf(PAGE_MAX, PAGE).describe('Topics per page, by weight'),
 			include_dust: z
 				.boolean()
 				.optional()
 				.describe(`The ${nouns.entities} and their edges to topics`),
 			all_edges: z.boolean().optional().describe('Every edge, not the primary tree alone'),
 		}),
-		output: galaxyDataSchema,
+		output: galaxyDataSchema.extend({
+			/** The page of topics returned (the grouping nodes are always whole). */
+			topics: z.object(pageShape),
+		}),
 		rest: { method: 'GET', path: '/galaxy' },
 		handler: async (a, ctx) => {
 			const sky = await pages.galaxy(ctx.db, words(ctx), galaxyOptionsOf(ctx), ctx.scope)
-			if (a.include_dust && a.all_edges) return sky
-			const stars = new Set(sky.nodes.filter((n) => n.tier >= 0).map((n) => n.id))
-			const kept = (id: string) => a.include_dust || stars.has(id)
+			// tier 0 is the topics, above it the grouping generations, below it the dust
+			const topics = sky.nodes.filter((n) => n.tier === 0).sort((p, q) => q.weight - p.weight)
+			const page = pageOf(topics, a.offset, a.limit)
+			const stars = new Set([
+				...sky.nodes.filter((n) => n.tier > 0).map((n) => n.id),
+				...page.rows.map((n) => n.id),
+			])
+			const shownTopics = new Set(page.rows.map((n) => n.id))
+			// dust is kept only where it is bound to a returned topic
+			const dust = new Set(
+				a.include_dust
+					? sky.edges
+							.filter((e) => shownTopics.has(e.parent) && !stars.has(e.child))
+							.map((e) => e.child)
+					: [],
+			)
+			const kept = (id: string) => stars.has(id) || dust.has(id)
 			return {
 				...sky,
 				tiers: a.include_dust ? sky.tiers : sky.tiers.filter((tier) => tier.tier >= 0),
 				nodes: sky.nodes.filter((n) => kept(n.id)),
 				edges: sky.edges.filter(
-					(e) => kept(e.child) && kept(e.parent) && (a.all_edges || e.isPrimary),
+					(e) =>
+						kept(e.child) && kept(e.parent) && (a.all_edges || e.isPrimary || dust.has(e.child)),
 				),
+				topics: { total: page.total, offset: page.offset, returned: page.returned },
 			}
 		},
 	})

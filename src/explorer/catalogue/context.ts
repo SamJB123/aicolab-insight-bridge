@@ -16,6 +16,7 @@ import type { MethodAuthored } from '../../method.ts'
 import type { DerivedFacet } from '../../sources/types.ts'
 import type { ReadingAdditions, ReadingContext } from '../readings.ts'
 import type { ReadScope } from '../scope.ts'
+import type { LinkSite, SectionRoutes } from './shapes.ts'
 import type { NearestPassages, ToolContext, ToolReadContext } from './support.ts'
 
 /** What an app adds to a reading from its own facets and tables (../readings `ReadingAdditions`), read for one subject. */
@@ -53,6 +54,12 @@ export interface ReportHost {
 		order?: Record<string, string[]>
 		/** A facet's short words for its values, where the run's words give none. */
 		labels?: Record<string, Record<string, string>>
+		/** A facet's heading where the run's words give none (a derived facet's). */
+		headings?: Record<string, string>
+		/** Row order: the grouping facet always first (an entry here for it sets only its direction:
+		 *  Second Chair's eras newest first), then these, then the name (Long Form: each period's
+		 *  episodes by date). */
+		sort?: { facet: string; desc?: boolean }[]
 	}
 	/** How this report's readings read: its fixed words, how it names and orders documents, what it adds. */
 	readings?: Pick<ReadingContext, 'vocabulary' | 'documentLabel' | 'documentOrder'> & {
@@ -60,6 +67,8 @@ export interface ReportHost {
 	}
 	/** The host's own standing caveats, after the run's, in the connector's instructions. */
 	notes?: string
+	/** The routes of the sections a reading opens on, where the site's differ from the section's name. */
+	routes?: SectionRoutes
 }
 
 export interface ReportCtx {
@@ -75,6 +84,12 @@ export interface ReportCtx {
 	origin: string
 	host: ReportHost
 }
+
+/** Where every link a result carries starts, from a report's context. */
+export const siteOf = (ctx: ReportCtx): LinkSite => ({
+	origin: ctx.origin,
+	...(ctx.host.routes ? { routes: ctx.host.routes } : {}),
+})
 
 /** The context the explorer reads take, from a report's. */
 export const readContext = (ctx: ReportCtx): ToolReadContext => ({

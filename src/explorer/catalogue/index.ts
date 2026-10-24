@@ -24,9 +24,10 @@ import type { ToolContext } from './support.ts'
 import { tasksFor } from './tasks.ts'
 
 export type { ReadingAdditionsFor, ReportCtx, ReportHost } from './context.ts'
-export { readContext } from './context.ts'
+export { readContext, siteOf } from './context.ts'
 export { briefConfigOf, galaxyOptionsOf, readingContextOf, sourcesConfigOf } from './readers.ts'
 export { GROUP } from './reads.ts'
+export type { LinkSite, SectionRoutes } from './shapes.ts'
 export {
 	documentMarkdown,
 	documentUrl,
@@ -61,6 +62,12 @@ export interface ReportCatalogue {
 export interface CatalogueOptions {
 	/** The MCP App that renders a reading's result, for a host that declared the UI extension (the app's own build). */
 	view?: View
+	/**
+	 * The report's own operations (a read only its tables can answer), served after core's
+	 * in every surface. Built by the host once per run, as this catalogue is; the host's
+	 * `ReportCap` subclass adds a method per operation (`ReportCap.run`).
+	 */
+	own?: readonly AnyOperation<ReportCtx>[]
 }
 
 /** The operations a view renders: the four readings a drawer opens. */
@@ -73,7 +80,8 @@ const built = new WeakMap<ToolContext, Map<string, ReportCatalogue>>()
  * keeps per record version) and per view.
  */
 export function reportCatalogue(run: ToolContext, options: CatalogueOptions = {}): ReportCatalogue {
-	const key = options.view?.uri ?? ''
+	const own = options.own ?? []
+	const key = `${options.view?.uri ?? ''}|${own.map((operation) => operation.name).join(',')}`
 	const kept = built.get(run)?.get(key)
 	if (kept) return kept
 	const reads = readsFor(run)
@@ -81,13 +89,21 @@ export function reportCatalogue(run: ToolContext, options: CatalogueOptions = {}
 	const tasks = tasksFor(run)
 	const withView = (operation: AnyOperation<ReportCtx>): AnyOperation<ReportCtx> =>
 		options.view && VIEWED.has(operation.name) ? { ...operation, view: options.view } : operation
-	const operations = [...reads.served, ...tasks.served, ...readers.served].map(withView)
+	const operations = [...reads.served, ...tasks.served, ...readers.served, ...own].map(withView)
 	const byName = new Map<string, AnyOperation<ReportCtx>>()
 	for (const group of [reads, tasks, readers]) {
 		for (const [name, value] of Object.entries(group)) {
 			if (name === 'served' || !isOperation(value)) continue
 			byName.set(value.name, withView(value))
 		}
+	}
+	for (const operation of own) {
+		if (byName.has(operation.name)) {
+			throw new Error(
+				`[catalogue] the report's own ${operation.name} shadows core's read of that name`,
+			)
+		}
+		byName.set(operation.name, operation)
 	}
 	const catalogue: ReportCatalogue = {
 		operations,

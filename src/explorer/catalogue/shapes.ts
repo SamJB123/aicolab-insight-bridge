@@ -56,27 +56,43 @@ export const pageShape = {
 
 /* ───────────────────────── links ───────────────────────── */
 
+/** The two sections a reading opens on. */
+export interface SectionRoutes {
+	topics?: string
+	sources?: string
+}
+
+/** Where every link a result carries starts: the report's public origin, and the routes of
+ *  its sections where the site's own differ from the section's name (One Basin's and High
+ *  Water's record is `/submissions`). */
+export interface LinkSite {
+	origin: string
+	routes?: SectionRoutes
+}
+
 /** Where a reading opens on the report site: the drawer's `detail` on the page that holds it. */
-const readingPage = (words: RunWords): string => {
-	if (words.sections.includes('topics')) return '/topics'
-	if (words.sections.includes('sources')) return '/sources'
+const readingPage = (site: LinkSite, words: RunWords): string => {
+	if (words.sections.includes('topics')) return site.routes?.topics ?? '/topics'
+	if (words.sections.includes('sources')) return site.routes?.sources ?? '/sources'
 	return '/'
 }
-const sourcesPage = (words: RunWords): string =>
-	words.sections.includes('sources') ? '/sources' : readingPage(words)
+const sourcesPage = (site: LinkSite, words: RunWords): string =>
+	words.sections.includes('sources')
+		? (site.routes?.sources ?? '/sources')
+		: readingPage(site, words)
 
-export const topicUrl = (origin: string, words: RunWords, topicClusterId: number): string =>
-	`${origin}${readingPage(words)}?detail=${encodeURIComponent(topicNodeId(topicClusterId))}`
-export const groupUrl = (origin: string, words: RunWords, superclusterId: number): string =>
-	`${origin}${readingPage(words)}?detail=${encodeURIComponent(groupNodeId(superclusterId))}`
-export const sourceUrl = (origin: string, words: RunWords, entityId: string): string =>
-	`${origin}${sourcesPage(words)}?detail=${encodeURIComponent(sourceNodeId(entityId))}`
+export const topicUrl = (site: LinkSite, words: RunWords, topicClusterId: number): string =>
+	`${site.origin}${readingPage(site, words)}?detail=${encodeURIComponent(topicNodeId(topicClusterId))}`
+export const groupUrl = (site: LinkSite, words: RunWords, superclusterId: number): string =>
+	`${site.origin}${readingPage(site, words)}?detail=${encodeURIComponent(groupNodeId(superclusterId))}`
+export const sourceUrl = (site: LinkSite, words: RunWords, entityId: string): string =>
+	`${site.origin}${sourcesPage(site, words)}?detail=${encodeURIComponent(sourceNodeId(entityId))}`
 export const documentUrl = (
-	origin: string,
+	site: LinkSite,
 	words: RunWords,
 	entityId: string,
 	documentId: string,
-): string => `${sourceUrl(origin, words, entityId)}&document=${encodeURIComponent(documentId)}`
+): string => `${sourceUrl(site, words, entityId)}&document=${encodeURIComponent(documentId)}`
 
 /* ───────────────────────── rows ───────────────────────── */
 
@@ -108,7 +124,7 @@ export type TopicRow = z.infer<typeof topicRowSchema>
 
 export const topicRowOf = (
 	t: TopicProfile,
-	origin: string,
+	site: LinkSite,
 	words: RunWords,
 	extra: Partial<Pick<TopicRow, 'relevance' | 'sharedGroups' | 'sharedSources'>> = {},
 ): TopicRow => ({
@@ -123,7 +139,7 @@ export const topicRowOf = (
 	lensValues: t.lensValueCount,
 	singleLensValue: t.singleLensValue,
 	lineage: t.lineage,
-	url: topicUrl(origin, words, t.topicClusterId),
+	url: topicUrl(site, words, t.topicClusterId),
 	...extra,
 })
 
@@ -148,7 +164,7 @@ export const groupRowSchema = z.object({
 })
 export type GroupRow = z.infer<typeof groupRowSchema>
 
-export const groupRowOf = (g: GroupProfile, origin: string, words: RunWords): GroupRow => ({
+export const groupRowOf = (g: GroupProfile, site: LinkSite, words: RunWords): GroupRow => ({
 	supercluster_id: g.superclusterId,
 	generation: g.generation,
 	kind: g.kind,
@@ -162,7 +178,7 @@ export const groupRowOf = (g: GroupProfile, origin: string, words: RunWords): Gr
 	documents: g.documents,
 	stances: g.stances,
 	positionMix: g.positions,
-	url: groupUrl(origin, words, g.superclusterId),
+	url: groupUrl(site, words, g.superclusterId),
 })
 
 /** A passage a search found. */

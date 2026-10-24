@@ -59,6 +59,20 @@ export class ReportCap extends RpcTarget {
 		this.ctx = ctx
 	}
 
+	/**
+	 * A report's own read, for its subclass's method: `era_drift(input, hooks) { return
+	 * ReportCap.run(this, 'era_drift', input, hooks) }`. Static, so it is not a method of
+	 * the object and never part of its surface.
+	 */
+	protected static run(
+		cap: ReportCap,
+		name: string,
+		input: unknown,
+		hooks?: CallHooks,
+	): Promise<unknown> {
+		return cap.#read(name, input, hooks)
+	}
+
 	/** One read by name, validated by its own input; a read this run does not serve is not found. */
 	#read(name: string, input: unknown, hooks?: CallHooks): Promise<unknown> {
 		const operation = this.#catalogue.byName.get(name)

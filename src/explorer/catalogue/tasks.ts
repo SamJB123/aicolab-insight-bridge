@@ -22,7 +22,7 @@ import type {
 import { z } from 'zod'
 import * as x from '../data.ts'
 import * as pages from '../pages.ts'
-import { type ReportCtx, readContext } from './context.ts'
+import { type ReportCtx, readContext, siteOf } from './context.ts'
 import { GROUP } from './reads.ts'
 import { clip, documentUrl, PASSAGE_CHARS, QUOTE_CHARS, sourceUrl, topicUrl } from './shapes.ts'
 import { dissentOf, lensValueOf, notPrevalence, type ToolContext } from './support.ts'
@@ -245,7 +245,7 @@ export function tasksFor(t: ToolContext) {
 						score: Math.round(pick.score * 1000) / 1000,
 						topics: pick.topics,
 						quotes: [...pick.quotes].slice(0, 3).map((quote) => clip(quote, QUOTE_CHARS)),
-						url: slug ? documentUrl(ctx.origin, w, slug, pick.document_id) : ctx.origin,
+						url: slug ? documentUrl(siteOf(ctx), w, slug, pick.document_id) : ctx.origin,
 					}
 				}),
 				topicsConsidered: visiting.length,
@@ -348,7 +348,7 @@ export function tasksFor(t: ToolContext) {
 				evidence.push({
 					topic_id: topic.topicClusterId,
 					title: topic.title,
-					url: topicUrl(ctx.origin, w, topic.topicClusterId),
+					url: topicUrl(siteOf(ctx), w, topic.topicClusterId),
 					positionMix: detail.positions,
 					findings,
 					dissent: contesting,
@@ -519,7 +519,7 @@ export function tasksFor(t: ToolContext) {
 					return {
 						topic_id: id,
 						title: titles.get(id) ?? '',
-						url: topicUrl(ctx.origin, w, id),
+						url: topicUrl(siteOf(ctx), w, id),
 						divided,
 						positions,
 					}
@@ -531,7 +531,7 @@ export function tasksFor(t: ToolContext) {
 					source: e.entityName,
 					lensValue: lensValueOf(w, e.facets),
 					stances: stanced[i]?.size ?? 0,
-					url: sourceUrl(ctx.origin, w, e.entityId),
+					url: sourceUrl(siteOf(ctx), w, e.entityId),
 				})),
 				shared: shared.slice(0, 40),
 				sharedTotal: shared.length,
