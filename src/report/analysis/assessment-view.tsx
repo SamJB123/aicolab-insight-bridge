@@ -31,6 +31,7 @@ import {
 	AnalysisHead,
 	lensWords,
 	MoreButton,
+	useDocumentName,
 	usePaged,
 	WordsNotice,
 	wordsClass,
@@ -405,6 +406,7 @@ function RankedDocument(props: {
 	bandsFor: (criterionId: number) => readonly ScoreBand[]
 }) {
 	const s = useReportSurface()
+	const name = useDocumentName()
 	const lens = () => lensWords(s)
 	/** A score's colour: its band's step on the ramp. */
 	const colourOf = (criterionId: number, score: number | null) => {
@@ -421,7 +423,7 @@ function RankedDocument(props: {
 					class="dw-inline-link"
 					onClick={() => s.open({ kind: 'source', key: props.d.documentId })}
 				>
-					{props.d.documentTitle ?? props.d.fileName}
+					{name(props.d.documentId)}
 				</button>
 				<small class="fig-note">{props.d.entityName}</small>
 				<Show when={s.words.lens}>

@@ -36,24 +36,17 @@ import {
 	facetSpecSchema,
 } from '../../brief/types.ts'
 import type { IBContentSection, IBQuote } from '../../galaxy/types.ts'
-import { buildMethod } from '../../method.ts'
 import { type ReadingView, readingViewSchema } from '../../reader/reading-view.ts'
-import { positionColors } from '../../site/palette.ts'
 import { sourcesData } from '../../sources/data.ts'
 import { type SourcesConfig, sourceRowSchema, sourcesResultSchema } from '../../sources/types.ts'
 import { treeOf } from '../../tree.ts'
 import * as analysis from '../analysis.ts'
 import * as x from '../data.ts'
 import * as pages from '../pages.ts'
-import {
-	documentReading,
-	groupReading,
-	type ReadingContext,
-	sourceReading,
-	topicReading,
-} from '../readings.ts'
 import { type ReportCtx, readContext, siteOf } from './context.ts'
+import { readingOf } from './reading-of.ts'
 import { GROUP } from './reads.ts'
+import { runAccount } from './run-account.ts'
 import {
 	clip,
 	groupUrl,
@@ -161,11 +154,6 @@ const words = (ctx: ReportCtx) => ctx.run.words
 const offset = z.coerce.number().int().min(0).default(0)
 
 /** A reading with its scale: the mix's order and colours, so a view with no run words draws the bar as the site does. */
-const withScale = (view: ReadingView, w: RunWords): ReadingView => ({
-	...view,
-	mixOrder: w.scale.order,
-	mixColors: positionColors(w.scale),
-})
 const limitOf = (max: number, fallback: number) =>
 	z.coerce.number().int().min(1).max(max).default(fallback)
 
@@ -268,19 +256,6 @@ export const galaxyOptionsOf = (ctx: ReportCtx) => {
 		facets:
 			ctx.host.galaxy?.facets ??
 			(w.lens ? [{ key: w.lens, label: w.facets[w.lens]?.heading ?? w.lens }] : []),
-	}
-}
-
-/** What every reading is written with: the run's words and scale colours, and the host's own words for the reader. */
-export const readingContextOf = (ctx: ReportCtx): ReadingContext => {
-	const w = words(ctx)
-	const own = ctx.host.readings
-	return {
-		words: w,
-		positionColors: positionColors(w.scale),
-		...(own?.vocabulary ? { vocabulary: own.vocabulary } : {}),
-		...(own?.documentLabel ? { documentLabel: own.documentLabel } : {}),
-		...(own?.documentOrder ? { documentOrder: own.documentOrder } : {}),
 	}
 }
 
@@ -399,7 +374,8 @@ const briefTopicOf = (d: BriefData, id: number, ctx: ReportCtx, w: RunWords) => 
 
 /* ───────────────────────── the analysis pages' shapes ───────────────────────── */
 
-const analysisPageSchema = z.discriminatedUnion('kind', [
+/** A custom analysis page by its task's kind: its overview's contract shape. */
+export const analysisPageSchema = z.discriminatedUnion('kind', [
 	z.object({ kind: z.literal('metadata_tagging'), overview: taggingOverviewSchema }),
 	z.object({ kind: z.literal('question_response'), overview: questionsOverviewSchema }),
 	z.object({ kind: z.literal('perspective_analysis'), overview: perspectiveOverviewSchema }),
@@ -722,30 +698,16 @@ export function readersFor(t: ToolContext) {
 	const method = define({
 		name: 'method',
 		summary: 'How the run was made',
-		description: `The Method page: the stages that ran, in order, each as what it guarantees (never how it was done); the models; the run's declared scale, facets, tasks and glossary; the clustering attempts walked; and the facts the page states — the counts, the topics confirmed as junk, the ${nouns.documents} the pipeline could not analyse, the committed build.`,
+		description: `The Method page: the stages that ran, in order, each as what it guarantees (never how it was done); the models; the run's declared scale, facets, tasks and glossary; the clustering attempts walked; and the facts the page states — the counts, the topics confirmed as junk, the ${nouns.documents} the pipeline could not analyse, the committed build, and the ${nouns.documents} by the report's document facet where it names one.`,
 		...grouped(GROUP.readers),
 		input: z.object({}),
-		output: z.object({ data: methodDataSchema, method: runMethodSchema }),
+		output: z.object({
+			data: methodDataSchema,
+			method: runMethodSchema,
+			documentsBy: z.array(z.object({ value: z.string(), documents: z.number().int() })),
+		}),
 		rest: { method: 'GET', path: '/method' },
-		handler: async (_input, ctx) => {
-			const w = words(ctx)
-			const [[meta], data] = await Promise.all([
-				ctx.db
-					.select({ profile: s.runMeta.profile, runConfig: s.runMeta.runConfig })
-					.from(s.runMeta)
-					.where(eq(s.runMeta.singleton, 1))
-					.limit(1),
-				pages.methodData(ctx.db, w, ctx.scope),
-			])
-			if (!meta?.profile || !meta.runConfig)
-				throw new Error(
-					'[catalogue] run_meta.profile / run_config are missing: the run cannot account for itself',
-				)
-			return {
-				data,
-				method: buildMethod(meta.profile, meta.runConfig, data, ctx.host.method ?? {}),
-			}
-		},
+		handler: (_input, ctx) => runAccount(ctx),
 	})
 
 	const analysisOp = define({
@@ -856,10 +818,9 @@ export function readersFor(t: ToolContext) {
 		output: readingViewSchema,
 		rest: { method: 'GET', path: '/readings/topics/{topic_id}' },
 		handler: async (a, ctx) => {
-			const d = await x.topicById(ctx.db, a.topic_id, ctx.scope)
-			if (!d) throw new NotFound(`No topic with id ${a.topic_id}.`)
-			const add = await ctx.host.readings?.additions?.topic?.(d, ctx)
-			return trimReading(withScale(topicReading(d, readingContextOf(ctx), add), words(ctx)))
+			const view = await readingOf(ctx, { kind: 'topic', key: a.topic_id })
+			if (!view) throw new NotFound(`No topic with id ${a.topic_id}.`)
+			return trimReading(view)
 		},
 	})
 
@@ -878,10 +839,9 @@ export function readersFor(t: ToolContext) {
 		output: readingViewSchema,
 		rest: { method: 'GET', path: '/readings/groups/{supercluster_id}' },
 		handler: async (a, ctx) => {
-			const d = await x.groupById(ctx.db, a.supercluster_id, ctx.scope)
-			if (!d) throw new NotFound(`No grouping node with id ${a.supercluster_id}.`)
-			const add = await ctx.host.readings?.additions?.group?.(d, ctx)
-			return trimReading(withScale(groupReading(d, readingContextOf(ctx), add), words(ctx)))
+			const view = await readingOf(ctx, { kind: 'group', key: a.supercluster_id })
+			if (!view) throw new NotFound(`No grouping node with id ${a.supercluster_id}.`)
+			return trimReading(view)
 		},
 	})
 
@@ -896,13 +856,9 @@ export function readersFor(t: ToolContext) {
 		output: readingViewSchema,
 		rest: { method: 'GET', path: '/readings/sources/{source}' },
 		handler: async (a, ctx) => {
-			const e = await x.entityByKey(ctx.db, a.source, ctx.scope)
-			if (!e) throw new NotFound(`No ${nouns.entity} ${a.source}.`)
-			const [only, ...more] = e.documentItems
-			const sole =
-				only && !more.length ? await x.documentById(ctx.db, only.documentId, ctx.scope) : null
-			const add = await ctx.host.readings?.additions?.source?.(e, sole, ctx)
-			return trimReading(withScale(sourceReading(e, sole, readingContextOf(ctx), add), words(ctx)))
+			const view = await readingOf(ctx, { kind: 'source', key: a.source })
+			if (!view) throw new NotFound(`No ${nouns.entity} ${a.source}.`)
+			return trimReading(view)
 		},
 	})
 
@@ -915,10 +871,9 @@ export function readersFor(t: ToolContext) {
 		output: readingViewSchema,
 		rest: { method: 'GET', path: '/readings/documents/{document_id}' },
 		handler: async (a, ctx) => {
-			const d = await x.documentById(ctx.db, a.document_id, ctx.scope)
-			if (!d) throw new NotFound(`No ${nouns.document} ${a.document_id}.`)
-			const add = await ctx.host.readings?.additions?.document?.(d, ctx)
-			return trimReading(withScale(documentReading(d, readingContextOf(ctx), add), words(ctx)))
+			const view = await readingOf(ctx, { kind: 'document', key: a.document_id })
+			if (!view) throw new NotFound(`No ${nouns.document} ${a.document_id}.`)
+			return trimReading(view)
 		},
 	})
 

@@ -5,18 +5,20 @@
  * doors into the deep views. Every figure is the database's at request time
  * (explorer/pages reportOverview and landscape); every word that is not the
  * pipeline's is the run's own (RunWords). What only one corpus can say — a
- * note under a figure, a picture beside the title — the host passes in.
+ * note under a figure, a picture beside the title, blocks of its own after the
+ * doors — the host passes in as data (./additions.ts).
  *
  * Moved from Training Data's routes/index.tsx and the pipeline's run-site
  * overview (2026-10-21), the richer of the two with the other's doors.
  */
 import type { Landscape, ReportOverview } from '@aicolab/insight-bridge-contracts/explorer'
 import { Eyebrow } from '@aicolab/ui-solid'
-import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { StructureTree } from '../brief/structure-tree.tsx'
 import { BarList, DoorCard, PositionStrip, StatTiles } from '../site/figures.tsx'
+import type { OverviewAdditions } from './additions.ts'
 import { kindLabel } from './analysis/common.tsx'
+import { Blocks } from './blocks.tsx'
 import {
 	cap,
 	fmt,
@@ -26,17 +28,6 @@ import {
 	useReportSurface,
 } from './surface.tsx'
 import './report.css'
-
-/** What only the host can add: notes under the headline figures, a sentence after the source, and a picture beside the title. */
-export interface OverviewAdditions {
-	notes?: { sources?: string; documents?: string }
-	/** The facet whose values `overview.documentsBy` counts, so they can be named. */
-	documentFacet?: string
-	/** Follows "The evidence came from …" — what the host's records promise about it. */
-	sourceNote?: string
-	/** Rendered beside the title, in place — a function, so the element is made where it is drawn (hydration walks the DOM in order). */
-	hero?: () => JSX.Element
-}
 
 export function OverviewPage(props: {
 	overview: ReportOverview
@@ -139,7 +130,7 @@ function OverviewBody(props: {
 
 	return (
 		<div class="view-wrap">
-			<header class={['view-head', { 'ib-report-home-hero': !!props.additions?.hero }]}>
+			<header class={['view-head', { 'ib-report-home-hero': !!props.additions?.poster }]}>
 				<div>
 					<Show when={w().eyebrow}>{(e) => <Eyebrow>{e()}</Eyebrow>}</Show>
 					<h1 class="view-title ib-report-landing-title">{w().title}</h1>
@@ -158,7 +149,14 @@ function OverviewBody(props: {
 						</Show>
 					</p>
 				</div>
-				<Show when={props.additions?.hero}>{(hero) => <>{hero()()}</>}</Show>
+				<Show when={props.additions?.poster}>
+					{(poster) => (
+						<s.Link section="galaxy" class="home-minimap" aria-label="Open the galaxy map">
+							<img src={poster()} alt="" />
+							<span class="home-minimap-cta">Open Galaxy Map</span>
+						</s.Link>
+					)}
+				</Show>
 			</header>
 
 			<section class="sec" style={{ 'border-top': 'none' }}>
@@ -353,6 +351,10 @@ function OverviewBody(props: {
 					</s.Link>
 				</div>
 			</section>
+
+			<Show when={props.additions?.blocks?.length ? props.additions.blocks : undefined}>
+				{(blocks) => <Blocks blocks={blocks()} />}
+			</Show>
 		</div>
 	)
 }

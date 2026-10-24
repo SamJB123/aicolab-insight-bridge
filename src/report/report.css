@@ -302,6 +302,19 @@
 		color: var(--color-base-content);
 	}
 
+	/* ── a report's own blocks (blocks.tsx): a paragraph reads as a lead, cards follow it ── */
+	.ib-report-block-p {
+		max-width: 60ch;
+		margin: 1.6rem 0 0;
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		line-height: 1.35;
+		color: var(--color-base-content);
+	}
+	.ib-report-block-cards {
+		margin-top: 1.4rem;
+	}
+
 	/* a topic's title that opens its reading: the door title's type, no button chrome */
 	.ib-report-topic {
 		background: none;

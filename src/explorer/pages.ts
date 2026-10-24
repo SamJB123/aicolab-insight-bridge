@@ -130,6 +130,33 @@ const lensFacets = (db: CorpusDb, words: RunWords) =>
 
 // ---------------------------------------------------------------- the overview
 
+/** The record's documents counted by one document facet's value, in the run's order for it, then by count. */
+export async function documentsBy(
+	db: CorpusDb,
+	words: RunWords,
+	facet: string,
+	scope?: ReadScope,
+): Promise<{ value: string; documents: number }[]> {
+	const [documentFacets, owners] = await Promise.all([
+		loadFacetCache(db, 'document', [facet]),
+		documentOwners(db),
+	])
+	const counted = new Map<string, number>()
+	for (const d of owners.rows) {
+		if (!isKept(scope, d.entityUuid)) continue
+		const value = documentFacets.get(d.documentId)?.[facet]?.[0]
+		if (value !== undefined) counted.set(value, (counted.get(value) ?? 0) + 1)
+	}
+	const order = words.facets[facet]?.order ?? []
+	const rank = (value: string) => {
+		const at = order.indexOf(value)
+		return at < 0 ? order.length : at
+	}
+	return [...counted]
+		.map(([value, documents]) => ({ value, documents }))
+		.sort((a, b) => rank(a.value) - rank(b.value) || b.documents - a.documents)
+}
+
 /**
  * The record's scale and shape. `documentFacet` names the document facet the
  * host sorts its documents by (Training Data: `document_type`), if any.
@@ -144,7 +171,7 @@ export async function reportOverview(
 	const hard = new Set(words.scale.contesting.slice(-2))
 	const [
 		entityFacets,
-		documentFacets,
+		byDocumentValue,
 		stances,
 		lensPerspectives,
 		sources,
@@ -160,8 +187,8 @@ export async function reportOverview(
 	] = await Promise.all([
 		lensFacets(db, words),
 		options.documentFacet
-			? loadFacetCache(db, 'document', [options.documentFacet])
-			: Promise.resolve(new Map<string, EffectiveFacets>()),
+			? documentsBy(db, words, options.documentFacet, scope)
+			: Promise.resolve([]),
 		currentStances(db, undefined, scope),
 		words.lens
 			? db
@@ -216,25 +243,10 @@ export async function reportOverview(
 	}
 	const rank = lensRank(words)
 
-	const documentFacet = options.documentFacet
-	const byDocumentValue = new Map<string, number>()
-	if (documentFacet)
-		for (const d of docRows) {
-			const value = documentFacets.get(d.documentId)?.[documentFacet]?.[0]
-			if (value !== undefined) byDocumentValue.set(value, (byDocumentValue.get(value) ?? 0) + 1)
-		}
-	const documentOrder = documentFacet ? (words.facets[documentFacet]?.order ?? []) : []
-	const documentRank = (value: string) => {
-		const at = documentOrder.indexOf(value)
-		return at < 0 ? documentOrder.length : at
-	}
-
 	return {
 		sources,
 		documents: docRows.length,
-		documentsBy: [...byDocumentValue]
-			.map(([value, documents]) => ({ value, documents }))
-			.sort((a, b) => documentRank(a.value) - documentRank(b.value) || b.documents - a.documents),
+		documentsBy: byDocumentValue,
 		unanalysedDocuments: docRows.filter((d) => !analysed(d)).length,
 		passages: sumOf(docRows, counts, (c) => c.passages),
 		keyPoints: sumOf(docRows, counts, (c) => c.keyPoints),

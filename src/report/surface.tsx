@@ -10,7 +10,7 @@ import { SITE_SECTIONS, type SiteSection } from '@aicolab/insight-bridge-contrac
 import type { MenuItemLinkProps } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { createContext, useContext } from 'solid-js'
-import type { DocumentLine, ReadingTarget } from '../explorer/readings.ts'
+import type { ReadingTarget } from '../explorer/readings.ts'
 
 /** A report's sections, in the order its header lists them: the site contract's own. */
 export const REPORT_SECTIONS = SITE_SECTIONS
@@ -37,20 +37,25 @@ export interface ReportSurface {
 			children: JSX.Element
 		},
 	) => JSX.Element
-	/** A document's name in a list; its title, else its file name. The same as the readings'. */
-	documentLabel?: (d: DocumentLine) => string
+	/** The host's own link to a page of the report's own (High Water's /campaigns), by its path on the report's site; a plain anchor to that path when absent. */
+	Page?: (props: { to: string; class?: string; children: JSX.Element }) => JSX.Element
 }
 
-/** The surface's document name, with its default. */
-export const documentLabelOf = (s: ReportSurface, d: DocumentLine) =>
-	s.documentLabel ? s.documentLabel(d) : (d.title ?? d.fileName)
+/** A page of the report's own, where the host has no link of its own: an anchor to its path. */
+const PageAnchor = (props: { to: string; class?: string; children: JSX.Element }) => (
+	<a href={props.to} class={props.class}>
+		{props.children}
+	</a>
+)
 
 /** The run's custom analysis tasks, in its profile's order, each with its kind and reader-facing title. */
 export const tasksOf = (words: RunWords) =>
 	Object.entries(words.tasks).map(([taskId, t]) => ({ taskId, kind: t.type, title: t.title }))
 
 /** Solid 2: the context object is the provider; the default-less form throws without one. */
-export const ReportSurfaceContext = createContext<ReportSurface>()
+export const ReportSurfaceContext = createContext<
+	ReportSurface & { Page: NonNullable<ReportSurface['Page']> }
+>()
 export const useReportSurface = () => useContext(ReportSurfaceContext)
 
 /** A page's surface for its subtree. A context value is read once, so its
@@ -70,8 +75,8 @@ export function ReportSurfaceProvider(props: { surface: ReportSurface; children:
 				get Link() {
 					return props.surface.Link
 				},
-				get documentLabel() {
-					return props.surface.documentLabel
+				get Page() {
+					return props.surface.Page ?? PageAnchor
 				},
 			}}
 		>

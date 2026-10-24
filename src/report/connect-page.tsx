@@ -28,7 +28,6 @@ import {
 	SelectControl,
 	TextInput,
 } from '@aicolab/ui-solid'
-import type { JSX } from '@solidjs/web'
 import { createEffect, createSignal, For, onSettled, Show } from 'solid-js'
 import {
 	type ConsoleTool,
@@ -42,6 +41,8 @@ import {
 	type ToolResult,
 	toolArguments,
 } from '../mcp-tools.ts'
+import type { ConnectAdditions } from './additions.ts'
+import { ProseText } from './prose.tsx'
 import { type ReportSurface, ReportSurfaceProvider, useReportSurface } from './surface.tsx'
 import './report.css'
 
@@ -71,12 +72,6 @@ export type ConnectAccess =
 			clients: () => Promise<ConnectClients>
 			copilot: () => Promise<CopilotClient>
 	  }
-
-/** What only the host can add to its Connect page, each a lazy slot. */
-export interface ConnectAdditions {
-	/** More reading notes, each an `<li>`: what only this corpus can say. */
-	notes?: () => JSX.Element
-}
 
 export function ConnectPage(props: {
 	/** The report's MCP endpoint, as a path on this origin: '/mcp', '/mcp/<run>'. */
@@ -221,7 +216,13 @@ function ConnectBody(props: {
 						<code>topicClusterId</code> a topic tool returns; {nouns().entity} and{' '}
 						{nouns().document} tools return the ids their detail tools take.
 					</li>
-					<Show when={props.additions?.notes}>{(notes) => <>{notes()()}</>}</Show>
+					<For each={props.additions?.notes ?? []}>
+						{(note) => (
+							<li>
+								<ProseText prose={note} />
+							</li>
+						)}
+					</For>
 				</ul>
 			</section>
 

@@ -51,6 +51,7 @@ import {
 } from '@modelcontextprotocol/server'
 import type { ReportCtx } from './context.ts'
 import type { ReportCatalogue } from './index.ts'
+import { type PageName, type PageResults, readPage } from './page-reads.ts'
 
 /** How a read runs: in this isolate over a `ReportCtx`, or through a door to where the record lives. */
 export type OperationCall = (
@@ -60,23 +61,90 @@ export type OperationCall = (
 ) => Promise<unknown>
 
 /**
+ * The pages read through a door to where the record lives (a pipeline run's store: a
+ * method per page, each `readPage` there). A function per page rather than one by name:
+ * a Durable Object's RPC types a generic method's result as every page's at once.
+ */
+export type PageDoor = { [N in PageName]: (input: unknown) => Promise<PageResults[N]> }
+
+/**
  * The report as one object: a method per read, over the context it was constructed with,
- * or through a door to where the record lives (a pipeline run's store, `throughDoor`).
- * Every method takes the caller's hooks as its second argument (`CallHooks`): over the
- * socket the browser's callbacks, over MCP and REST what those surfaces build from the
- * request. A report with reads of its own extends this class with them.
+ * or through a door to where the record lives (a pipeline run's store: `throughDoor` for
+ * the catalogue's reads, a `PageDoor` for the pages). Every read method takes the
+ * caller's hooks as its second argument (`CallHooks`): over the socket the browser's
+ * callbacks, over MCP and REST what those surfaces build from the request. A report with
+ * reads of its own extends this class with them.
  */
 export class ReportCap extends RpcTarget {
 	readonly #catalogue: ReportCatalogue
 	readonly #call: OperationCall
+	/** Where the pages are read: this isolate's context, or the record's door. */
+	readonly #pages: ReportCtx | PageDoor | null
 
-	constructor(catalogue: ReportCatalogue, source: ReportCtx | OperationCall) {
+	constructor(catalogue: ReportCatalogue, source: ReportCtx | OperationCall, pageDoor?: PageDoor) {
 		super()
 		this.#catalogue = catalogue
 		this.#call =
 			typeof source === 'function'
 				? source
 				: (operation, input, hooks) => callOperation(operation, input, source, hooks)
+		this.#pages = typeof source === 'function' ? (pageDoor ?? null) : source
+	}
+
+	/** One page, read here over the context or through the door. */
+	#page<N extends PageName>(name: N, input: unknown): Promise<PageResults[N]> {
+		const pages = this.#pages
+		if (!pages) return Promise.reject(new NotFound('This report serves no pages through its door.'))
+		if ('db' in pages) return readPage(pages, name, input)
+		const read: (input: unknown) => Promise<PageResults[N]> = pages[name]
+		return read(input)
+	}
+
+	// ---- the pages, whole (./page-reads.ts): the door's, never tools or routes ----
+	overviewPage() {
+		return this.#page('overviewPage', undefined)
+	}
+	methodPage() {
+		return this.#page('methodPage', undefined)
+	}
+	connectPage() {
+		return this.#page('connectPage', undefined)
+	}
+	briefPage() {
+		return this.#page('briefPage', undefined)
+	}
+	chapterPage(request: unknown) {
+		return this.#page('chapterPage', request)
+	}
+	sourcesPage(search: unknown) {
+		return this.#page('sourcesPage', search)
+	}
+	galaxyPage() {
+		return this.#page('galaxyPage', undefined)
+	}
+	searchPage() {
+		return this.#page('searchPage', undefined)
+	}
+	topicSearch(query: unknown) {
+		return this.#page('topicSearch', query)
+	}
+	analysisPage(taskId: unknown) {
+		return this.#page('analysisPage', taskId)
+	}
+	/** A drill-down an analysis page opens, with the name of every document it lists. */
+	analysisDrill(request: unknown) {
+		return this.#page('analysisDrill', request)
+	}
+	/** A drawer's reading, whole (./reading-of.ts); null when the record has no such subject. */
+	reading(target: unknown) {
+		return this.#page('reading', target)
+	}
+	/** The world record an island is built from; null where the report serves none. */
+	world() {
+		return this.#page('world', undefined)
+	}
+	worldReading(ref: unknown) {
+		return this.#page('worldReading', ref)
 	}
 
 	/**

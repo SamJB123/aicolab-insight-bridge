@@ -6,8 +6,25 @@
 import type { LensBase, ReportTask } from '@aicolab/insight-bridge-contracts/explorer'
 import { Button, Eyebrow } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
-import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js'
+import {
+	createContext,
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	Show,
+	untrack,
+	useContext,
+} from 'solid-js'
 import { fmt, type ReportSurface, useReportSurface } from '../surface.tsx'
+
+/**
+ * A listed document's name, as the drill-down that listed it was answered with: named on
+ * the server by the report's naming (explorer/catalogue `analysisDrillOf`). Solid 2: the
+ * context object is the provider; the default-less form throws without one.
+ */
+export const DocumentNameContext = createContext<(documentId: string) => string>()
+export const useDocumentName = () => useContext(DocumentNameContext)
 
 /** Each kind of custom analysis, as a reader meets it. */
 export const KIND_LABEL: Record<ReportTask['kind'], string> = {

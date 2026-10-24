@@ -35,6 +35,7 @@ import {
 	AnalysisHead,
 	lensWords,
 	MoreButton,
+	useDocumentName,
 	usePaged,
 	WordsNotice,
 	wordsClass,
@@ -281,14 +282,15 @@ function DocumentList(props: {
 
 /** A document as one line — its source, its title, its first finding — opening to the whole card. */
 function DocumentRow(props: { d: PerspectiveDocument; criteria: Criteria }) {
+	const name = useDocumentName()
 	const first = () => props.d.entries[0]?.keyPoint ?? ''
 	return (
 		<li class={['ib-report-an-finding', 'ib-report-an-row', wordsClass(props.d)]}>
 			<details>
 				<summary>
 					<strong>{props.d.entityName}</strong>
-					<Show when={(props.d.documentTitle ?? props.d.fileName) !== props.d.entityName}>
-						<span class="fig-note">{` · ${props.d.documentTitle ?? props.d.fileName}`}</span>
+					<Show when={name(props.d.documentId) !== props.d.entityName}>
+						<span class="fig-note">{` · ${name(props.d.documentId)}`}</span>
 					</Show>
 					<span class="ib-report-an-row-first">{first()}</span>
 				</summary>
@@ -324,6 +326,7 @@ const textIn = (criteria: Criteria, criterionId: number) =>
  */
 function DocumentBody(props: { d: PerspectiveDocument; criteria: Criteria }) {
 	const s = useReportSurface()
+	const name = useDocumentName()
 	const lens = () => lensWords(s)
 	/** The numbered items, each with its entries in the task's order. */
 	const items = () => {
@@ -354,7 +357,7 @@ function DocumentBody(props: { d: PerspectiveDocument; criteria: Criteria }) {
 				<Show when={s.words.lens}>
 					<small class="ib-report-an-chip">{lens().label(props.d.lensValue)}</small>
 				</Show>
-				<small class="fig-note">{props.d.documentTitle ?? props.d.fileName}</small>
+				<small class="fig-note">{name(props.d.documentId)}</small>
 			</div>
 			<WordsNotice of={props.d} />
 			<For each={items()}>
@@ -404,6 +407,7 @@ function DocumentBody(props: { d: PerspectiveDocument; criteria: Criteria }) {
  */
 function Matrix(props: { documents: readonly PerspectiveDocument[]; criteria: Criteria }) {
 	const s = useReportSurface()
+	const name = useDocumentName()
 	return (
 		<div class="ib-report-an-matrix-wrap">
 			<table class="ib-report-an-matrix">
@@ -431,8 +435,8 @@ function Matrix(props: { documents: readonly PerspectiveDocument[]; criteria: Cr
 									>
 										{d.entityName}
 									</button>
-									<Show when={(d.documentTitle ?? d.fileName) !== d.entityName}>
-										<small class="fig-note">{d.documentTitle ?? d.fileName}</small>
+									<Show when={name(d.documentId) !== d.entityName}>
+										<small class="fig-note">{name(d.documentId)}</small>
 									</Show>
 								</th>
 								<For each={props.criteria}>

@@ -460,8 +460,11 @@ function groupView(d: GroupDetail, c: ReadingContext): ReadingView {
 
 /* ── a document's analyses ─────────────────────────────────────────────── */
 
-const documentLabel = (c: ReadingContext, d: DocumentLine) =>
-	c.documentLabel ? c.documentLabel(d) : (d.title ?? d.fileName)
+/** A document's name: the report's own naming where it has one, else the record's title, else its file name. */
+export const documentName = (d: DocumentLine, label?: (d: DocumentLine) => string) =>
+	label ? label(d) : (d.title ?? d.fileName)
+
+const documentLabel = (c: ReadingContext, d: DocumentLine) => documentName(d, c.documentLabel)
 
 /** The title the run gives its one task of a type, else the reader's word for it. */
 const taskTitleOf = (c: ReadingContext, type: string, fallback: string) => {

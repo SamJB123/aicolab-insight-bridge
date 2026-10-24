@@ -15,10 +15,11 @@
  */
 import type { MethodData, RunMethod } from '@aicolab/insight-bridge-contracts/explorer'
 import { Eyebrow } from '@aicolab/ui-solid'
-import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
 import { InsightBridgeReading } from '../about.tsx'
 import { withArticle } from '../grammar.ts'
+import type { MethodAdditions } from './additions.ts'
+import { ProseText } from './prose.tsx'
 import {
 	cap,
 	fmt,
@@ -27,16 +28,6 @@ import {
 	useReportSurface,
 } from './surface.tsx'
 import './report.css'
-
-/** What only the host can add to its method page, each a lazy slot. */
-export interface MethodAdditions {
-	/** After the opening account: where this deployment serves its data from. */
-	serving?: () => JSX.Element
-	/** After the run's own notes: the host's notes on particular sources. */
-	notes?: () => JSX.Element
-	/** More figures for the closing chips. */
-	chips?: string[]
-}
 
 export function MethodPage(props: {
 	method: RunMethod
@@ -103,7 +94,13 @@ function MethodBody(props: {
 					</Show>
 					.
 				</p>
-				<Show when={props.additions?.serving}>{(serving) => <>{serving()()}</>}</Show>
+				<For each={props.additions?.serving ?? []}>
+					{(paragraph) => (
+						<p class="ib-report-lede measure">
+							<ProseText prose={paragraph} />
+						</p>
+					)}
+				</For>
 
 				<h3 class="sec-h ib-report-h">What was done, in order</h3>
 				<p class="sec-sub">
@@ -393,7 +390,13 @@ function RunNotes(props: {
 					{` ${cap(withArticle(nouns().entity))} with more than one document may answer a question twice; a question's page counts ${withArticle(nouns().entity)} once. An unanswered question means no answer was located in the available text, never that ${withArticle(nouns().entity)} has no view.`}
 				</p>
 			</Show>
-			<Show when={props.additions?.notes}>{(notes) => <>{notes()()}</>}</Show>
+			<For each={props.additions?.notes ?? []}>
+				{(paragraph) => (
+					<p>
+						<ProseText prose={paragraph} />
+					</p>
+				)}
+			</For>
 		</div>
 	)
 }

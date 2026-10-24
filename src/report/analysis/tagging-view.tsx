@@ -25,6 +25,7 @@ import {
 	lensWords,
 	MoreButton,
 	pctOf,
+	useDocumentName,
 	usePaged,
 	WordsNotice,
 	wordsClass,
@@ -291,6 +292,7 @@ function TagDocumentsList(props: {
 
 function TaggedDocumentRow(props: { d: TaggedDocument; value: TaggedValue }) {
 	const s = useReportSurface()
+	const name = useDocumentName()
 	const lens = () => lensWords(s)
 	/** The leaf beneath the opened value, when it was given one deeper. */
 	const deeper = () =>
@@ -320,7 +322,7 @@ function TaggedDocumentRow(props: { d: TaggedDocument; value: TaggedValue }) {
 			<Show when={deeper()}>{(leaf) => <p class="ib-report-an-leaf">{leaf()}</p>}</Show>
 			<Show when={props.d.context}>{(c) => <p class="ib-report-an-context">{c()}</p>}</Show>
 			<WordsNotice of={props.d} />
-			<p class="fig-note">{props.d.documentTitle ?? props.d.fileName}</p>
+			<p class="fig-note">{name(props.d.documentId)}</p>
 		</li>
 	)
 }

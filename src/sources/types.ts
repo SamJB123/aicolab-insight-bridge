@@ -7,7 +7,8 @@
  * `facet_assignment`; a corpus declares which facets its readers filter by.
  *
  * What stays per corpus is how a row READS — a submitter, an episode and an
- * oversight body want different chrome — and that arrives as a render prop.
+ * oversight body want different chrome — and that arrives as data, each row's
+ * `view`, which the report computes on the server (settled 2026-10-25).
  *
  * The page of the record (`SourcesResult`) crosses a wire as an operation's
  * output too, so it and its rows are declared as zod schemas with their types
@@ -72,6 +73,42 @@ export const sourceDocumentSchema = z.object({
 })
 export type SourceDocument = z.infer<typeof sourceDocumentSchema>
 
+/**
+ * How one row reads, as data (settled 2026-10-25): flags beside the name, a line under
+ * it, chips, and a path under the chips. A report computes it on the server from the
+ * row (its host's `pages.sources.view`, explorer/catalogue), so every host draws a row
+ * with core alone; a report that says nothing gets `defaultRowView`. Each kind of mark
+ * is styled once, by core (./sources.css).
+ */
+export const rowFlagSchema = z.object({
+	text: z.string(),
+	/** The flag's tooltip. */
+	title: z.string().optional(),
+	/**
+	 * Plain where absent. `hot`: the scale's strongest colour, a mark that matters to how
+	 * the row is read; `notice`: a mark that the row's content is held back or qualified.
+	 */
+	tone: z.enum(['hot', 'notice']).optional(),
+})
+export const rowChipSchema = z.object({
+	text: z.string(),
+	title: z.string().optional(),
+	/** `accent` marks a chip that qualifies the row (partial text, a hearing extract); `faint` one that only describes it. */
+	tone: z.enum(['accent', 'faint']).optional(),
+})
+/** A line under the chips: where the row sits in a vocabulary (High Water's primary report theme). */
+export const rowPathSchema = z.object({ text: z.string(), title: z.string().optional() })
+export const sourceRowViewSchema = z.object({
+	flags: z.array(rowFlagSchema),
+	sub: z.string().nullable(),
+	chips: z.array(rowChipSchema),
+	path: rowPathSchema.optional(),
+})
+export type RowFlag = z.infer<typeof rowFlagSchema>
+export type RowChip = z.infer<typeof rowChipSchema>
+export type RowPath = z.infer<typeof rowPathSchema>
+export type SourceRowView = z.infer<typeof sourceRowViewSchema>
+
 /** One row of the record: a contributor, as the canonical tables describe it. */
 export const sourceRowSchema = z.object({
 	/** The contributor's own slug — what `openSource` takes. */
@@ -80,6 +117,8 @@ export const sourceRowSchema = z.object({
 	/** Every declared facet's values for this contributor, filters and carried. */
 	facets: z.record(z.string(), z.array(z.string())),
 	documents: z.array(sourceDocumentSchema),
+	/** How the row reads on the page, where the page's read computed it. */
+	view: sourceRowViewSchema.optional(),
 })
 export type SourceRow = z.infer<typeof sourceRowSchema>
 

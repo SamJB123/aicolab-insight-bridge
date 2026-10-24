@@ -29,3 +29,13 @@ export type {
 	SourcesSurface,
 	SourcesVocabulary,
 } from './types.ts'
+export {
+	type RowChip,
+	type RowFlag,
+	type RowPath,
+	rowChipSchema,
+	rowFlagSchema,
+	rowPathSchema,
+	type SourceRowView,
+	sourceRowViewSchema,
+} from './types.ts'

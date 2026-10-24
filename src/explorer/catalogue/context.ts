@@ -9,13 +9,28 @@ import type {
 	DocumentDetail,
 	EntityDetail,
 	GroupDetail,
+	Landscape,
+	ReportOverview,
 	TopicDetail,
 } from '@aicolab/insight-bridge-contracts/explorer'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import type { MethodAuthored } from '../../method.ts'
-import type { DerivedFacet } from '../../sources/types.ts'
+import type {
+	ConnectAdditions,
+	MethodAdditions,
+	OverviewAdditions,
+} from '../../report/additions.ts'
+import type {
+	DerivedFacet,
+	SourceRow,
+	SourceRowView,
+	SourcesResult,
+	SourcesVocabulary,
+} from '../../sources/types.ts'
+import type { WorldShape, WorldWords } from '../../world/record.ts'
 import type { ReadingAdditions, ReadingContext } from '../readings.ts'
 import type { ReadScope } from '../scope.ts'
+import type { RunAccount } from './run-account.ts'
 import type { LinkSite, SectionRoutes } from './shapes.ts'
 import type { NearestPassages, ToolContext, ToolReadContext } from './support.ts'
 
@@ -29,6 +44,36 @@ export interface ReadingAdditionsFor {
 		ctx: ReportCtx,
 	) => Promise<ReadingAdditions>
 	document?: (detail: DocumentDetail, ctx: ReportCtx) => Promise<ReadingAdditions>
+}
+
+/**
+ * What a report says on core's pages beyond the run's words, computed on the server for
+ * one request (settled 2026-10-25): its additions as data, its record page's words and
+ * how each row reads, the Brief's title, the galaxy's poster and the search's example.
+ * The site's loaders and the hub's door read the pages through core's page reads
+ * (./page-reads.ts), which call these, so a page says one thing wherever it is drawn.
+ */
+export interface PageHooks {
+	/** The overview's additions, given the page's own figures and landscape. */
+	overview?: (
+		ctx: ReportCtx,
+		page: { overview: ReportOverview; landscape: Landscape },
+	) => Promise<OverviewAdditions>
+	/** The Method page's additions, given the run's account (its documents by the document facet among it). */
+	method?: (ctx: ReportCtx, account: RunAccount) => Promise<MethodAdditions>
+	connect?: (ctx: ReportCtx) => Promise<ConnectAdditions>
+	sources?: {
+		/** The record page's words, given the page it heads. */
+		vocabulary: (result: SourcesResult, ctx: ReportCtx) => SourcesVocabulary
+		/** How each row reads; core's default view (the lens, the documents) where absent. */
+		view?: (rows: readonly SourceRow[], ctx: ReportCtx) => Promise<SourceRowView[]>
+	}
+	/** The Brief's title, given the record's scale. */
+	briefTitle?: (scale: { sources: number; topics: number }, ctx: ReportCtx) => string
+	/** The galaxy's poster, by its path on the report's site. */
+	poster?: string
+	/** The topic search's example question. */
+	searchPlaceholder?: string
 }
 
 /**
@@ -69,6 +114,10 @@ export interface ReportHost {
 	notes?: string
 	/** The routes of the sections a reading opens on, where the site's differ from the section's name. */
 	routes?: SectionRoutes
+	/** What the report says on core's pages beyond the run's words. */
+	pages?: PageHooks
+	/** How the world record reads this run's tables (the canonical shape where absent) and the words it reads in; null where the report serves no world. */
+	world?: { shape?: WorldShape; words?: WorldWords } | null
 }
 
 export interface ReportCtx {

@@ -7,16 +7,70 @@
  * a pasted link restores exactly what the sender was looking at and the back
  * button steps through filter states.
  *
- * What the page does NOT own is how a row reads. A submitter, an episode and
- * an oversight body want different chrome, and that is genuine per-corpus
- * content rather than deviation, so it arrives as the `row` render prop with
- * the canonical `SourceRow` to draw from.
+ * What the page does NOT own is what a row says. A submitter, an episode and
+ * an oversight body want different marks, and that is genuine per-corpus
+ * content rather than deviation, so it arrives as data on each row (its
+ * `view`: flags, a line, chips), computed by the report on the server, and the
+ * page draws every row the same way.
  */
-import type { JSX } from '@solidjs/web'
 import { For, onCleanup, Show } from 'solid-js'
 import './sources.css'
 import { SourcesSurfaceProvider, useSourcesSurface } from './surface.tsx'
-import type { SourceRow, SourcesResult, SourcesSurface } from './types.ts'
+import type { SourceRow, SourceRowView, SourcesResult, SourcesSurface } from './types.ts'
+
+/** One row as its view says it reads: the name with its flags and line, then its chips and path. */
+function RowBody(props: { row: SourceRow }) {
+	const view = (): SourceRowView => props.row.view ?? { flags: [], sub: null, chips: [] }
+	return (
+		<>
+			<span class="ib-src-name">
+				{props.row.name}
+				<For each={view().flags}>
+					{(flag) => (
+						<span
+							class={[
+								'ib-src-flag',
+								{
+									'ib-src-flag-hot': flag.tone === 'hot',
+									'ib-src-flag-notice': flag.tone === 'notice',
+								},
+							]}
+							title={flag.title}
+						>
+							{flag.text}
+						</span>
+					)}
+				</For>
+				<Show when={view().sub}>{(sub) => <span class="ib-src-sub">{sub()}</span>}</Show>
+			</span>
+			<span class="ib-src-meta">
+				<For each={view().chips}>
+					{(chip) => (
+						<span
+							class={[
+								'dw-chip',
+								{
+									'dw-chip-accent': chip.tone === 'accent',
+									'dw-chip-faint': chip.tone === 'faint',
+								},
+							]}
+							title={chip.title}
+						>
+							{chip.text}
+						</span>
+					)}
+				</For>
+				<Show when={view().path}>
+					{(path) => (
+						<span class="ib-src-path" title={path().title}>
+							{path().text}
+						</span>
+					)}
+				</Show>
+			</span>
+		</>
+	)
+}
 
 const n = (v: number) => v.toLocaleString('en-US')
 
@@ -162,12 +216,7 @@ function Counts(props: { d: SourcesResult }) {
 	)
 }
 
-export function SourcesPage(props: {
-	d: SourcesResult
-	surface: SourcesSurface
-	/** How ONE row reads. The only per-corpus content on the page. */
-	row: (row: SourceRow) => JSX.Element
-}) {
+export function SourcesPage(props: { d: SourcesResult; surface: SourcesSurface }) {
 	return (
 		<SourcesSurfaceProvider surface={props.surface}>
 			<div class="ib-sources">
@@ -219,7 +268,7 @@ export function SourcesPage(props: {
 													class="ib-src-row"
 													onClick={() => props.surface.openSource(row.entityId)}
 												>
-													{props.row(row)}
+													<RowBody row={row} />
 												</button>
 											)}
 										</For>

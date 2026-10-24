@@ -14,13 +14,14 @@ import type {
 } from '@aicolab/insight-bridge-contracts/explorer'
 import { Segmented } from '@aicolab/ui-solid'
 import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js'
-import { documentLabelOf, fmt, useReportSurface } from '../surface.tsx'
+import { fmt, useReportSurface } from '../surface.tsx'
 import {
 	AnalysisHead,
 	LensKey,
 	LensStrip,
 	lensWords,
 	pctOf,
+	useDocumentName,
 	WordsNotice,
 	wordsClass,
 } from './common.tsx'
@@ -193,6 +194,7 @@ function QuestionReader(props: { question: QuestionMeta; questionDetail: Questio
 
 function AnswerCard(props: { a: QuestionAnswer }) {
 	const s = useReportSurface()
+	const name = useDocumentName()
 	return (
 		<li class={['ib-report-an-answer', wordsClass(props.a)]}>
 			<div class="ib-report-an-evidence-who">
@@ -203,14 +205,7 @@ function AnswerCard(props: { a: QuestionAnswer }) {
 				>
 					{props.a.name}
 				</button>
-				<small class="fig-note">
-					{documentLabelOf(s, {
-						documentId: props.a.documentId,
-						title: props.a.documentTitle,
-						fileName: props.a.fileName,
-						facets: props.a.documentFacets,
-					})}
-				</small>
+				<small class="fig-note">{name(props.a.documentId)}</small>
 			</div>
 			<p class="ib-report-an-position">{props.a.position}</p>
 			<WordsNotice of={props.a} />
