@@ -112,6 +112,32 @@ export function resultText(result: ToolResult): string {
 	)
 }
 
+/** The protocol revision the console speaks: every request carries the `_meta` envelope
+ *  (revision, capabilities, client) and the headers that must agree with the body. A
+ *  server of the earlier revision ignores both. */
+export const PROTOCOL_VERSION = '2026-07-28'
+
+/** What the console declares about itself on every request. It can answer no ask. */
+export const CONSOLE_ENVELOPE = {
+	'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION,
+	'io.modelcontextprotocol/clientCapabilities': {},
+	'io.modelcontextprotocol/clientInfo': { name: 'insight-bridge-connect-console', version: '1' },
+}
+
+/** A request's params as the console sends them: the envelope first, then the call's own. */
+export const consoleParams = (params: Record<string, unknown>): Record<string, unknown> => ({
+	_meta: CONSOLE_ENVELOPE,
+	...params,
+})
+
+/** The last `data:` line of a server-sent event stream: a server that answers a request as
+ *  a stream ends it with the response. */
+function lastEvent(text: string): string | null {
+	const lines = text.split('\n').filter((line) => line.startsWith('data:'))
+	const last = lines.at(-1)
+	return last ? last.slice(5).trim() : null
+}
+
 /** One JSON-RPC round trip to the report's own endpoint, as an agent makes it. */
 export async function mcpRequest<T>(
 	endpoint: string,
@@ -120,17 +146,25 @@ export async function mcpRequest<T>(
 	params: Record<string, unknown>,
 	signal?: AbortSignal,
 ): Promise<T> {
+	const name = params.name ?? params.uri
 	const response = await fetch(endpoint, {
 		method: 'POST',
 		credentials: 'same-origin',
-		headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-		body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+		headers: {
+			'content-type': 'application/json',
+			accept: 'application/json, text/event-stream',
+			'mcp-protocol-version': PROTOCOL_VERSION,
+			'mcp-method': method,
+			...(typeof name === 'string' ? { 'mcp-name': name } : {}),
+		},
+		body: JSON.stringify({ jsonrpc: '2.0', id, method, params: consoleParams(params) }),
 		signal,
 	})
 	const text = await response.text()
+	const streamed = (response.headers.get('content-type') ?? '').includes('text/event-stream')
 	let body: { error?: { message?: string; data?: unknown }; result?: T }
 	try {
-		body = JSON.parse(text)
+		body = JSON.parse((streamed ? lastEvent(text) : null) ?? text)
 	} catch {
 		throw new Error(`The server returned HTTP ${response.status} without a JSON-RPC response.`)
 	}

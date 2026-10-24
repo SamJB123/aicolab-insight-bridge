@@ -32,6 +32,7 @@ import type { JSX } from '@solidjs/web'
 import { createEffect, createSignal, For, onSettled, Show } from 'solid-js'
 import {
 	type ConsoleTool,
+	consoleParams,
 	groupTools,
 	type InputSchema,
 	initialValue,
@@ -305,8 +306,13 @@ function ToolConsole(props: { tools: ConsoleTool[]; endpoint: string; nextId: ()
 			return { params: null, error: message(e) }
 		}
 	}
+	// the request as sent: an agent of the current revision carries its envelope in `_meta`
 	const envelope = (id: number, params: Record<string, unknown>) =>
-		JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params }, null, 2)
+		JSON.stringify(
+			{ jsonrpc: '2.0', id, method: 'tools/call', params: consoleParams(params) },
+			null,
+			2,
+		)
 	const preview = () => {
 		const r = request()
 		return sent() ?? (r.params ? envelope(0, r.params) : r.error)

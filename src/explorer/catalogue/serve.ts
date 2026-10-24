@@ -1,9 +1,9 @@
-/// <reference types="@cloudflare/workers-types" />
 /**
  * The serving half of the report catalogue: the one object every surface is a projection
  * of, and the two HTTP surfaces over it. A separate subpath from ../catalogue because it
  * stands on app-kit's api, whose door runs on `cloudflare:workers`; the catalogue itself
- * runs anywhere zod does.
+ * runs anywhere zod does. The Workers globals it names (Request, Response) come from the
+ * host's generated runtime types; core's own check reads them from tsconfig's `types`.
  *
  *   ReportCap        the class is the list (app-kit's doctrine): one method per read of
  *                    the catalogue, each a line over `callOperation`, holding the context
