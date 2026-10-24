@@ -44,7 +44,7 @@ import {
 	type StatChip,
 	type TopicLens,
 } from '../reader/content-builders.ts'
-import type { ReadingView } from '../reader/detail-sheet.tsx'
+import type { ReadingView } from '../reader/reading-view.ts'
 import { generationLabel } from '../tree.ts'
 import { questionClause } from '../world/schema.ts'
 

@@ -9,6 +9,19 @@
  *   import { Reading, buildTopicContent } from '@aicolab/insight-bridge/reader'
  */
 
+export type {
+	IBContentSection,
+	IBDocumentRow,
+	IBEntityRow,
+	IBFacetRow,
+	IBFlag,
+	IBNodeContent,
+	IBNodeId,
+	IBNodeRow,
+	IBNotice,
+	IBPoint,
+	IBQuote,
+} from '../galaxy/types.ts'
 export {
 	type AnalysisBlock,
 	buildContainerContent,
@@ -33,20 +46,12 @@ export {
 	type DetailLevel,
 	type DetailSheet,
 	type DetailSheetConfig,
-	type ReadingView,
 } from './detail-sheet.tsx'
 export { Reading, type ReadingProps } from './reader.tsx'
-export { DEFAULT_READING_SORT, type ReadingSort, ReadingSortControl, sortRows } from './sort-control.tsx'
-export type {
-	IBContentSection,
-	IBDocumentRow,
-	IBEntityRow,
-	IBFacetRow,
-	IBFlag,
-	IBNodeContent,
-	IBNodeId,
-	IBNodeRow,
-	IBNotice,
-	IBPoint,
-	IBQuote,
-} from '../galaxy/types.ts'
+export { type ReadingView, readingViewSchema } from './reading-view.ts'
+export {
+	DEFAULT_READING_SORT,
+	type ReadingSort,
+	ReadingSortControl,
+	sortRows,
+} from './sort-control.tsx'

@@ -15,6 +15,7 @@
  * receive the selected `IBNode` back and open their own detail surfaces
  * keyed by `key`.
  */
+import { z } from 'zod'
 
 /** Integer hierarchy depth: -1 = source/contributor, 0 = leaf topic,
  * positive tiers = successive container generations, increasing toward roots.
@@ -25,13 +26,19 @@ export type IBTier = number
  * `s:acme-inst` | `t:106` | `g1:14` | `g2:3`. */
 export type IBNodeId = string
 
-export interface IBFlag {
+/* The content shapes below are declared as zod schemas and their types inferred, so a
+ * reading can be published as an operation's output (the report catalogue's four
+ * `*_reading` tools) from the same definition the reader renders. Plain data, no
+ * functions: the schemas add nothing a consumer of the types sees. */
+
+export const ibFlagSchema = z.object({
 	/** Short chip text — "1 voice", "unscrutinised", "no theme". */
-	label: string
+	label: z.string(),
 	/** Hot flags read as warnings (host explorers' red-chip class). */
-	hot?: boolean
-	tip?: string
-}
+	hot: z.boolean().optional(),
+	tip: z.string().optional(),
+})
+export type IBFlag = z.infer<typeof ibFlagSchema>
 
 export interface IBNode {
 	id: IBNodeId
@@ -118,133 +125,151 @@ export interface IBTierMeta {
  * callback lives on GalaxyMapProps, never in IBGalaxy (which must stay
  * serialisable across the server boundary). */
 
-export interface IBQuote {
-	text: string
+export const ibQuoteSchema = z.object({
+	text: z.string(),
 	/** Attribution — entity/body/source name, year, etc. */
-	source?: string
+	source: z.string().optional(),
 	/** The quote's words are WITHHELD and `text` is the notice standing in
 	 * for them (a source whose content is gated — Indigenous Cultural and
 	 * Intellectual Property under a restricted deployment). Renders as a
 	 * notice, never as a quotation. */
-	withheld?: boolean
+	withheld: z.boolean().optional(),
 	/** A notice shown beside the words (a cultural notice on gated material
 	 * a reader may see); unused when `withheld`, whose text is the notice. */
-	notice?: string
-}
+	notice: z.string().optional(),
+})
+export type IBQuote = z.infer<typeof ibQuoteSchema>
+
+const linkSchema = z.object({ label: z.string(), href: z.string() })
 
 /** A notice the content itself carries — a cultural notice on gated
  * material, a withheld-content card. Rendered as a banded callout, first
  * among the sections, with the attribution and any way forward. */
-export interface IBNotice {
+export const ibNoticeSchema = z.object({
 	/** 'withheld' reads as a warning band; 'info' as a quiet one. */
-	tone: 'withheld' | 'info'
-	title: string
-	body: string
+	tone: z.enum(['withheld', 'info']),
+	title: z.string(),
+	body: z.string(),
 	/** Who the notice is about — the custodian, as the record names them. */
-	attribution?: string
+	attribution: z.string().optional(),
 	/** Links the reader can follow (a sign-in, a contact). `href` may be a
 	 * `mailto:`. */
-	links?: Array<{ label: string; href: string }>
-}
+	links: z.array(linkSchema).optional(),
+})
+export type IBNotice = z.infer<typeof ibNoticeSchema>
 
-export interface IBPoint {
+export const ibPointSchema = z.object({
 	/** The headline — an accordion summary, so keep it one scannable line. */
-	text: string
+	text: z.string(),
 	/** Elaboration shown inside the opened point (never concatenated into
 	 * `text`: the headline/detail split IS the reading anatomy). */
-	detail?: string
-	quotes?: IBQuote[]
-}
+	detail: z.string().optional(),
+	quotes: z.array(ibQuoteSchema).optional(),
+})
+export type IBPoint = z.infer<typeof ibPointSchema>
 
 /** One row of a lens table (voice/era/sector × stance × analysis). */
-export interface IBFacetRow {
-	label: string
+export const ibFacetRowSchema = z.object({
+	label: z.string(),
 	/** The galaxy node this row speaks about — rows carrying it are
 	 * ACTIONABLE (choosing flies there; hovering highlights the body). */
-	id?: IBNodeId
+	id: z.string().optional(),
 	/** Stance/position badge for this slice. */
-	badge?: string
+	badge: z.string().optional(),
 	/** CSS colour for the badge (host's position colours). */
-	badgeColor?: string
+	badgeColor: z.string().optional(),
 	/** 0..1 share for a trailing meter (reach/coverage). */
-	share?: number
+	share: z.number().optional(),
 	/** Membership-strength glyph, 1..3 of 3 — rendered as a wifi-signal icon
 	 * (settled 2026-08-16: primary = 3/full, exemplar = 2, high-value = 1).
 	 * When set, the renderer shows the icon INSTEAD of the badge chip and
 	 * uses `badge` as the icon's accessible name. */
-	signal?: 1 | 2 | 3
-	analysis?: string
+	signal: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+	analysis: z.string().optional(),
 	/** Verbatim quotes backing the row — provenance is a HARD requirement
 	 * (settled 2026-08-16): every corpus ships perspective quote tables, and
 	 * lens/perspective rows must carry them. */
-	quotes?: IBQuote[]
-}
+	quotes: z.array(ibQuoteSchema).optional(),
+})
+export type IBFacetRow = z.infer<typeof ibFacetRowSchema>
 
 /** One document belonging to a source entity. Multi-document corpora list
  * them in a `documents` section; choosing a row opens the DOCUMENT READING
  * level (settled 2026-08-16) via the host's `loadDocument`. 1:1 corpora
  * (source = document = entity) never emit the section — the entity reading
  * IS the document reading. */
-export interface IBDocumentRow {
-	documentId: string
-	label: string
+export const ibDocumentRowSchema = z.object({
+	documentId: z.string(),
+	label: z.string(),
 	/** Quiet metadata — year, corpus score, etc. */
-	detail?: string
-}
+	detail: z.string().optional(),
+})
+export type IBDocumentRow = z.infer<typeof ibDocumentRowSchema>
 
 /** One row of an entity list (top bodies/sources/sectors with counts). */
-export interface IBEntityRow {
-	label: string
-	detail?: string
-	count?: number
+export const ibEntityRowSchema = z.object({
+	label: z.string(),
+	detail: z.string().optional(),
+	count: z.number().optional(),
 	/** Denominator for the trailing meter; defaults to the section max. */
-	max?: number
-}
+	max: z.number().optional(),
+})
+export type IBEntityRow = z.infer<typeof ibEntityRowSchema>
 
 /** One ACTIONABLE child-node row (a theme's topics, a family's themes):
  * choosing it flies the camera there, hovering it highlights the body in the
  * scene. Rendered with the reader-switchable A–Z/reach ordering — the
  * package NEVER pre-ranks these (the Respect principles: how common a view
  * is does not say how much it matters). */
-export interface IBNodeRow {
-	id: IBNodeId
-	label: string
+export const ibNodeRowSchema = z.object({
+	id: z.string(),
+	label: z.string(),
 	/** Quiet corpus-describing metadata ("12 sources") — text, never a bar. */
-	detail?: string
+	detail: z.string().optional(),
 	/** Reach value for the reader's optional reach ordering. */
-	weight?: number
-}
+	weight: z.number().optional(),
+})
+export type IBNodeRow = z.infer<typeof ibNodeRowSchema>
 
-export type IBContentSection =
-	| { kind: 'notice'; title: string; notice: IBNotice }
-	| { kind: 'points'; title: string; points: IBPoint[] }
-	| { kind: 'facets'; title: string; rows: IBFacetRow[] }
-	| { kind: 'entities'; title: string; rows: IBEntityRow[] }
-	| { kind: 'nodes'; title: string; rows: IBNodeRow[] }
-	| { kind: 'documents'; title: string; rows: IBDocumentRow[] }
+export const ibContentSectionSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('notice'), title: z.string(), notice: ibNoticeSchema }),
+	z.object({ kind: z.literal('points'), title: z.string(), points: z.array(ibPointSchema) }),
+	z.object({ kind: z.literal('facets'), title: z.string(), rows: z.array(ibFacetRowSchema) }),
+	z.object({ kind: z.literal('entities'), title: z.string(), rows: z.array(ibEntityRowSchema) }),
+	z.object({ kind: z.literal('nodes'), title: z.string(), rows: z.array(ibNodeRowSchema) }),
+	z.object({ kind: z.literal('documents'), title: z.string(), rows: z.array(ibDocumentRowSchema) }),
+])
+export type IBContentSection = z.infer<typeof ibContentSectionSchema>
 
-export interface IBNodeContent {
+export const ibNodeContentSchema = z.object({
 	/** One-paragraph framing, rendered under the title. */
-	lede?: string
+	lede: z.string().optional(),
 	/** Headline figures as label/value chips. */
-	stats?: Array<{ label: string; value: string }>
+	stats: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
 	/** Flags the content itself carries (a single-sector topic, a document
 	 * the pipeline could not analyse) — the header's own flags come from the
 	 * node. */
-	flags?: IBFlag[]
-	sections: IBContentSection[]
+	flags: z.array(ibFlagSchema).optional(),
+	sections: z.array(ibContentSectionSchema),
 	/** A topic's contributors grouped by grade. The galaxy computes these
 	 * from its graph; a host without a graph (an app's detail sheet)
 	 * supplies them here. */
-	contributors?: Array<{
-		label: string
-		rows: Array<{ id: IBNodeId; label: string; detail?: string }>
-	}>
+	contributors: z
+		.array(
+			z.object({
+				label: z.string(),
+				rows: z.array(
+					z.object({ id: z.string(), label: z.string(), detail: z.string().optional() }),
+				),
+			}),
+		)
+		.optional(),
 	/** Cross-links — choosing one flies the camera there. */
-	related?: Array<{ id: IBNodeId; label: string }>
+	related: z.array(z.object({ id: z.string(), label: z.string() })).optional(),
 	/** Outbound links — the original document on its publisher's site. */
-	links?: Array<{ label: string; href: string }>
-}
+	links: z.array(linkSchema).optional(),
+})
+export type IBNodeContent = z.infer<typeof ibNodeContentSchema>
 
 /* The GalaxyCommand/GalaxyEvents wire was DELETED by the headless-core
  * rewrite (settled 2026-08-16): navigation truth lives in GalaxyNavCore

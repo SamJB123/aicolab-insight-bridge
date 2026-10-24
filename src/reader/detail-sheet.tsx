@@ -26,20 +26,12 @@
 import { AdaptiveModalSheet } from '@aicolab/ui-solid'
 import { type JSX, Loading } from '@solidjs/web'
 import { createMemo, createSignal, Show } from 'solid-js'
-import type { IBFlag, IBNodeContent, IBNodeId } from '../galaxy/types.ts'
+import type { IBNodeId } from '../galaxy/types.ts'
 import { Reading } from './reader.tsx'
+import type { ReadingView } from './reading-view.ts'
 
-/** What an app's adapter hands the sheet: the reader's content plus its chrome. */
-export interface ReadingView {
-	eyebrow: string
-	title: string
-	detail?: string
-	mix?: Record<string, number>
-	flags?: IBFlag[]
-	content: IBNodeContent
-	/** Set when this reading sits a level down — names the way back. */
-	upLabel?: string
-}
+/** What an app's adapter hands the sheet: the reader's content plus its chrome (./reading-view). */
+export type { ReadingView }
 
 /** One document of a multi-document source, read on its own. */
 export type DetailLevel = { kind: 'document'; documentId: string; label: string }

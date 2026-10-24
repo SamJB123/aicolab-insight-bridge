@@ -8,8 +8,13 @@
  *
  * What stays per corpus is how a row READS — a submitter, an episode and an
  * oversight body want different chrome — and that arrives as a render prop.
+ *
+ * The page of the record (`SourcesResult`) crosses a wire as an operation's
+ * output too, so it and its rows are declared as zod schemas with their types
+ * inferred: one definition for the page and the report catalogue.
  */
-import type { FacetSpec } from '../brief/types.ts'
+import { z } from 'zod'
+import { type FacetSpec, facetSpecSchema } from '../brief/types.ts'
 import type { ReadScope } from '../explorer/scope.ts'
 
 export type { FacetSpec }
@@ -46,56 +51,62 @@ export interface DerivedFacet {
 }
 
 /** One value of one facet, with how many contributors hold it. */
-export interface SourceFacetValue {
-	value: string
-	sources: number
-}
+export const sourceFacetValueSchema = z.object({
+	value: z.string(),
+	sources: z.number().int(),
+})
+export type SourceFacetValue = z.infer<typeof sourceFacetValueSchema>
 
 /** A facet as the filter bar meets it: resolved label, and its vocabulary. */
-export type SourceFacet = FacetSpec & {
-	label: string
-	values: SourceFacetValue[]
-}
+export const sourceFacetSchema = facetSpecSchema.extend({
+	label: z.string(),
+	values: z.array(sourceFacetValueSchema),
+})
+export type SourceFacet = z.infer<typeof sourceFacetSchema>
 
 /** One document of one contributor, with its own facets. */
-export interface SourceDocument {
-	documentId: string
+export const sourceDocumentSchema = z.object({
+	documentId: z.string(),
 	/** The document-granularity facets this corpus carries. */
-	facets: Record<string, string[]>
-}
+	facets: z.record(z.string(), z.array(z.string())),
+})
+export type SourceDocument = z.infer<typeof sourceDocumentSchema>
 
 /** One row of the record: a contributor, as the canonical tables describe it. */
-export interface SourceRow {
+export const sourceRowSchema = z.object({
 	/** The contributor's own slug — what `openSource` takes. */
-	entityId: string
-	name: string
+	entityId: z.string(),
+	name: z.string(),
 	/** Every declared facet's values for this contributor, filters and carried. */
-	facets: Record<string, string[]>
-	documents: SourceDocument[]
-}
+	facets: z.record(z.string(), z.array(z.string())),
+	documents: z.array(sourceDocumentSchema),
+})
+export type SourceRow = z.infer<typeof sourceRowSchema>
 
 /** A page of the record, grouped when the corpus asked for grouping. */
-export interface SourceGroup {
+export const sourceGroupSchema = z.object({
 	/** The facet value this group is under; null for the ungrouped remainder. */
-	value: string | null
-	rows: SourceRow[]
-}
+	value: z.string().nullable(),
+	rows: z.array(sourceRowSchema),
+})
+export type SourceGroup = z.infer<typeof sourceGroupSchema>
 
-export interface SourcesResult {
-	rows: SourceRow[]
+export const sourcesResultSchema = z.object({
+	rows: z.array(sourceRowSchema),
 	/** The same rows under their `groupBy` value; one group when ungrouped. */
-	groups: SourceGroup[]
-	page: number
-	pages: number
-	pageSize: number
+	groups: z.array(sourceGroupSchema),
+	page: z.number().int(),
+	pages: z.number().int(),
+	pageSize: z.number().int(),
 	/** Contributors matching this filter. */
-	total: number
+	total: z.number().int(),
 	/** Contributors in the whole record. */
-	grandTotal: number
+	grandTotal: z.number().int(),
 	/** Each declared filter with its vocabulary, counted over the whole record. */
-	facets: SourceFacet[]
-	groupBy: string | null
-}
+	facets: z.array(sourceFacetSchema),
+	groupBy: z.string().nullable(),
+})
+export type SourcesResult = z.infer<typeof sourcesResultSchema>
 
 /**
  * The reader's place in the record, and the whole of the URL contract.

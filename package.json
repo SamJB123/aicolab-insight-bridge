@@ -33,6 +33,7 @@
 		"./prepare/tables": "./src/prepare/tables.ts",
 		"./explorer/mcp": "./src/explorer/mcp.ts",
 		"./explorer/tools": "./src/explorer/tools.ts",
+		"./explorer/catalogue": "./src/explorer/catalogue/index.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",
 		"./galaxy": "./src/galaxy/index.ts",
@@ -74,6 +75,7 @@
 		"zod": "catalog:"
 	},
 	"dependencies": {
+		"@aicolab/app-kit": "workspace:^",
 		"@aicolab/better-auth": "workspace:^",
 		"d3-force": "catalog:"
 	},

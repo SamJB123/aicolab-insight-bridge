@@ -11,23 +11,28 @@
  * So facets are a LIST everywhere they appear. A run with one facet passes a
  * list of one. Nothing here is per-corpus except the words, and those come in
  * as vocabulary.
+ *
+ * The shapes that cross a wire as an operation's output (a facet's declaration,
+ * the chapter reading) are declared as zod schemas with their types inferred, so
+ * the report catalogue publishes them from this one definition.
  */
+import { z } from 'zod'
 
 /** A facet the reading surfaces, as the app declares it. */
-export interface FacetSpec {
+export const facetSpecSchema = z.object({
 	/** The `facet` key as the pipeline wrote it: 'sector', 'voice', 'era'. */
-	key: string
+	key: z.string(),
 	/** The reader's word for it. Defaults to the `facet.noun` in the database. */
-	label?: string
+	label: z.string().optional(),
 	/**
 	 * True when the facet's values have a meaningful order (era, period, decade),
 	 * which is the one thing the database cannot tell us: a controlled vocabulary
 	 * is no guarantee of order, and 'sector' is as much a vocabulary as 'era'.
 	 * Ordinal facets draw as a distribution; nominal ones draw as shares.
 	 */
-	ordinal?: boolean
+	ordinal: z.boolean().optional(),
 	/** Value order for an ordinal facet; defaults to the values' natural sort. */
-	order?: string[]
+	order: z.array(z.string()).optional(),
 	/**
 	 * How a value should READ, where the pipeline's own word is not the
 	 * reader's: `True` → "Gave evidence at a hearing",
@@ -35,8 +40,9 @@ export interface FacetSpec {
 	 * crosses the server boundary with the rest of the config. Values absent
 	 * from the map read as the pipeline wrote them.
 	 */
-	labels?: Record<string, string>
-}
+	labels: z.record(z.string(), z.string()).optional(),
+})
+export type FacetSpec = z.infer<typeof facetSpecSchema>
 
 /** One facet value's share of a node's written positions. */
 export interface FacetShare {
@@ -136,63 +142,68 @@ export interface BriefData {
 
 /* ── the reading, fetched per chapter on demand ─────────────────────────── */
 
-export interface ReadingQuote {
-	text: string
-	source: string
-	entityId: string
+export const readingQuoteSchema = z.object({
+	text: z.string(),
+	source: z.string(),
+	entityId: z.string(),
 	/** The speaker's primary values on the declared facets. */
-	detail: string | null
+	detail: z.string().nullable(),
 	/** The words are WITHHELD and `text` is the notice standing in for them
 	 * (a contributor whose content the app gates — Indigenous Cultural and
 	 * Intellectual Property under a restricted deployment). */
-	withheld?: boolean
+	withheld: z.boolean().optional(),
 	/** The scope's notice: the text standing in when `withheld`, else shown beside the words. */
-	notice?: string
-}
+	notice: z.string().optional(),
+})
+export type ReadingQuote = z.infer<typeof readingQuoteSchema>
 
-export interface ReadingPoint {
-	id: number
-	topicId: number
-	point: string
-	details: string
-	quote: ReadingQuote | null
-}
+export const readingPointSchema = z.object({
+	id: z.number().int(),
+	topicId: z.number().int(),
+	point: z.string(),
+	details: z.string(),
+	quote: readingQuoteSchema.nullable(),
+})
+export type ReadingPoint = z.infer<typeof readingPointSchema>
 
 /** One facet value's position on one topic — a cell of the who-says-what matrix. */
-export interface FacetPin {
-	topicId: number
-	facet: string
-	value: string
-	position: string
-	analysis: string
-}
+export const facetPinSchema = z.object({
+	topicId: z.number().int(),
+	facet: z.string(),
+	value: z.string(),
+	position: z.string(),
+	analysis: z.string(),
+})
+export type FacetPin = z.infer<typeof facetPinSchema>
 
-export interface Pushback {
-	topicId: number
-	entityId: string
-	name: string
-	detail: string | null
-	position: string
+export const pushbackSchema = z.object({
+	topicId: z.number().int(),
+	entityId: z.string(),
+	name: z.string(),
+	detail: z.string().nullable(),
+	position: z.string(),
 	/** The pipeline's title for the stance; the notice when `withheld`. */
-	title: string
+	title: z.string(),
 	/** Empty when `withheld`. */
-	analysis: string
+	analysis: z.string(),
 	/** The stance's text is withheld (see `ReadingQuote.withheld`); the
 	 * contributor and its position label stay. */
-	withheld?: boolean
+	withheld: z.boolean().optional(),
 	/** The scope's notice (see `ReadingQuote.notice`). */
-	notice?: string
-}
+	notice: z.string().optional(),
+})
+export type Pushback = z.infer<typeof pushbackSchema>
 
-export interface ChapterReading {
-	id: number
+export const chapterReadingSchema = z.object({
+	id: z.number().int(),
 	/** Topics the reading draws on, in reach order. */
-	topicIds: number[]
-	points: ReadingPoint[]
+	topicIds: z.array(z.number().int()),
+	points: z.array(readingPointSchema),
 	/** Pins for EVERY declared facet; the matrix renders one section per facet. */
-	pins: FacetPin[]
-	pushback: Pushback[]
-}
+	pins: z.array(facetPinSchema),
+	pushback: z.array(pushbackSchema),
+})
+export type ChapterReading = z.infer<typeof chapterReadingSchema>
 
 /* ── the words ──────────────────────────────────────────────────────────── */
 
