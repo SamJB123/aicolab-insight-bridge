@@ -13,12 +13,15 @@
  *
  * What a report adds of its own (a tool only its tables can answer) is its own file of
  * operations beside this catalogue; the scope it reads the record in is its own too.
+ * The serving half (the capability class, MCP and REST over it) is ./serve, a separate
+ * subpath: it stands on `cloudflare:workers`, and this half runs anywhere zod does.
  */
-import type { AnyOperation } from '@aicolab/app-kit/api/define'
+import type { AnyOperation, View } from '@aicolab/app-kit/api/define'
 import type { ReportCtx } from './context.ts'
 import { readersFor } from './readers.ts'
 import { GROUP, readsFor } from './reads.ts'
 import type { ToolContext } from './support.ts'
+import { tasksFor } from './tasks.ts'
 
 export type { ReadingAdditionsFor, ReportCtx, ReportHost } from './context.ts'
 export { readContext } from './context.ts'
@@ -44,30 +47,69 @@ export {
 export interface ReportCatalogue {
 	/** Every operation this run serves, in the order the surfaces list them. */
 	operations: AnyOperation<ReportCtx>[]
-	/** The run's reads by name (every read, served or not), for a host that calls one directly. */
+	/** The names this run serves. */
+	served: ReadonlySet<string>
+	/** Every operation by name, served or not, for a host that calls one directly. */
+	byName: ReadonlyMap<string, AnyOperation<ReportCtx>>
 	reads: ReturnType<typeof readsFor>
 	readers: ReturnType<typeof readersFor>
+	tasks: ReturnType<typeof tasksFor>
 	/** The Connect page's groups, in the order they read. */
 	groups: readonly string[]
 }
 
-const built = new WeakMap<ToolContext, ReportCatalogue>()
+export interface CatalogueOptions {
+	/** The MCP App that renders a reading's result, for a host that declared the UI extension (the app's own build). */
+	view?: View
+}
 
-/** The catalogue for a run's facts, built once per `ToolContext` object (which ./support keeps per record version). */
-export function reportCatalogue(run: ToolContext): ReportCatalogue {
-	const kept = built.get(run)
+/** The operations a view renders: the four readings a drawer opens. */
+const VIEWED = new Set(['topic_reading', 'group_reading', 'source_reading', 'document_reading'])
+
+const built = new WeakMap<ToolContext, Map<string, ReportCatalogue>>()
+
+/**
+ * The catalogue for a run's facts, built once per `ToolContext` object (which ./support
+ * keeps per record version) and per view.
+ */
+export function reportCatalogue(run: ToolContext, options: CatalogueOptions = {}): ReportCatalogue {
+	const key = options.view?.uri ?? ''
+	const kept = built.get(run)?.get(key)
 	if (kept) return kept
 	const reads = readsFor(run)
 	const readers = readersFor(run)
+	const tasks = tasksFor(run)
+	const withView = (operation: AnyOperation<ReportCtx>): AnyOperation<ReportCtx> =>
+		options.view && VIEWED.has(operation.name) ? { ...operation, view: options.view } : operation
+	const operations = [...reads.served, ...tasks.served, ...readers.served].map(withView)
+	const byName = new Map<string, AnyOperation<ReportCtx>>()
+	for (const group of [reads, tasks, readers]) {
+		for (const [name, value] of Object.entries(group)) {
+			if (name === 'served' || !isOperation(value)) continue
+			byName.set(value.name, withView(value))
+		}
+	}
 	const catalogue: ReportCatalogue = {
-		operations: [...reads.served, ...readers.served],
+		operations,
+		served: new Set(operations.map((operation) => operation.name)),
+		byName,
 		reads,
 		readers,
+		tasks,
 		groups: Object.values(GROUP),
 	}
-	built.set(run, catalogue)
+	const forRun = built.get(run) ?? new Map<string, ReportCatalogue>()
+	forRun.set(key, catalogue)
+	built.set(run, forRun)
 	return catalogue
 }
+
+const isOperation = (value: unknown): value is AnyOperation<ReportCtx> =>
+	typeof value === 'object' &&
+	value !== null &&
+	'name' in value &&
+	'handler' in value &&
+	typeof value.handler === 'function'
 
 /**
  * The connector's instructions: what the record is, its scale and the usual path through
@@ -89,8 +131,8 @@ export function reportInstructions(run: ToolContext, extra?: string): string {
 			? `; ${entities} and ${documents} carry controlled vocabularies (${overview.tagCategories.map((t) => t.category).join(', ')})`
 			: '') +
 		(overview.questions ? `; answers to ${overview.questions} questions are recorded` : '') +
-		'. Typical flow: corpus_overview → find_topics / list_topics → get_topic, topic_quotes, source_perspectives → get_source / get_document for source-level detail; contested_topics for the disagreements. Every listing is a page (offset, limit) with its total; a detail says where the rest is. Ids round-trip between tools, and a topic, a source or a document is also a Markdown resource (report://topics/{topic_id}, report://sources/{source}, report://documents/{document_id}). ' +
-		`${entity.charAt(0).toUpperCase()}${entity.slice(1)} counts are NOT prevalence: these are the ${entities} in this record, not a sample of any population. ` +
+		'. Typical flow: corpus_overview → find_topics / list_topics → get_topic, topic_quotes, source_perspectives → get_source / get_document for source-level detail; contested_topics for the disagreements. Every listing is a page (offset, limit) with its total; a detail says where the rest is. Ids round-trip between tools, and a topic, a source or a document is also a Markdown resource (report://topics/{topic_id}, report://sources/{source}, report://documents/{document_id}). reading_list, draft_brief and compare_sources are long-running: a client that declared the Tasks extension is handed a task (tasks/get, tasks/update, tasks/cancel; the resource task://{taskId}). ' +
+		`${entity.charAt(0).toUpperCase()}${entity.slice(1)} counts are NOT prevalence: these are the ${entities} in this record, not a sample of any population.` +
 		(extra ? ` ${extra}` : '')
-	).trimEnd()
+	)
 }

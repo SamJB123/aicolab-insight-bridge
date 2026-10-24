@@ -12,6 +12,9 @@ export const readingViewSchema = z.object({
 	title: z.string(),
 	detail: z.string().optional(),
 	mix: z.record(z.string(), z.number()).optional(),
+	/** The mix's keys in the run's scale order, and the host's colour for each, where the reading carries its scale (a catalogue's does). */
+	mixOrder: z.array(z.string()).optional(),
+	mixColors: z.record(z.string(), z.string()).optional(),
 	flags: z.array(ibFlagSchema).optional(),
 	content: ibNodeContentSchema,
 	/** Set when this reading sits a level down — names the way back. */

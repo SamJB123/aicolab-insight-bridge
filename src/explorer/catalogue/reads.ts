@@ -112,6 +112,7 @@ export const GROUP = {
 	topics: 'Anatomy of a topic',
 	facets: 'Facets & vocabularies',
 	analysis: 'Custom analysis',
+	tasks: 'Long reads',
 	readers: 'The report’s pages',
 } as const
 

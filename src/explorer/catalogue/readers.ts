@@ -157,6 +157,13 @@ function trimReading(view: ReadingView): ReadingView {
 }
 const words = (ctx: ReportCtx) => ctx.run.words
 const offset = z.coerce.number().int().min(0).default(0)
+
+/** A reading with its scale: the mix's order and colours, so a view with no run words draws the bar as the site does. */
+const withScale = (view: ReadingView, w: RunWords): ReadingView => ({
+	...view,
+	mixOrder: w.scale.order,
+	mixColors: positionColors(w.scale),
+})
 const limitOf = (max: number, fallback: number) =>
 	z.coerce.number().int().min(1).max(max).default(fallback)
 
@@ -777,7 +784,7 @@ export function readersFor(t: ToolContext) {
 			const d = await x.topicById(ctx.db, a.topic_id, ctx.scope)
 			if (!d) throw new NotFound(`No topic with id ${a.topic_id}.`)
 			const add = await ctx.host.readings?.additions?.topic?.(d, ctx)
-			return trimReading(topicReading(d, readingContextOf(ctx), add))
+			return trimReading(withScale(topicReading(d, readingContextOf(ctx), add), words(ctx)))
 		},
 	})
 
@@ -799,7 +806,7 @@ export function readersFor(t: ToolContext) {
 			const d = await x.groupById(ctx.db, a.supercluster_id, ctx.scope)
 			if (!d) throw new NotFound(`No grouping node with id ${a.supercluster_id}.`)
 			const add = await ctx.host.readings?.additions?.group?.(d, ctx)
-			return trimReading(groupReading(d, readingContextOf(ctx), add))
+			return trimReading(withScale(groupReading(d, readingContextOf(ctx), add), words(ctx)))
 		},
 	})
 
@@ -820,7 +827,7 @@ export function readersFor(t: ToolContext) {
 			const sole =
 				only && !more.length ? await x.documentById(ctx.db, only.documentId, ctx.scope) : null
 			const add = await ctx.host.readings?.additions?.source?.(e, sole, ctx)
-			return trimReading(sourceReading(e, sole, readingContextOf(ctx), add))
+			return trimReading(withScale(sourceReading(e, sole, readingContextOf(ctx), add), words(ctx)))
 		},
 	})
 
@@ -836,7 +843,7 @@ export function readersFor(t: ToolContext) {
 			const d = await x.documentById(ctx.db, a.document_id, ctx.scope)
 			if (!d) throw new NotFound(`No ${nouns.document} ${a.document_id}.`)
 			const add = await ctx.host.readings?.additions?.document?.(d, ctx)
-			return trimReading(documentReading(d, readingContextOf(ctx), add))
+			return trimReading(withScale(documentReading(d, readingContextOf(ctx), add), words(ctx)))
 		},
 	})
 

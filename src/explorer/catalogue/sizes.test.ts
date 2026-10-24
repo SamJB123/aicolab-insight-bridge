@@ -53,6 +53,9 @@ const DETAILS = new Set([
 	'group_reading',
 	'source_reading',
 	'document_reading',
+	'reading_list',
+	'draft_brief',
+	'compare_sources',
 ])
 
 const kb = (bytes: number) => `${(bytes / 1024).toFixed(1)} KB`
@@ -129,6 +132,13 @@ describe.skipIf(!file || !existsSync(file))('the report catalogue over a run dat
 		if (operation.name === 'source_reading') given('source', examples.sourceId)
 		if (operation.name === 'document_reading') given('document_id', examples.documentId)
 		if (operation.name === 'analysis') given('task_id', Object.keys(ctx.run.words.tasks)[0])
+		if (operation.name === 'compare_sources') {
+			const two = (await x.entities(db)).filter((e) => e.topics > 0).slice(0, 2)
+			given(
+				'sources',
+				two.map((e) => e.entityId),
+			)
+		}
 		if (operation.name === 'analysis_drill') {
 			const tasks = Object.entries(ctx.run.words.tasks)
 			const perspectiveTask = tasks.find(([, task]) => task.type === 'perspective_analysis')
