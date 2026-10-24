@@ -6,6 +6,7 @@
  * the Method page's read; the host's method hook is given it.
  */
 import type { MethodData, RunMethod } from '@aicolab/insight-bridge-contracts/explorer'
+import { DEFAULT_RUN_CONFIG } from '@aicolab/insight-bridge-contracts/run-config'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { eq } from 'drizzle-orm'
 import { buildMethod } from '../../method.ts'
@@ -30,13 +31,13 @@ export async function runAccount(ctx: ReportCtx): Promise<RunAccount> {
 		pages.methodData(ctx.db, ctx.run.words, ctx.scope),
 		facet ? pages.documentsBy(ctx.db, ctx.run.words, facet, ctx.scope) : Promise.resolve([]),
 	])
-	if (!meta?.profile || !meta.runConfig)
-		throw new Error(
-			'[catalogue] run_meta.profile / run_config are missing: the run cannot account for itself',
-		)
+	if (!meta?.profile)
+		throw new Error('[catalogue] run_meta.profile is missing: the run cannot account for itself')
+	// a run that stored no config ran under the default one (settled 2026-10-25)
+	const config = meta.runConfig ?? DEFAULT_RUN_CONFIG
 	return {
 		data,
-		method: buildMethod(meta.profile, meta.runConfig, data, ctx.host.method ?? {}),
+		method: buildMethod(meta.profile, config, data, ctx.host.method ?? {}),
 		documentsBy,
 	}
 }

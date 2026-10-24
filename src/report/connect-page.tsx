@@ -74,7 +74,7 @@ export type ConnectAccess =
 	  }
 
 export function ConnectPage(props: {
-	/** The report's MCP endpoint, as a path on this origin: '/mcp', '/mcp/<run>'. */
+	/** The report's MCP endpoint, a whole URL on the report's own origin (core's connectPage read), wherever the page is drawn. */
 	endpoint: string
 	/** The name an assistant lists the server under: 'insightbridge-aph-ai'. */
 	serverName: string
@@ -108,8 +108,7 @@ function ConnectBody(props: {
 		const lens = s.words.lens
 		return lens ? (s.words.facets[lens]?.heading ?? lens) : null
 	}
-	const [origin, setOrigin] = createSignal('')
-	const url = () => `${origin()}${props.endpoint}`
+	const url = () => props.endpoint
 	const [tools, setTools] = createSignal<ConsoleTool[]>([])
 	const [loading, setLoading] = createSignal(true)
 	const [loadError, setLoadError] = createSignal<string | null>(null)
@@ -133,7 +132,6 @@ function ConnectBody(props: {
 	createEffect(
 		() => props.endpoint,
 		(endpoint) => {
-			setOrigin(window.location.origin)
 			void load(endpoint)
 			return () => discovery?.abort()
 		},

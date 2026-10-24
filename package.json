@@ -37,6 +37,7 @@
 		"./explorer/catalogue/serve": "./src/explorer/catalogue/serve.ts",
 		"./reader/report-view": "./src/reader/report-view.tsx",
 		"./server/report-auth": "./src/server/report-auth.ts",
+		"./server/report-cors": "./src/server/report-cors.ts",
 		"./brief/data": "./src/brief/data.ts",
 		"./brief/types": "./src/brief/types.ts",
 		"./galaxy": "./src/galaxy/index.ts",

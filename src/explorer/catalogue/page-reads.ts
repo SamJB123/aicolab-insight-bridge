@@ -34,7 +34,7 @@ import type {
 	MethodAdditions,
 	OverviewAdditions,
 } from '../../report/additions.ts'
-import { sourcesData } from '../../sources/data.ts'
+import { sourcesData, sourcesSearchOf } from '../../sources/data.ts'
 import type {
 	SourceRow,
 	SourceRowView,
@@ -111,12 +111,18 @@ export async function methodPage(ctx: ReportCtx): Promise<MethodPageData> {
 	return { words: ctx.run.words, data: account.data, method: account.method, additions }
 }
 
-export type ConnectPageData = { words: RunWords; additions: ConnectAdditions }
+export type ConnectPageData = {
+	words: RunWords
+	/** The report's MCP endpoint, a whole URL on its own origin: the hub's console calls it there. */
+	endpoint: string
+	additions: ConnectAdditions
+}
 
-/** The Connect page's words: the run's, with the report's reading notes. */
+/** The Connect page's words: the run's, with the report's MCP endpoint and its reading notes. */
 export async function connectPage(ctx: ReportCtx): Promise<ConnectPageData> {
 	return {
 		words: ctx.run.words,
+		endpoint: onSite(ctx, ctx.host.mcpPath ?? '/mcp'),
 		additions: (await ctx.host.pages?.connect?.(ctx)) ?? {},
 	}
 }
@@ -189,6 +195,7 @@ export async function sourcesPage(ctx: ReportCtx, search: SourcesSearch): Promis
 		source: words.nouns.entity,
 		sources: words.nouns.entities,
 		title: `All ${fmt(result.grandTotal)} ${words.nouns.entities}`,
+		...(words.standfirst ? { standfirst: words.standfirst } : {}),
 	}
 	return { ...viewed, words, vocabulary }
 }
@@ -329,12 +336,6 @@ const chapterRequestSchema = z.object({
 	full: z.boolean(),
 })
 
-/** The record's search: free text, a page, and one value per declared facet (its own name). */
-const sourcesSearchSchema = z.record(
-	z.string(),
-	z.union([z.string().max(500), z.number().int().min(1)]).optional(),
-)
-
 /** What each page read answers, by name. */
 export type PageResults = {
 	overviewPage: OverviewPageData
@@ -366,7 +367,7 @@ const PAGE_READS: { [N in PageName]: (ctx: ReportCtx, input: unknown) => Promise
 		connectPage: (ctx) => connectPage(ctx),
 		briefPage: (ctx) => briefPage(ctx),
 		chapterPage: (ctx, input) => chapterPage(ctx, chapterRequestSchema.parse(input)),
-		sourcesPage: (ctx, input) => sourcesPage(ctx, sourcesSearchSchema.parse(input ?? {})),
+		sourcesPage: (ctx, input) => sourcesPage(ctx, sourcesSearchOf(input)),
 		galaxyPage: (ctx) => galaxyPage(ctx),
 		searchPage: async (ctx) => searchPage(ctx),
 		topicSearch: (ctx, input) => topicSearchOf(ctx, z.string().max(2000).parse(input)),

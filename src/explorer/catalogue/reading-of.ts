@@ -49,7 +49,7 @@ export const readingTargetSchema = z.discriminatedUnion('kind', [
 ])
 export type ReadingRequest = z.infer<typeof readingTargetSchema>
 
-/** One reading, whole; null when the record has no such subject (or the reader's scope leaves it out). */
+/** One reading, whole; null when the record has no such subject (or the reader's scope leaves it out), and for a topic confirmed as junk (settled 2026-10-25). */
 export async function readingOf(
 	ctx: ReportCtx,
 	target: ReadingRequest,
@@ -60,7 +60,9 @@ export async function readingOf(
 	switch (target.kind) {
 		case 'topic': {
 			const d = await x.topicById(ctx.db, target.key, ctx.scope)
-			return d ? withScale(topicReading(d, c, await own?.topic?.(d, ctx)), w) : null
+			return d && d.junkStatus !== 'confirmed'
+				? withScale(topicReading(d, c, await own?.topic?.(d, ctx)), w)
+				: null
 		}
 		case 'group': {
 			const d = await x.groupById(ctx.db, target.key, ctx.scope)

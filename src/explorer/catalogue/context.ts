@@ -114,6 +114,8 @@ export interface ReportHost {
 	notes?: string
 	/** The routes of the sections a reading opens on, where the site's differ from the section's name. */
 	routes?: SectionRoutes
+	/** The path of the report's MCP endpoint on its origin, where it is not '/mcp' (a pipeline run's '/mcp/<run>'). */
+	mcpPath?: string
 	/** What the report says on core's pages beyond the run's words. */
 	pages?: PageHooks
 	/** How the world record reads this run's tables (the canonical shape where absent) and the words it reads in; null where the report serves no world. */

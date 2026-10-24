@@ -149,7 +149,8 @@ export async function mcpRequest<T>(
 	const name = params.name ?? params.uri
 	const response = await fetch(endpoint, {
 		method: 'POST',
-		credentials: 'same-origin',
+		// the hub calls a report's endpoint on the report's origin (core's server/report-cors)
+		credentials: 'include',
 		headers: {
 			'content-type': 'application/json',
 			accept: 'application/json, text/event-stream',

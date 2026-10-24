@@ -327,24 +327,26 @@ export async function sourcesData(
 	return { rows, groups, page, pages, pageSize, total, grandTotal, facets, groupBy }
 }
 
+/** The longest free text or facet value a search carries. */
+const SEARCH_VALUE_MAX = 500
+
 /**
- * The route's search-param validator, built from the facets it declares.
- *
- * Every corpus's record reads the same way in a URL — `?q=…&<facet>=…&page=…`
- * — so this is the whole of the contract and no app writes its own.
+ * The record's search, read off a URL or a request (settled 2026-10-25): free text, a
+ * page, and one value per facet under the facet's own name — `?q=…&<facet>=…&page=…`,
+ * the whole of the contract, for every host. Any facet key is read: which facets filter
+ * is the run's (its site's filters), and the record reads the declared ones alone
+ * (`sourcesData`), so a host keeps no list of its own.
  */
-export const sourcesSearchValidator =
-	(filters: { key: string }[]) =>
-	(raw: Record<string, unknown>): SourcesSearch => {
-		const out: SourcesSearch = {}
-		const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
-		const q = str(raw.q)
-		if (q) out.q = q
-		for (const f of filters) {
-			const v = str(raw[f.key])
-			if (v) out[f.key] = v
+export function sourcesSearchOf(raw: unknown): SourcesSearch {
+	const out: SourcesSearch = {}
+	if (typeof raw !== 'object' || raw === null) return out
+	for (const [key, value] of Object.entries(raw)) {
+		if (key === 'page') {
+			const page = Number(value)
+			if (Number.isFinite(page) && page > 1) out.page = Math.floor(page)
+		} else if (typeof value === 'string' && value.trim()) {
+			out[key] = value.trim().slice(0, SEARCH_VALUE_MAX)
 		}
-		const page = Number(raw.page)
-		if (Number.isFinite(page) && page > 1) out.page = Math.floor(page)
-		return out
 	}
+	return out
+}

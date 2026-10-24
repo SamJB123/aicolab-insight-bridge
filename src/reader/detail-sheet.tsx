@@ -17,11 +17,9 @@
  * that here rather than forking the sheet. `S` is the app's own selection
  * union.
  *
- * STYLING IS THE HOST'S, deliberately, and unlike the structure tree: this
- * renders the `dw`, `dw-loading`, `dw-chip`, `dw-dot` and `cite` classes that
- * every consuming app already defines and also uses in its own prose and
- * browsers, and several apps flavour differently on purpose. The sheet
- * therefore ships no stylesheet of its own.
+ * The `dw`, `dw-loading`, `dw-chip`, `dw-dot` and `cite` classes this renders
+ * are styled once, in the site frame (../site/site.css, settled 2026-10-25):
+ * every host draws the drawer with core's styles alone.
  */
 import { AdaptiveModalSheet } from '@aicolab/ui-solid'
 import { type JSX, Loading } from '@solidjs/web'

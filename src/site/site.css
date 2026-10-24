@@ -341,6 +341,94 @@
 		color: var(--color-primary-2, var(--color-primary));
 		text-decoration: underline;
 	}
+
+	/* ── the drawer's body, the record's chips and citations ──────────────────
+	   What core's detail sheet, record page and prose draw (the `dw`, `dw-chip`,
+	   `dw-dot` and `cite` classes), styled once here
+	   (settled 2026-10-25): every report kept its own copy until now; this is
+	   their union. The sheet is a native <dialog> opened in place, so it sits
+	   inside `.ib-site`. A citation reads as body text with a dotted primary
+	   underline (High Water's and Second Chair's, settled 2026-10-25). */
+	.dw {
+		position: relative;
+		width: 100%;
+	}
+	.dw-loading {
+		color: var(--color-base-content-muted);
+		font-family: var(--font-data);
+		font-size: 13px;
+		padding: 2rem 0;
+	}
+	.dw-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.dw-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font-family: var(--font-data);
+		font-size: 11px;
+		color: var(--color-base-content-muted);
+		background: var(--color-base-300);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 4px 10px;
+		/* a long title wraps inside the chip rather than widening its row */
+		max-inline-size: 100%;
+		overflow-wrap: anywhere;
+	}
+	.dw-chip-accent {
+		color: var(--color-primary);
+		border-color: var(--color-primary);
+		background: var(--color-primary-soft);
+	}
+	.dw-chip-faint {
+		opacity: 0.6;
+	}
+	.dw-chip-btn {
+		cursor: pointer;
+		transition:
+			border-color 0.15s,
+			color 0.15s;
+	}
+	.dw-chip-btn:hover {
+		color: var(--color-base-content);
+		border-color: var(--color-primary);
+	}
+	.dw-chip-n {
+		color: var(--color-base-content-faint);
+	}
+	.dw-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		display: inline-block;
+		flex: none;
+	}
+	/* a source cited in running text, opening its reading */
+	.cite {
+		appearance: none;
+		background: none;
+		border: none;
+		padding: 0 0 1px;
+		margin: 0;
+		font: inherit;
+		color: var(--color-base-content);
+		border-bottom: 1px dotted var(--color-primary);
+		cursor: pointer;
+		text-align: left;
+	}
+	.cite:hover {
+		color: var(--color-primary);
+		border-bottom-style: solid;
+	}
+	.cite-muted {
+		color: var(--color-base-content-muted);
+		border-bottom-style: dashed;
+		cursor: default;
+	}
 	.fig {
 		background: var(--color-base-100);
 		border: 1px solid var(--color-border);
@@ -476,6 +564,19 @@
 	}
 	.brow-btn:hover .bl {
 		color: var(--color-base-content);
+	}
+	/* Every bar row answers the pointer, not only the ones that open something. */
+	.brow {
+		transition: color 0.12s;
+	}
+	.brow:hover .bl {
+		color: var(--color-base-content);
+	}
+	.brow:hover .bf {
+		filter: brightness(1.16) saturate(1.1);
+	}
+	.brow:hover .bt {
+		outline: 1px solid var(--color-border-strong);
 	}
 	@media (max-width: 560px) {
 		.brow {
@@ -689,6 +790,71 @@
 	.galaxy-shell {
 		display: block;
 		block-size: 100%;
+		/* pairs with the landing's poster card: a galaxy link's view transition
+		   morphs the card into this stage (the shared `galaxy-stage` name) */
+		view-transition-name: galaxy-stage;
+	}
+
+	/* ── the landing's galaxy poster, a doorway card ──────────────────────────
+	   Core's overview draws it in the hero's right column (report.css
+	   .ib-report-home-hero). Hovering (or focusing) reveals the "Open Galaxy
+	   Map" pill. The poster is a night sky in both schemes, so the card chrome
+	   is fixed dark like the galaxy itself. No filters on the NAMED element (a
+	   view transition snapshots it): the backdrop-filter lives on the pill.
+	   Moved from the reports' own sheets (settled 2026-10-25). */
+	.home-minimap {
+		position: relative;
+		display: block;
+		overflow: hidden;
+		border: 1px solid var(--color-border-strong);
+		border-radius: 14px;
+		corner-shape: superellipse(2.2);
+		background: #0e1220;
+		view-transition-name: galaxy-stage;
+		transition: border-color 0.15s;
+	}
+	.home-minimap:hover,
+	.home-minimap:focus-visible {
+		border-color: var(--color-primary);
+	}
+	.home-minimap img {
+		display: block;
+		width: 100%;
+		height: auto;
+		transition: transform 0.3s ease;
+	}
+	.home-minimap:hover img {
+		transform: scale(1.04);
+	}
+	.home-minimap-cta {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		padding: 8px 16px;
+		border-radius: 999px;
+		border: 1px solid rgb(255 255 255 / 0.22);
+		background: color-mix(in oklab, #0e1220 74%, transparent);
+		backdrop-filter: blur(6px);
+		color: #ecf1fb;
+		font-family: var(--font-data);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		white-space: nowrap;
+		opacity: 0;
+		transition: opacity 0.18s ease;
+		pointer-events: none;
+	}
+	.home-minimap:hover .home-minimap-cta,
+	.home-minimap:focus-visible .home-minimap-cta {
+		opacity: 1;
+	}
+	/* Touch screens have no hover: keep the doorway labelled. */
+	@media (hover: none) {
+		.home-minimap-cta {
+			opacity: 1;
+		}
 	}
 }
 
