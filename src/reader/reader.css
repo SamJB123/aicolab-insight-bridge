@@ -23,7 +23,8 @@
 @layer ui.organisms {
 	@scope (.ib-reader) {
 		:scope {
-			container-type: inline-size;
+			/* a reading is laid out by its own width, as a page is (site.css) */
+			container: ib-measure / inline-size;
 			display: flex;
 			flex-direction: column;
 			gap: 0.8rem;

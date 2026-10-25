@@ -20,7 +20,9 @@
 
 @layer ui.organisms {
 	@scope (.ib-brief) {
+		/* the page's own width is what its type scales with (site.css `ib-measure`) */
 		:scope {
+			container: ib-measure / inline-size;
 			--ib-bp-strip: 130px;
 		}
 
@@ -792,7 +794,7 @@
 		}
 		.ib-bp-title {
 			font-family: var(--font-display, inherit);
-			font-size: clamp(1.9rem, 4vw, 3rem);
+			font-size: clamp(1.9rem, 4cqi, 3rem);
 			font-weight: 600;
 			line-height: 1.06;
 			letter-spacing: -0.01em;
@@ -885,14 +887,14 @@
 		}
 		.ib-bp-h2 {
 			margin: 0.4rem 0 0;
-			font-size: clamp(1.5rem, 3vw, 2.2rem);
+			font-size: clamp(1.5rem, 3cqi, 2.2rem);
 			font-weight: 600;
 			max-width: 30ch;
 			text-wrap: balance;
 		}
 		.ib-bp-h3 {
 			margin: 0.35rem 0 0;
-			font-size: clamp(1.2rem, 2.2vw, 1.55rem);
+			font-size: clamp(1.2rem, 2.2cqi, 1.55rem);
 			font-weight: 600;
 			max-width: 40ch;
 			text-wrap: balance;

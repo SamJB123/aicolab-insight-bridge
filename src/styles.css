@@ -44,7 +44,9 @@
 
 a.ib-mark-link {
 	text-decoration: none;
-	transition: color 140ms ease, opacity 140ms ease;
+	transition:
+		color 140ms ease,
+		opacity 140ms ease;
 }
 
 a.ib-mark-link:hover,
@@ -75,7 +77,7 @@ a.ib-mark-link:hover .ib-glyph {
 
 .ib-h2 {
 	font-family: var(--font-display, Georgia, serif);
-	font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+	font-size: clamp(1.4rem, 2.6cqi, 1.9rem);
 	line-height: 1.2;
 	margin: 0 0 0.7rem;
 	color: var(--color-base-content, #111);
@@ -124,7 +126,7 @@ a.ib-mark-link:hover .ib-glyph {
    it carries a full sentence rather than a phrase. */
 .ib-define {
 	font-family: var(--font-display, Georgia, serif);
-	font-size: clamp(1.05rem, 1.9vw, 1.32rem);
+	font-size: clamp(1.05rem, 1.9cqi, 1.32rem);
 	line-height: 1.35;
 	margin: 0 0 1rem;
 	max-width: 54ch;
@@ -327,7 +329,9 @@ a.ib-corpus-ref:focus-visible {
 	border-radius: 6px;
 	background: var(--color-base-150, transparent);
 	text-decoration: none;
-	transition: border-color 140ms ease, transform 140ms ease;
+	transition:
+		border-color 140ms ease,
+		transform 140ms ease;
 }
 
 .ib-card:hover,
