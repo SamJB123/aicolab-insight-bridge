@@ -53,6 +53,7 @@ export {
 	reportNav,
 } from './nav.tsx'
 export { OverviewPage } from './overview-page.tsx'
+export { hostNavItemSchema } from './own-pages.ts'
 export { ProseText } from './prose.tsx'
 export {
 	REPORT_SECTIONS,

@@ -103,7 +103,7 @@ describe.skipIf(!file || !existsSync(file))('the report catalogue over a run dat
 			db,
 			run: runFacts,
 			origin: 'https://report.example.aicolab.org',
-			host: { slug: 'test' },
+			host: { slug: 'test', serverName: 'test' },
 		}
 	})
 

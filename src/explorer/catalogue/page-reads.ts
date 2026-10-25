@@ -34,6 +34,7 @@ import type {
 	MethodAdditions,
 	OverviewAdditions,
 } from '../../report/additions.ts'
+import type { HostNavItem } from '../../report/own-pages.ts'
 import { sourcesData, sourcesSearchOf } from '../../sources/data.ts'
 import type {
 	SourceRow,
@@ -67,6 +68,21 @@ const fmt = (v: number) => v.toLocaleString('en-AU')
 
 /** A path on the report's site, as a whole URL: a host on another origin draws it from there. */
 const onSite = (ctx: ReportCtx, path: string) => new URL(path, ctx.origin).href
+
+export type NavPageData = {
+	words: RunWords
+	/** The report's own pages, in the header after the sections they name. */
+	pages: HostNavItem[]
+}
+
+/**
+ * The report's navigation: the run's words (its sections and its analysis tasks name
+ * the header's entries) and the report's own pages. What a host needs to list a
+ * report's places before any page is read (the hub's ring for a report).
+ */
+export function navPage(ctx: ReportCtx): NavPageData {
+	return { words: ctx.run.words, pages: [...(ctx.host.ownPages ?? [])] }
+}
 
 export type OverviewPageData = {
 	words: RunWords
@@ -115,14 +131,17 @@ export type ConnectPageData = {
 	words: RunWords
 	/** The report's MCP endpoint, a whole URL on its own origin: the hub's console calls it there. */
 	endpoint: string
+	/** The name the server calls itself, as an assistant lists it. */
+	serverName: string
 	additions: ConnectAdditions
 }
 
-/** The Connect page's words: the run's, with the report's MCP endpoint and its reading notes. */
+/** The Connect page's words: the run's, with the report's MCP endpoint, its server's name and its reading notes. */
 export async function connectPage(ctx: ReportCtx): Promise<ConnectPageData> {
 	return {
 		words: ctx.run.words,
 		endpoint: onSite(ctx, ctx.host.mcpPath ?? '/mcp'),
+		serverName: ctx.host.serverName,
 		additions: (await ctx.host.pages?.connect?.(ctx)) ?? {},
 	}
 }
@@ -338,6 +357,7 @@ const chapterRequestSchema = z.object({
 
 /** What each page read answers, by name. */
 export type PageResults = {
+	navPage: NavPageData
 	overviewPage: OverviewPageData
 	methodPage: MethodPageData
 	connectPage: ConnectPageData
@@ -362,6 +382,7 @@ export type PageName = keyof PageResults
  */
 const PAGE_READS: { [N in PageName]: (ctx: ReportCtx, input: unknown) => Promise<PageResults[N]> } =
 	{
+		navPage: async (ctx) => navPage(ctx),
 		overviewPage: (ctx) => overviewPage(ctx),
 		methodPage: (ctx) => methodPage(ctx),
 		connectPage: (ctx) => connectPage(ctx),

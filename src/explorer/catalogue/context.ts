@@ -20,6 +20,7 @@ import type {
 	MethodAdditions,
 	OverviewAdditions,
 } from '../../report/additions.ts'
+import type { HostNavItem } from '../../report/own-pages.ts'
 import type {
 	DerivedFacet,
 	SourceRow,
@@ -84,6 +85,10 @@ export interface PageHooks {
 export interface ReportHost {
 	/** The report's stable key: the app's slug, or a run id. */
 	slug: string
+	/** The name the report's MCP server calls itself (`initialize`), as an assistant lists it: the Connect page shows it wherever the page is drawn. */
+	serverName: string
+	/** The report's own pages (High Water's Top 30), listed in its header after the sections they name; none for a report with core's pages alone. */
+	ownPages?: readonly HostNavItem[]
 	/** The document facet the overview sorts documents by (Training Data: `document_type`). */
 	documentFacet?: string
 	/** The sky's seed and the contributor facets its dust is read by; the lens alone when absent. */

@@ -12,23 +12,11 @@ import type { RunWords } from '@aicolab/insight-bridge-contracts/explorer'
 import { Menu, MenuItem, type MenuItemLinkProps } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { For, Show } from 'solid-js'
+import type { HostNavItem } from './own-pages.ts'
 import { type ReportSection, type ReportSurface, tasksOf } from './surface.tsx'
 
-/** A page of the host's own in the header, after the section it names. */
-export interface HostNavItem {
-	/** The host's path for it. */
-	to: string
-	label: string
-	/** The section it follows; after the last task's entry when `analysis`. */
-	after: ReportSection
-	/**
-	 * A header menu to fold it into, by that menu's label: the pages naming the
-	 * same menu become one entry, where the first of them stands, so a host with
-	 * many pages of its own keeps the row to one line (the audit corpus's
-	 * eleven, the user's choice 2026-10-22). The phone menu lists each page.
-	 */
-	menu?: string
-}
+/** A page of the host's own in the header, after the section it names (./own-pages.ts: data, served through the report's door). */
+export type { HostNavItem }
 
 /** How the host renders a link to one of its pages, through its router: as a header link, or — given a menu item's attributes — as that item's anchor. */
 export type HostLink = (

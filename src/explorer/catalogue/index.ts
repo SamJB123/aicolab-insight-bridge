@@ -40,6 +40,8 @@ export {
 	galaxyPage,
 	type MethodPageData,
 	methodPage,
+	type NavPageData,
+	navPage,
 	type OverviewPageData,
 	overviewPage,
 	type PageName,

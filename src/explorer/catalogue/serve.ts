@@ -101,6 +101,10 @@ export class ReportCap extends RpcTarget {
 	}
 
 	// ---- the pages, whole (./page-reads.ts): the door's, never tools or routes ----
+	/** The report's navigation: its words and its own pages, for a host listing its places. */
+	navPage() {
+		return this.#page('navPage', undefined)
+	}
 	overviewPage() {
 		return this.#page('overviewPage', undefined)
 	}

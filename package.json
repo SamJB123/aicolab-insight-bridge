@@ -60,7 +60,8 @@
 		"./world": "./src/world/index.ts",
 		"./world/record": "./src/world/record.ts",
 		"./package.json": "./package.json",
-		"./reading-url": "./src/reading-url.tsx"
+		"./reading-url": "./src/reading-url.tsx",
+		"./applet": "./src/applet/index.ts"
 	},
 	"scripts": {
 		"check-types": "tsc --noEmit",
