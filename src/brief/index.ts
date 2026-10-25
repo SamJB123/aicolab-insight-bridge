@@ -16,6 +16,7 @@
 
 export { generationLabel } from '../tree.ts'
 export { BriefPage } from './brief-page.tsx'
+export { type BriefChapter, briefChapters, briefChaptersLabel } from './chapters.ts'
 export {
 	analysedFacets,
 	type BriefConfig,

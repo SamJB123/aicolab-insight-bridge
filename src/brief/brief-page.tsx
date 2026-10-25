@@ -21,6 +21,7 @@
 import { DocsShell } from '@aicolab/ui-solid'
 import type { JSX } from '@solidjs/web'
 import { createMemo, createSignal, For, Show } from 'solid-js'
+import { briefChapters, briefChaptersLabel } from './chapters.ts'
 import { Constellation, createHover, type Hover, PositionLegend, ReachBars } from './figures.tsx'
 import { Claim, FactsStrip, ScaleLine } from './nodes.tsx'
 import { ChapterReadingView, TopicList } from './reading.tsx'
@@ -66,13 +67,8 @@ function BriefBody(props: { d: BriefData }) {
 	/** With no tree, or one generation, the whole sky sits above the chapters. */
 	const skyUpTop = () => d().flat || single()
 	const nav = () =>
-		d().flat
-			? d().topicOrder.map((id) => ({ label: d().topics[id]?.subject ?? '', href: `#t-${id}` }))
-			: d().families.map((f) => ({
-					label: f.subject,
-					href: single() ? `#t-${f.id}` : `#f-${f.id}`,
-				}))
-	const navLabel = () => (d().flat ? 'Topics' : single() ? 'Themes' : 'Families')
+		briefChapters(d()).map((chapter) => ({ label: chapter.label, href: `#${chapter.anchor}` }))
+	const navLabel = () => briefChaptersLabel(d())
 	const unit = () => (d().flat ? 'topic' : 'theme')
 
 	return (
