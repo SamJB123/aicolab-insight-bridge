@@ -43,12 +43,15 @@ import type {
 	SourcesSearch,
 	SourcesVocabulary,
 } from '../../sources/types.ts'
-import { CANONICAL_RUN_SHAPE, worldReading, worldRecord } from '../../world/record.ts'
+import { CANONICAL_RUN_SHAPE, worldReading, worldRecord, worldText } from '../../world/record.ts'
 import {
 	type WorldReading,
 	type WorldReadingRef,
 	type WorldRecord,
+	type WorldText,
+	type WorldTextRef,
 	worldReadingRefSchema,
+	worldTextRefSchema,
 } from '../../world/schema.ts'
 import {
 	type AnalysisDrill,
@@ -336,6 +339,13 @@ export async function worldOf(ctx: ReportCtx): Promise<WorldRecord | null> {
 	})
 }
 
+/** One room's text for an island: the writing its walls carry, read when it is entered. */
+export async function worldTextOf(ctx: ReportCtx, ref: WorldTextRef): Promise<WorldText | null> {
+	const world = ctx.host.world
+	if (world === null) return null
+	return worldText(ctx.db, ref, world?.shape ?? CANONICAL_RUN_SHAPE, ctx.scope)
+}
+
 /** One item's reading for an island: the key points the record counts but does not carry. */
 export async function worldReadingOf(
 	ctx: ReportCtx,
@@ -371,6 +381,7 @@ export type PageResults = {
 	analysisDrill: AnalysisDrillData
 	reading: ReadingView | null
 	world: WorldRecord | null
+	worldText: WorldText | null
 	worldReading: WorldReading | null
 }
 export type PageName = keyof PageResults
@@ -396,6 +407,7 @@ const PAGE_READS: { [N in PageName]: (ctx: ReportCtx, input: unknown) => Promise
 		analysisDrill: (ctx, input) => analysisDrillOf(ctx, analysisDrillSchema.parse(input)),
 		reading: (ctx, input) => readingOf(ctx, readingTargetSchema.parse(input)),
 		world: (ctx) => worldOf(ctx),
+		worldText: (ctx, input) => worldTextOf(ctx, worldTextRefSchema.parse(input)),
 		worldReading: (ctx, input) => worldReadingOf(ctx, worldReadingRefSchema.parse(input)),
 	}
 

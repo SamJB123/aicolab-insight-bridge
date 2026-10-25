@@ -7,14 +7,16 @@
  *
  * An excluded source is absent from the record and every count; a withheld
  * source keeps every count, its name and its one-word positions, and none of
- * its own words are anywhere in the record or its readings.
+ * its own words are anywhere in the record, a room's text or its readings.
+ * The record carries no writing at all: a room's text holds the words its
+ * walls show, counted as the record counts them.
  */
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { drizzle } from 'drizzle-orm/node-sqlite'
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { ReadScope } from '../explorer/scope.ts'
-import { CANONICAL_RUN_SHAPE, worldReading, worldRecord } from './record.ts'
+import { CANONICAL_RUN_SHAPE, worldReading, worldRecord, worldText } from './record.ts'
 
 const file = process.env.EXPLORER_DB
 const NOTICE = 'Withheld for this test.'
@@ -65,6 +67,35 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 		}
 	})
 
+	it('a room’s text holds the words the record counts', async () => {
+		const topic = all.topics.find((t) => t.id === source.topicId)
+		const named = all.sources.find((s) => s.id === source.slug)
+		const [topicText, sourceText] = await Promise.all([
+			worldText(db, { kind: 'topic', topicId: source.topicId }, CANONICAL_RUN_SHAPE),
+			worldText(db, { kind: 'source', sourceId: source.slug }, CANONICAL_RUN_SHAPE),
+		])
+		expect(topicText.points.length).toBe(topic?.keyPoints)
+		// every lens the record names has its words in the topic's text, its quotes counted alike
+		for (const lens of topic?.lenses ?? [])
+			expect(
+				topicText.lenses.find((l) => l.facet === lens.facet && l.value === lens.value)?.quotes
+					.length,
+			).toBe(lens.quotes)
+		// the source's stance on the topic, from both rooms
+		const stance = (text: typeof topicText) =>
+			text.perspectives.find((p) => p.sourceId === source.slug && p.topicId === source.topicId)
+		expect(stance(topicText)?.title).toBeTruthy()
+		expect(stance(sourceText)).toEqual(stance(topicText))
+		for (const d of named?.documents ?? [])
+			expect(sourceText.documents.find((t) => t.id === d.id)?.points.length).toBe(d.points)
+		const reading = await worldReading(
+			db,
+			{ kind: 'topic', topicId: source.topicId },
+			CANONICAL_RUN_SHAPE,
+		)
+		expect(reading.keyPoints.map((p) => p.point)).toEqual(topicText.points)
+	})
+
 	it('an excluded source is absent, and every count leaves it out', async () => {
 		const less = await record({ exclude: new Set([source.uuid]) })
 		expect(less.sources.some((s) => s.id === source.slug)).toBe(false)
@@ -80,19 +111,35 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 			if ('prompts' in task)
 				for (const prompt of task.prompts)
 					expect(prompt.answers.some((a) => a.sourceId === source.slug)).toBe(false)
-		for (const topic of less.topics)
-			for (const point of topic.keyPoints)
-				expect(point.quotes.some((q) => q.source === source.slug)).toBe(false)
-		const reading = await worldReading(
-			db,
-			{ kind: 'document', documentId: source.documentId },
-			CANONICAL_RUN_SHAPE,
-			{ exclude: new Set([source.uuid]) },
-		)
+		const out: ReadScope = { exclude: new Set([source.uuid]) }
+		const [topicReading, reading, topicText, sourceText] = await Promise.all([
+			worldReading(db, { kind: 'topic', topicId: source.topicId }, CANONICAL_RUN_SHAPE, out),
+			worldReading(
+				db,
+				{ kind: 'document', documentId: source.documentId },
+				CANONICAL_RUN_SHAPE,
+				out,
+			),
+			worldText(db, { kind: 'topic', topicId: source.topicId }, CANONICAL_RUN_SHAPE, out),
+			worldText(db, { kind: 'source', sourceId: source.slug }, CANONICAL_RUN_SHAPE, out),
+		])
+		for (const point of topicReading.keyPoints)
+			expect(point.quotes.some((q) => q.source === source.slug)).toBe(false)
 		expect(reading.keyPoints).toEqual([])
+		expect(topicText.perspectives.some((p) => p.sourceId === source.slug)).toBe(false)
+		for (const lens of topicText.lenses)
+			expect(lens.quotes.some((q) => q.source === source.slug)).toBe(false)
+		expect(sourceText).toEqual({
+			ref: { kind: 'source', sourceId: source.slug },
+			points: [],
+			documents: [],
+			perspectives: [],
+			lenses: [],
+			answers: [],
+		})
 	})
 
-	it('a withheld source keeps every count, and none of its words are in the record', async () => {
+	it('a withheld source keeps every count, and none of its words are served', async () => {
 		const scope: ReadScope = { withhold: { entities: new Set([source.uuid]), notice: NOTICE } }
 		const held = await record(scope)
 		// every count and every position as before
@@ -104,18 +151,28 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 		expect(held.perspectives.map((p) => [p.topicId, p.sourceId, p.position, p.keyPoints])).toEqual(
 			all.perspectives.map((p) => [p.topicId, p.sourceId, p.position, p.keyPoints]),
 		)
-		// the notice where its words were
-		const stance = held.perspectives.find(
+		// the notice where its words were, in its rooms' text
+		const texts = await Promise.all([
+			worldText(db, { kind: 'topic', topicId: source.topicId }, CANONICAL_RUN_SHAPE, scope),
+			worldText(db, { kind: 'source', sourceId: source.slug }, CANONICAL_RUN_SHAPE, scope),
+			...held.tasks.map((task) =>
+				worldText(db, { kind: 'task', taskId: task.id }, CANONICAL_RUN_SHAPE, scope),
+			),
+		])
+		const [topicText, sourceText] = texts
+		const stance = topicText?.perspectives.find(
 			(p) => p.sourceId === source.slug && p.topicId === source.topicId,
 		)
 		expect(stance?.title).toBe(NOTICE)
 		expect(stance?.analysis).toBe('')
-		expect(stance?.quotes).toEqual([])
-		for (const d of held.sources.find((s) => s.id === source.slug)?.documents ?? [])
-			expect(d.points).toEqual([NOTICE])
+		expect(
+			held.perspectives.find((p) => p.sourceId === source.slug && p.topicId === source.topicId)
+				?.quotes,
+		).toBe(0)
+		for (const d of sourceText?.documents ?? []) expect(d.points).toEqual([NOTICE])
 		// none of its own texts anywhere: passages' key points, stances, quotes, answers. Each is a value of
-		// its own in the record, so every string the record holds is gathered once (a body of 951 reports has
-		// thousands of texts; a search of the whole record per text cost the test seconds)
+		// its own in what is served, so every string is gathered once (a body of 951 reports has thousands
+		// of texts; a search of everything per text cost the test seconds)
 		const heldTexts = new Set<string>()
 		const gather = (value: unknown): void => {
 			if (typeof value === 'string') heldTexts.add(value.trim())
@@ -123,6 +180,15 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 			else if (value && typeof value === 'object') for (const v of Object.values(value)) gather(v)
 		}
 		gather(held)
+		gather(texts)
+		gather(
+			await worldReading(
+				db,
+				{ kind: 'topic', topicId: source.topicId },
+				CANONICAL_RUN_SHAPE,
+				scope,
+			),
+		)
 		const named = held.sources.find((s) => s.id === source.slug)
 		const kept = new Set([named?.name ?? '', ...(named?.documents ?? []).map((d) => d.title)])
 		const saidByAnother = sqlite.prepare(
@@ -197,7 +263,9 @@ describe.skipIf(!file || !existsSync(file))('the world record in the reader’s 
 				scope,
 			),
 		])
-		for (const r of readings)
+		for (const r of readings) {
 			expect(r.keyPoints).toEqual([{ point: NOTICE, details: '', quotes: [] }])
+			expect(r.quotes).toEqual([])
+		}
 	})
 })

@@ -86,7 +86,17 @@ import {
 	topicStar,
 } from '@aicolab/insight-bridge-contracts/schema'
 import { taskTitle } from '@aicolab/insight-bridge-contracts/tasks'
-import { and, asc, type ChangeColumnTableName, count, eq, inArray, sql } from 'drizzle-orm'
+import {
+	and,
+	asc,
+	type ChangeColumnTableName,
+	count,
+	eq,
+	inArray,
+	isNotNull,
+	type SQL,
+	sql,
+} from 'drizzle-orm'
 import type { AnySQLiteColumn, SQLiteTable, SQLiteViewWithSelection } from 'drizzle-orm/sqlite-core'
 import { DEFAULT_SCALE, type PositionScale } from '../brief/data.ts'
 import { loadFacetCache } from '../explorer/facets.ts'
@@ -98,19 +108,26 @@ import {
 	PROMPT_TASK_KINDS,
 	questionClause,
 	type WorldAnswer,
+	type WorldAnswerText,
 	type WorldGroup,
+	type WorldLensText,
 	type WorldMembership,
 	type WorldPerspective,
+	type WorldPerspectiveText,
 	type WorldPoint,
 	type WorldPrompt,
+	type WorldQuote,
 	type WorldReading,
 	type WorldReadingRef,
 	type WorldRecord,
 	type WorldSource,
 	type WorldTask,
+	type WorldText,
+	type WorldTextRef,
 	type WorldTopic,
 	worldReadingSchema,
 	worldRecordSchema,
+	worldTextSchema,
 } from './schema.ts'
 
 /**
@@ -243,7 +260,8 @@ export interface WorldRecordConfig {
 	 * An excluded source is absent from the record and from every count; a
 	 * withheld source keeps its name, facets, one-word positions, scores and
 	 * every count, and each text of its own (its quotes, its documents' points,
-	 * its perspectives' title and analysis, its answers) reads the notice.
+	 * its perspectives' title and analysis, its answers) reads the notice in
+	 * its room text and its readings (`worldText`, `worldReading`).
 	 * An annotated source's words are carried as written: the record has no
 	 * place for a notice beside them, and an island shows them without one
 	 * (settled 2026-10-21; only the pages carry it). The record's shape is
@@ -304,7 +322,6 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	const params = profile?.prompts.params ?? null
 	const { document, keyPoint } = publishedOf(config.shape)
 	const scope = config.scope
-	const notice = scope?.withhold?.notice ?? ''
 	const withheld = (uuid: string | null | undefined) => wordsOf(scope, uuid).withheld === true
 
 	const title = words.title ?? site?.title ?? meta?.name
@@ -333,13 +350,12 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		edgeRows,
 		allMemberRows,
 		topicDocRows,
-		topicPointRows,
-		allTopicPointQuoteRows,
+		topicPointCounts,
 		lensRows,
-		allLensQuoteRows,
+		lensQuoteOwners,
 		allPerspectiveRows,
 		perspectivePointCounts,
-		perspectiveQuoteRows,
+		perspectiveQuoteCounts,
 		entityFacets,
 		documentFacets,
 		facetDeclarations,
@@ -355,9 +371,9 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 			})
 			.from(document),
 		db
-			.select({ documentId: keyPoint.documentId, point: keyPoint.keyPoint })
+			.select({ documentId: keyPoint.documentId, n: count() })
 			.from(keyPoint)
-			.orderBy(asc(keyPoint.keyPointId)),
+			.groupBy(keyPoint.documentId),
 		db
 			.select({
 				id: currentTopic.topicClusterId,
@@ -407,20 +423,9 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 			)
 			.groupBy(currentDocumentMembership.topicClusterId),
 		db
-			.select({
-				id: clusterKeyPoint.clusterKeyPointId,
-				topicId: clusterKeyPoint.topicClusterId,
-				point: clusterKeyPoint.keyPoint,
-				details: clusterKeyPoint.details,
-			})
-			.from(clusterKeyPoint),
-		db
-			.select({
-				pointId: clusterKeyPointQuote.clusterKeyPointId,
-				text: clusterKeyPointQuote.quoteText,
-				entityUuid: clusterKeyPointQuote.entityUuid,
-			})
-			.from(clusterKeyPointQuote),
+			.select({ topicId: clusterKeyPoint.topicClusterId, n: count() })
+			.from(clusterKeyPoint)
+			.groupBy(clusterKeyPoint.topicClusterId),
 		db
 			.select({
 				id: clusterKeyPerspective.clusterKeyPerspectiveId,
@@ -428,13 +433,12 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 				facet: clusterKeyPerspective.facet,
 				value: clusterKeyPerspective.facetValue,
 				position: clusterKeyPerspective.position,
-				analysis: clusterKeyPerspective.positionAnalysis,
 			})
 			.from(clusterKeyPerspective),
+		// whose quotes back each lens: counted in the scope, as its text gives them
 		db
 			.select({
 				lensId: clusterPerspectiveQuote.clusterKeyPerspectiveId,
-				text: clusterPerspectiveQuote.quoteText,
 				entityUuid: clusterPerspectiveQuote.entityUuid,
 			})
 			.from(clusterPerspectiveQuote),
@@ -443,10 +447,7 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 				id: clusterEntityPerspective.clusterEntityPerspectiveId,
 				topicId: clusterEntityPerspective.topicClusterId,
 				entityUuid: clusterEntityPerspective.entityUuid,
-				title: clusterEntityPerspective.title,
-				description: clusterEntityPerspective.description,
 				position: clusterEntityPerspective.position,
-				analysis: clusterEntityPerspective.positionAnalysis,
 			})
 			.from(clusterEntityPerspective),
 		db
@@ -459,9 +460,10 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		db
 			.select({
 				perspectiveId: clusterEntityPerspectiveQuote.clusterEntityPerspectiveId,
-				text: clusterEntityPerspectiveQuote.quoteText,
+				n: count(),
 			})
-			.from(clusterEntityPerspectiveQuote),
+			.from(clusterEntityPerspectiveQuote)
+			.groupBy(clusterEntityPerspectiveQuote.clusterEntityPerspectiveId),
 		// every reader's facet resolution (explorer/facets.ts): by provenance rank,
 		// and the facets the profile derives (era from year) included — a
 		// source's own, and its documents' (a facet recorded per document)
@@ -471,16 +473,10 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		db.select().from(topicStar),
 	])
 
-	/* ── the reader's scope: excluded sources leave; withheld sources' words read the notice ── */
+	/* ── the reader's scope: excluded sources leave (a withheld source's words are its room text's) ── */
 	const entityRows = allEntityRows.filter((e) => isKept(scope, e.uuid))
 	const documentRows = allDocumentRows.filter((d) => isKept(scope, d.entityUuid))
 	const memberRows = allMemberRows.filter((m) => isKept(scope, m.entityUuid))
-	const ownWords = <Q extends { text: string; entityUuid: string | null }>(rows: readonly Q[]) =>
-		rows
-			.filter((q) => isKept(scope, q.entityUuid))
-			.map((q) => (withheld(q.entityUuid) ? { ...q, text: notice } : q))
-	const topicPointQuoteRows = ownWords(allTopicPointQuoteRows)
-	const lensQuoteRows = ownWords(allLensQuoteRows)
 	const perspectiveRows = allPerspectiveRows.filter((p) => isKept(scope, p.entityUuid))
 
 	/* ── identities ── */
@@ -596,10 +592,13 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		return mix
 	}
 	const docsByTopic = new Map(topicDocRows.map((r) => [r.topicId, num(r.documents)]))
-	const pointQuotes = grouped(topicPointQuoteRows, (q) => q.pointId)
-	const pointsByTopic = grouped(topicPointRows, (p) => p.topicId)
-	const lensQuotes = grouped(lensQuoteRows, (q) => q.lensId)
+	const pointsByTopic = new Map(topicPointCounts.map((r) => [r.topicId, num(r.n)]))
 	const lensesByTopic = grouped(lensRows, (l) => l.topicId)
+	const lensQuotes = new Map<number, number>()
+	for (const q of lensQuoteOwners) {
+		if (!isKept(scope, q.entityUuid) || withheld(q.entityUuid)) continue
+		lensQuotes.set(q.lensId, (lensQuotes.get(q.lensId) ?? 0) + 1)
+	}
 	const starByTopic = new Map(starRows.map((s) => [s.topicClusterId, s]))
 	const edgesByChild = grouped(edgeRows, (e) => e.child)
 
@@ -622,31 +621,19 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 			sources: new Set((strongByTopic.get(t.id) ?? []).map((m) => m.entityUuid)).size,
 			documents: docsByTopic.get(t.id) ?? 0,
 			positions: positionsOf(perspectivesByTopic.get(t.id) ?? []),
-			keyPoints: (pointsByTopic.get(t.id) ?? []).map(
-				(p): WorldPoint => ({
-					point: p.point,
-					details: p.details,
-					quotes: (pointQuotes.get(p.id) ?? []).map((q) => ({
-						text: q.text,
-						source: slugOf.get(q.entityUuid) ?? null,
-					})),
-				}),
+			keyPoints: pointsByTopic.get(t.id) ?? 0,
+			lenses: (lensesByTopic.get(t.id) ?? []).flatMap((l) =>
+				analysedSet.has(l.facet) && l.value != null
+					? [
+							{
+								facet: l.facet,
+								value: l.value,
+								position: l.position,
+								quotes: lensQuotes.get(l.id) ?? 0,
+							},
+						]
+					: [],
 			),
-			lenses: (lensesByTopic.get(t.id) ?? []).flatMap((l) => {
-				if (!analysedSet.has(l.facet) || l.value == null) return []
-				return [
-					{
-						facet: l.facet,
-						value: l.value,
-						position: l.position,
-						analysis: l.analysis,
-						quotes: (lensQuotes.get(l.id) ?? []).map((q) => ({
-							text: q.text,
-							source: slugOf.get(q.entityUuid) ?? null,
-						})),
-					},
-				]
-			}),
 			star: star ? { x: star.x, y: star.y, r: star.r } : null,
 		}
 	})
@@ -673,7 +660,7 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 	})
 
 	/* ── sources ── */
-	const docPoints = grouped(docPointRows, (r) => r.documentId)
+	const docPoints = new Map(docPointRows.map((r) => [r.documentId, num(r.n)]))
 	const docsByEntity = grouped(documentRows, (d) => d.entityUuid)
 	const weakByEntity = new Map<string, number>()
 	for (const m of memberRows) {
@@ -687,8 +674,7 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		documents: (docsByEntity.get(e.uuid) ?? []).map((d) => ({
 			id: d.id,
 			title: text(d.title) ?? d.fileName,
-			// a withheld source's points stand behind the notice, the one line shown
-			points: withheld(e.uuid) ? [notice] : (docPoints.get(d.id) ?? []).map((r) => r.point),
+			points: docPoints.get(d.id) ?? 0,
 		})),
 		memberOnly: weakByEntity.get(e.uuid) ?? 0,
 	}))
@@ -699,34 +685,26 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 		return sourceId ? [{ topicId: m.topicId, sourceId, grade: m.grade }] : []
 	})
 	const perspectivePoints = new Map(perspectivePointCounts.map((r) => [r.perspectiveId, num(r.n)]))
-	const perspectiveQuotes = grouped(perspectiveQuoteRows, (q) => q.perspectiveId)
+	const perspectiveQuotes = new Map(perspectiveQuoteCounts.map((r) => [r.perspectiveId, num(r.n)]))
 	const perspectives: WorldPerspective[] = perspectiveRows.flatMap((p) => {
 		const sourceId = slugOf.get(p.entityUuid)
 		if (!sourceId || !topicIds.has(p.topicId)) return []
-		// a withheld stance keeps its one-word position and its count; its words read the notice
-		const own = !withheld(p.entityUuid)
+		// a withheld stance keeps its one-word position and its counts; its words are its text's notice
 		return [
 			{
 				topicId: p.topicId,
 				sourceId,
-				title: own ? p.title : notice,
-				description: own ? p.description : '',
 				position: p.position,
-				analysis: own ? p.analysis : '',
 				keyPoints: perspectivePoints.get(p.id) ?? 0,
-				quotes: own ? (perspectiveQuotes.get(p.id) ?? []).map((q) => q.text) : [],
+				quotes: withheld(p.entityUuid) ? 0 : (perspectiveQuotes.get(p.id) ?? 0),
 			},
 		]
 	})
 
 	/* ── the custom analyses, from the run's ledger ── */
 	const ownerOfDocument = new Map(documentRows.map((d) => [d.id, slugOf.get(d.entityUuid) ?? null]))
-	const withheldDocuments = new Set(
-		documentRows.filter((d) => withheld(d.entityUuid)).map((d) => d.id),
-	)
 	const tasks = await tasksOf(db, tables, publishedOf(config.shape), {
 		ownerOfDocument,
-		withheldNotice: (documentId) => (withheldDocuments.has(documentId) ? notice : null),
 		titleOf: (taskId) => {
 			const declared = profile?.analysis_tasks.find((t) => t.task_id === taskId)
 			return words.tasks?.[taskId] ?? taskTitle(declared ?? { task_id: taskId, title: null })
@@ -784,8 +762,6 @@ export async function worldRecord(db: CorpusDb, config: WorldRecordConfig): Prom
 interface TaskWords {
 	/** A document's source slug; absent for a document the scope leaves out. */
 	ownerOfDocument: ReadonlyMap<string, string | null>
-	/** The notice a withheld source's answer reads in its words' place, else null. */
-	withheldNotice(documentId: string): string | null
 	titleOf(taskId: string): string
 	descriptionOf(taskId: string): string
 }
@@ -834,22 +810,17 @@ async function tasksOf(
 					analysisId: questionResponse.customAnalysisId,
 					documentId: questionResponse.documentId,
 					questionId: questionResponse.questionId,
-					position: questionResponse.position,
 				})
 				.from(questionResponse)
 				.where(eq(questionResponse.addressed, 1)),
-			// Each answer's points in writing order: the first is the plaque's
-			// lead, the count says how much more a reading holds.
+			// how much each answer's reading holds
 			db
-				.select({
-					responseId: questionResponseKeyPoint.questionResponseId,
-					point: questionResponseKeyPoint.keyPoint,
-				})
+				.select({ responseId: questionResponseKeyPoint.questionResponseId, n: count() })
 				.from(questionResponseKeyPoint)
-				.orderBy(asc(questionResponseKeyPoint.questionResponseKeyPointId)),
+				.groupBy(questionResponseKeyPoint.questionResponseId),
 		])
 		const taskOfAnalysis = new Map(ledger.map((row) => [row.id, row.taskId]))
-		const pointsByResponse = grouped(responsePoints, (p) => p.responseId)
+		const pointsByResponse = new Map(responsePoints.map((p) => [p.responseId, num(p.n)]))
 		const responsesByTaskQuestion = grouped(
 			responses,
 			(r) => `${taskOfAnalysis.get(r.analysisId) ?? ''}|${r.questionId}`,
@@ -868,19 +839,15 @@ async function tasksOf(
 						answers: (responsesByTaskQuestion.get(`${taskId}|${q.questionId}`) ?? []).flatMap(
 							(r): WorldAnswer[] => {
 								const sourceId = words.ownerOfDocument.get(r.documentId)
-								if (!sourceId) return []
-								const points = pointsByResponse.get(r.id) ?? []
-								// a question's position is the answer in prose: the source's words
-								const held = words.withheldNotice(r.documentId)
-								return [
-									{
-										sourceId,
-										documentId: r.documentId,
-										position: held === null ? r.position : null,
-										lead: held ?? points[0]?.point ?? null,
-										keyPoints: points.length,
-									},
-								]
+								return sourceId
+									? [
+											{
+												sourceId,
+												documentId: r.documentId,
+												keyPoints: pointsByResponse.get(r.id) ?? 0,
+											},
+										]
+									: []
 							},
 						),
 					})),
@@ -912,7 +879,6 @@ async function tasksOf(
 					id: criterionAnalysis.criterionAnalysisId,
 					criterionId: criterionAnalysis.analysisSubtopicId,
 					analysisId: criterionAnalysis.customAnalysisId,
-					point: criterionAnalysis.keyPoint,
 					score: scored ? criterionAnalysis.score : sql<null>`NULL`,
 				})
 				.from(criterionAnalysis)
@@ -948,14 +914,12 @@ async function tasksOf(
 							answers: [...byDocument].flatMap(([documentId, points]): WorldAnswer[] => {
 								const sourceId = words.ownerOfDocument.get(documentId)
 								if (!sourceId) return []
+								// the score is a figure and stays; the finding is the source's words, its room text
 								const score = points[0]?.score ?? null
 								return [
 									{
 										sourceId,
 										documentId,
-										position: null,
-										// the score is a figure and stays; the finding is the source's words
-										lead: words.withheldNotice(documentId) ?? points[0]?.point ?? null,
 										keyPoints: points.length,
 										...(score === null ? {} : { score }),
 									},
@@ -986,13 +950,315 @@ async function tasksOf(
 	})
 }
 
+/* ───────────────────────── a room's text ───────────────────────── */
+
+/**
+ * The writing one room's walls carry, read when the room is entered: a
+ * topic's key points' headlines and every perspective and lens hung in its
+ * room; a source's documents' headlines, its perspectives and its answers; a
+ * cohort's lenses; a task's answers. Unknown ids read as empty, and so does
+ * anything of a source the scope leaves out; a withheld source's words read
+ * the notice (a perspective's title, a document's one headline, an answer's
+ * lead), and its quotes are left out.
+ */
+export async function worldText(
+	db: CorpusDb,
+	ref: WorldTextRef,
+	shape: WorldShape,
+	scope?: ReadScope,
+): Promise<WorldText> {
+	const notice = scope?.withhold?.notice ?? ''
+	const held = (uuid: string | null | undefined) => wordsOf(scope, uuid).withheld === true
+	const published = publishedOf(shape)
+	const empty: Omit<WorldText, 'ref'> = {
+		points: [],
+		documents: [],
+		perspectives: [],
+		lenses: [],
+		answers: [],
+	}
+
+	/** Perspectives by the rows the condition picks, in the scope. */
+	const perspectivesWhere = async (where: SQL | undefined): Promise<WorldPerspectiveText[]> => {
+		const rows = await db
+			.select({
+				topicId: clusterEntityPerspective.topicClusterId,
+				sourceId: entity.entityId,
+				entityUuid: entity.id,
+				title: clusterEntityPerspective.title,
+				description: clusterEntityPerspective.description,
+				analysis: clusterEntityPerspective.positionAnalysis,
+			})
+			.from(clusterEntityPerspective)
+			.innerJoin(entity, eq(entity.id, clusterEntityPerspective.entityUuid))
+			.where(where)
+		return rows
+			.filter((p) => isKept(scope, p.entityUuid))
+			.map((p) =>
+				held(p.entityUuid)
+					? {
+							topicId: p.topicId,
+							sourceId: p.sourceId,
+							title: notice,
+							description: '',
+							analysis: '',
+						}
+					: {
+							topicId: p.topicId,
+							sourceId: p.sourceId,
+							title: p.title,
+							description: p.description,
+							analysis: p.analysis,
+						},
+			)
+	}
+
+	/** Lenses by the rows the condition picks, each with its quotes in the scope. */
+	const lensesWhere = async (where: SQL | undefined): Promise<WorldLensText[]> => {
+		const [lenses, quotes] = await Promise.all([
+			db
+				.select({
+					id: clusterKeyPerspective.clusterKeyPerspectiveId,
+					topicId: clusterKeyPerspective.topicClusterId,
+					facet: clusterKeyPerspective.facet,
+					value: clusterKeyPerspective.facetValue,
+					analysis: clusterKeyPerspective.positionAnalysis,
+				})
+				.from(clusterKeyPerspective)
+				.where(and(where, isNotNull(clusterKeyPerspective.facetValue))),
+			db
+				.select({
+					lensId: clusterPerspectiveQuote.clusterKeyPerspectiveId,
+					text: clusterPerspectiveQuote.quoteText,
+					entityUuid: clusterPerspectiveQuote.entityUuid,
+					sourceId: entity.entityId,
+				})
+				.from(clusterPerspectiveQuote)
+				.innerJoin(
+					clusterKeyPerspective,
+					eq(
+						clusterKeyPerspective.clusterKeyPerspectiveId,
+						clusterPerspectiveQuote.clusterKeyPerspectiveId,
+					),
+				)
+				.leftJoin(entity, eq(entity.id, clusterPerspectiveQuote.entityUuid))
+				.where(where),
+		])
+		const quotesOf = grouped(
+			quotes.filter((q) => isKept(scope, q.entityUuid) && !held(q.entityUuid)),
+			(q) => q.lensId,
+		)
+		return lenses.flatMap((l) =>
+			l.value === null
+				? []
+				: [
+						{
+							topicId: l.topicId,
+							facet: l.facet,
+							value: l.value,
+							analysis: l.analysis,
+							quotes: (quotesOf.get(l.id) ?? []).map((q) => ({ text: q.text, source: q.sourceId })),
+						},
+					],
+		)
+	}
+
+	const parts = async (): Promise<Omit<WorldText, 'ref'>> => {
+		switch (ref.kind) {
+			case 'topic': {
+				const [points, perspectives, lenses] = await Promise.all([
+					db
+						.select({ point: clusterKeyPoint.keyPoint })
+						.from(clusterKeyPoint)
+						.where(eq(clusterKeyPoint.topicClusterId, ref.topicId))
+						.orderBy(asc(clusterKeyPoint.clusterKeyPointId)),
+					perspectivesWhere(eq(clusterEntityPerspective.topicClusterId, ref.topicId)),
+					lensesWhere(eq(clusterKeyPerspective.topicClusterId, ref.topicId)),
+				])
+				return { ...empty, points: points.map((p) => p.point), perspectives, lenses }
+			}
+			case 'cohort':
+				return {
+					...empty,
+					lenses: await lensesWhere(
+						and(
+							eq(clusterKeyPerspective.facet, ref.facet),
+							eq(clusterKeyPerspective.facetValue, ref.value),
+						),
+					),
+				}
+			case 'source': {
+				const [owner] = await db
+					.select({ uuid: entity.id })
+					.from(entity)
+					.where(eq(entity.entityId, ref.sourceId))
+					.limit(1)
+				if (!owner || !isKept(scope, owner.uuid)) return empty
+				const { document, keyPoint } = published
+				const [documents, points, perspectives, answers] = await Promise.all([
+					db
+						.select({ id: document.documentId })
+						.from(document)
+						.where(eq(document.entityUuid, owner.uuid)),
+					db
+						.select({ documentId: keyPoint.documentId, point: keyPoint.keyPoint })
+						.from(keyPoint)
+						.innerJoin(document, eq(document.documentId, keyPoint.documentId))
+						.where(eq(document.entityUuid, owner.uuid))
+						.orderBy(asc(keyPoint.keyPointId)),
+					perspectivesWhere(eq(clusterEntityPerspective.entityUuid, owner.uuid)),
+					answerTextsOf(db, published, eq(document.entityUuid, owner.uuid), scope),
+				])
+				const pointsOf = grouped(points, (p) => p.documentId)
+				return {
+					...empty,
+					documents: documents.map((d) => ({
+						id: d.id,
+						// a withheld source's points stand behind the notice, the one line shown
+						points: held(owner.uuid) ? [notice] : (pointsOf.get(d.id) ?? []).map((p) => p.point),
+					})),
+					perspectives,
+					answers,
+				}
+			}
+			case 'task':
+				return {
+					...empty,
+					answers: await answerTextsOf(
+						db,
+						published,
+						eq(docCustomAnalysis.taskId, ref.taskId),
+						scope,
+					),
+				}
+		}
+	}
+
+	return worldTextSchema.parse({ ref, ...(await parts()) } satisfies WorldText)
+}
+
+/**
+ * The answers' words for the ledger rows the condition picks (one task's, or
+ * one source's documents'): a question's answer in prose and its first point,
+ * a criterion's first point, each named by its task, its prompt's key and
+ * its document. A run with no ledger, or none of a kind's tables, has none.
+ */
+async function answerTextsOf(
+	db: CorpusDb,
+	{ document, questionResponse, questionResponseKeyPoint }: WorldPublished,
+	where: SQL | undefined,
+	scope: ReadScope | undefined,
+): Promise<WorldAnswerText[]> {
+	const tables = await tablesOf(db)
+	if (!tables.has('doc_custom_analysis')) return []
+	const notice = scope?.withhold?.notice ?? ''
+	const held = (uuid: string) => wordsOf(scope, uuid).withheld === true
+	const owner = {
+		taskId: docCustomAnalysis.taskId,
+		documentId: docCustomAnalysis.documentId,
+		sourceId: entity.entityId,
+		entityUuid: entity.id,
+	}
+	const answers: WorldAnswerText[] = []
+
+	if (tables.has('question')) {
+		const [responses, points] = await Promise.all([
+			db
+				.select({
+					...owner,
+					id: questionResponse.questionResponseId,
+					promptKey: question.questionKey,
+					position: questionResponse.position,
+				})
+				.from(questionResponse)
+				.innerJoin(
+					docCustomAnalysis,
+					eq(docCustomAnalysis.customAnalysisId, questionResponse.customAnalysisId),
+				)
+				.innerJoin(question, eq(question.questionId, questionResponse.questionId))
+				.innerJoin(document, eq(document.documentId, docCustomAnalysis.documentId))
+				.innerJoin(entity, eq(entity.id, document.entityUuid))
+				.where(and(where, eq(questionResponse.addressed, 1))),
+			db
+				.select({
+					responseId: questionResponseKeyPoint.questionResponseId,
+					point: questionResponseKeyPoint.keyPoint,
+				})
+				.from(questionResponseKeyPoint)
+				.innerJoin(
+					questionResponse,
+					eq(questionResponse.questionResponseId, questionResponseKeyPoint.questionResponseId),
+				)
+				.innerJoin(
+					docCustomAnalysis,
+					eq(docCustomAnalysis.customAnalysisId, questionResponse.customAnalysisId),
+				)
+				.innerJoin(document, eq(document.documentId, docCustomAnalysis.documentId))
+				.where(where)
+				.orderBy(asc(questionResponseKeyPoint.questionResponseKeyPointId)),
+		])
+		const leadOf = new Map<number, string>()
+		for (const p of points) if (!leadOf.has(p.responseId)) leadOf.set(p.responseId, p.point)
+		for (const r of responses) {
+			if (!isKept(scope, r.entityUuid)) continue
+			const own = !held(r.entityUuid)
+			answers.push({
+				taskId: r.taskId,
+				promptKey: r.promptKey,
+				sourceId: r.sourceId,
+				documentId: r.documentId,
+				// a question's position is the answer in prose: the source's words
+				position: own ? r.position : null,
+				lead: own ? (leadOf.get(r.id) ?? null) : notice,
+			})
+		}
+	}
+
+	if (tables.has('criterion_analysis')) {
+		const rows = await db
+			.select({
+				...owner,
+				analysisId: criterionAnalysis.customAnalysisId,
+				criterionId: criterionAnalysis.analysisSubtopicId,
+				point: criterionAnalysis.keyPoint,
+			})
+			.from(criterionAnalysis)
+			.innerJoin(
+				docCustomAnalysis,
+				eq(docCustomAnalysis.customAnalysisId, criterionAnalysis.customAnalysisId),
+			)
+			.innerJoin(document, eq(document.documentId, docCustomAnalysis.documentId))
+			.innerJoin(entity, eq(entity.id, document.entityUuid))
+			.where(where)
+			.orderBy(asc(criterionAnalysis.criterionAnalysisId))
+		const seen = new Set<string>()
+		for (const r of rows) {
+			const key = `${r.analysisId}|${r.criterionId}`
+			if (seen.has(key) || !isKept(scope, r.entityUuid)) continue
+			seen.add(key)
+			answers.push({
+				taskId: r.taskId,
+				// a criterion is keyed by its own id in the run (the record's prompt key)
+				promptKey: String(r.criterionId),
+				sourceId: r.sourceId,
+				documentId: r.documentId,
+				position: null,
+				// the finding is the source's words
+				lead: held(r.entityUuid) ? notice : r.point,
+			})
+		}
+	}
+	return answers
+}
+
 /* ───────────────────────── the readings ───────────────────────── */
 
 /**
  * One item's reading, fetched when a visitor opens it: the key points (with
- * their quotes) the record only counts. Unknown ids read as empty, and so does
- * an item of a source the scope leaves out; a withheld source's reading is the
- * notice, its one point.
+ * their details and quotes) the record only counts, and a perspective's own
+ * quotes. Unknown ids read as empty, and so does an item of a source the scope
+ * leaves out; a withheld source's reading is the notice, its one point, and
+ * its quotes are left out (a topic's points keep every other source's).
  */
 export async function worldReading(
 	db: CorpusDb,
@@ -1000,12 +1266,61 @@ export async function worldReading(
 	shape: WorldShape,
 	scope?: ReadScope,
 ): Promise<WorldReading> {
-	const points = async (): Promise<WorldPoint[]> => {
-		if (ref.kind === 'perspective') return perspectiveReading(db, ref, scope)
-		if (ref.kind === 'document') return documentReading(db, ref, shape, scope)
-		return answerReading(db, ref, publishedOf(shape), scope)
+	const read = async (): Promise<Omit<WorldReading, 'ref'>> => {
+		switch (ref.kind) {
+			case 'topic':
+				return { keyPoints: await topicReading(db, ref, scope), quotes: [] }
+			case 'perspective':
+				return perspectiveReading(db, ref, scope)
+			case 'document':
+				return { keyPoints: await documentReading(db, ref, shape, scope), quotes: [] }
+			case 'answer':
+				return { keyPoints: await answerReading(db, ref, publishedOf(shape), scope), quotes: [] }
+		}
 	}
-	return worldReadingSchema.parse({ ref, keyPoints: await points() } satisfies WorldReading)
+	return worldReadingSchema.parse({ ref, ...(await read()) } satisfies WorldReading)
+}
+
+/** A topic's own key points, each with the quotes the run drew for it, in the scope. */
+async function topicReading(
+	db: CorpusDb,
+	ref: Extract<WorldReadingRef, { kind: 'topic' }>,
+	scope: ReadScope | undefined,
+): Promise<WorldPoint[]> {
+	const [rows, quotes] = await Promise.all([
+		db
+			.select({
+				id: clusterKeyPoint.clusterKeyPointId,
+				point: clusterKeyPoint.keyPoint,
+				details: clusterKeyPoint.details,
+			})
+			.from(clusterKeyPoint)
+			.where(eq(clusterKeyPoint.topicClusterId, ref.topicId))
+			.orderBy(asc(clusterKeyPoint.clusterKeyPointId)),
+		db
+			.select({
+				pointId: clusterKeyPointQuote.clusterKeyPointId,
+				text: clusterKeyPointQuote.quoteText,
+				entityUuid: clusterKeyPointQuote.entityUuid,
+				sourceId: entity.entityId,
+			})
+			.from(clusterKeyPointQuote)
+			.innerJoin(
+				clusterKeyPoint,
+				eq(clusterKeyPoint.clusterKeyPointId, clusterKeyPointQuote.clusterKeyPointId),
+			)
+			.leftJoin(entity, eq(entity.id, clusterKeyPointQuote.entityUuid))
+			.where(eq(clusterKeyPoint.topicClusterId, ref.topicId)),
+	])
+	const byPoint = grouped(
+		quotes.filter((q) => isKept(scope, q.entityUuid) && !wordsOf(scope, q.entityUuid).withheld),
+		(q) => q.pointId,
+	)
+	return rows.map((r) => ({
+		point: r.point,
+		details: r.details,
+		quotes: (byPoint.get(r.id) ?? []).map((q) => ({ text: q.text, source: q.sourceId })),
+	}))
 }
 
 /** How an owner's reading reads in the scope: absent, behind the notice, or as written (null). */
@@ -1015,11 +1330,12 @@ const scopedReading = (scope: ReadScope | undefined, entityUuid: string): WorldP
 	return words.withheld ? noticePoints(words.notice ?? '') : null
 }
 
+/** A source's perspective on a topic: its key points with their quotes, and its own quotes. */
 async function perspectiveReading(
 	db: CorpusDb,
 	ref: Extract<WorldReadingRef, { kind: 'perspective' }>,
 	scope: ReadScope | undefined,
-): Promise<WorldPoint[]> {
+): Promise<Omit<WorldReading, 'ref'>> {
 	const [owner] = await db
 		.select({
 			id: clusterEntityPerspective.clusterEntityPerspectiveId,
@@ -1034,19 +1350,25 @@ async function perspectiveReading(
 			),
 		)
 		.limit(1)
-	if (!owner) return []
+	if (!owner) return { keyPoints: [], quotes: [] }
 	const scoped = scopedReading(scope, owner.entityUuid)
-	if (scoped) return scoped
-	const rows = await db
-		.select({
-			id: clusterEntityPerspectiveKeyPoint.keyPointId,
-			point: clusterEntityPerspectiveKeyPoint.keyPoint,
-			details: clusterEntityPerspectiveKeyPoint.details,
-		})
-		.from(clusterEntityPerspectiveKeyPoint)
-		.where(eq(clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId, owner.id))
-		.orderBy(asc(clusterEntityPerspectiveKeyPoint.keyPointId))
-	const quotes = rows.length
+	if (scoped) return { keyPoints: scoped, quotes: [] }
+	const [rows, own] = await Promise.all([
+		db
+			.select({
+				id: clusterEntityPerspectiveKeyPoint.keyPointId,
+				point: clusterEntityPerspectiveKeyPoint.keyPoint,
+				details: clusterEntityPerspectiveKeyPoint.details,
+			})
+			.from(clusterEntityPerspectiveKeyPoint)
+			.where(eq(clusterEntityPerspectiveKeyPoint.clusterEntityPerspectiveId, owner.id))
+			.orderBy(asc(clusterEntityPerspectiveKeyPoint.keyPointId)),
+		db
+			.select({ text: clusterEntityPerspectiveQuote.quoteText })
+			.from(clusterEntityPerspectiveQuote)
+			.where(eq(clusterEntityPerspectiveQuote.clusterEntityPerspectiveId, owner.id)),
+	])
+	const pointQuotes = rows.length
 		? await db
 				.select({
 					pointId: clusterEntityPerspectiveKpQuote.keyPointId,
@@ -1060,12 +1382,15 @@ async function perspectiveReading(
 					),
 				)
 		: []
-	const byPoint = grouped(quotes, (q) => q.pointId)
-	return rows.map((r) => ({
-		point: r.point,
-		details: r.details,
-		quotes: (byPoint.get(r.id) ?? []).map((q) => ({ text: q.text, source: ref.sourceId })),
-	}))
+	const byPoint = grouped(pointQuotes, (q) => q.pointId)
+	return {
+		keyPoints: rows.map((r) => ({
+			point: r.point,
+			details: r.details,
+			quotes: (byPoint.get(r.id) ?? []).map((q) => ({ text: q.text, source: ref.sourceId })),
+		})),
+		quotes: own.map((q): WorldQuote => ({ text: q.text, source: ref.sourceId })),
+	}
 }
 
 /** A document's own key points, with the quotes the run verified — as the

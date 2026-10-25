@@ -8,12 +8,23 @@
  * explains it — a source's written perspective beside the door to the topic
  * it is about, a facet's comparative lens over the doors of its cohort.
  *
- * This is the ONE shape that world is built from, read off a run's canonical
- * tables (`record.ts`) and served by the app that holds the run. Everything a
- * room shows is here; nothing is fetched per room. The relations are stated
- * ONCE and referenced by id: a membership is a (topic, source, grade), a
- * perspective is a source's written stance on a topic, and both the topic
- * room and the source room read the same row from their own side.
+ * Read in THREE PARTS (settled 2026-10-25), each when it is needed, off a
+ * run's canonical tables (`record.ts`) by the app that holds the run:
+ *
+ *   the record    every room, door and finding of the island: the record's
+ *                 relations, names, titles, positions and counts, and none of
+ *                 its writing — read when the island is built;
+ *   a room's text the writing one room's walls carry (`worldText`): its key
+ *                 points' headlines, its perspectives' and lenses' words, its
+ *                 answers — read when the room is entered;
+ *   a reading     what a reading sheet adds (`worldReading`): the key points
+ *                 with their details and quotes, a perspective's quotes —
+ *                 read when an item is opened.
+ *
+ * The relations are stated ONCE and referenced by id: a membership is a
+ * (topic, source, grade), a perspective is a source's written stance on a
+ * topic, and both the topic room and the source room read the same row from
+ * their own side; a room's text and a reading name their rows by the same ids.
  *
  * Serialisable, zod-validated at both ends, no corpus named.
  */
@@ -108,14 +119,14 @@ export const worldParentSchema = z
 	})
 	.readonly()
 
-/** One facet value's comparative perspective on a topic. */
+/** One facet value's comparative perspective on a topic; its words are its topic's room text. */
 export const worldLensSchema = z
 	.object({
 		facet: id,
 		value: z.string(),
 		position: z.string(),
-		analysis: z.string(),
-		quotes: z.array(worldQuoteSchema).readonly(),
+		/** How many quotes back it (a lens heading an alley draws them round its rail). */
+		quotes: z.number().int(),
 	})
 	.readonly()
 export type WorldLens = z.infer<typeof worldLensSchema>
@@ -130,7 +141,8 @@ export const worldTopicSchema = z
 		sources: z.number().int(),
 		documents: z.number().int(),
 		positions: z.record(z.string(), z.number().int()),
-		keyPoints: z.array(worldPointSchema).readonly(),
+		/** How many key points the run drew for it; their headlines are its room's text, the rest a reading. */
+		keyPoints: z.number().int(),
 		/** The facet-level perspectives, one per (analysed facet, value) the run wrote. */
 		lenses: z.array(worldLensSchema).readonly(),
 		/** The topic's baked place in the galaxy sky (0..1 disc), when the run baked one. */
@@ -143,10 +155,9 @@ export const worldDocumentSchema = z
 	.object({
 		id: id,
 		title: z.string(),
-		/** The headlines of the key points the pipeline drew from it, in order
-		 *  (a room writes them up where the document is read); each point's
-		 *  details and quotes are a reading (`worldReading`). */
-		points: z.array(z.string()).readonly(),
+		/** How many key points the pipeline drew from it: their headlines are its
+		 *  source's room text, each point's details and quotes a reading. */
+		points: z.number().int(),
 	})
 	.readonly()
 export type WorldDocument = z.infer<typeof worldDocumentSchema>
@@ -172,30 +183,27 @@ export const worldMembershipSchema = z
 export type WorldMembership = z.infer<typeof worldMembershipSchema>
 
 /** A source's written perspective on a topic — the item beside a doorway,
- *  from either side. Its own key points are a reading (`worldReading`). */
+ *  from either side. Its one-word position and its counts; its words are
+ *  either side's room text, its key points and quotes a reading. */
 export const worldPerspectiveSchema = z
 	.object({
 		topicId: z.number().int(),
 		sourceId: id,
-		title: z.string(),
-		description: z.string(),
 		position: z.string(),
-		analysis: z.string(),
 		keyPoints: z.number().int(),
-		quotes: z.array(z.string()).readonly(),
+		quotes: z.number().int(),
 	})
 	.readonly()
 export type WorldPerspective = z.infer<typeof worldPerspectiveSchema>
 
-/** One document's answer to one prompt of a task: its position where the
- *  task writes one (a question task does; a criteria task does not), its
- *  first point, the rest a reading (`worldReading`). */
+/** One document's answer to one prompt of a task: who answered, how many
+ *  points it holds, a criteria assessment's score; its position (a question
+ *  task's answer in prose) and its first point are the task's room text,
+ *  the rest a reading. */
 export const worldAnswerSchema = z
 	.object({
 		sourceId: id,
 		documentId: id,
-		position: z.string().nullable(),
-		lead: z.string().nullable(),
 		keyPoints: z.number().int(),
 		/** A criteria assessment's score for this criterion (schema v12); absent on every other answer. */
 		score: z.number().optional(),
@@ -203,13 +211,88 @@ export const worldAnswerSchema = z
 	.readonly()
 export type WorldAnswer = z.infer<typeof worldAnswerSchema>
 
+/* ── a room's text: the writing its walls carry, read when it is entered ── */
+
+/**
+ * Whose room's text: the record item every room of a building hangs from —
+ * a topic (its room and the hans off it), a source, a cohort (a facet value's
+ * lobby), a task (its hall and its prompts' rooms).
+ */
+export const worldTextRefSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('topic'), topicId: z.number().int() }).readonly(),
+	z.object({ kind: z.literal('source'), sourceId: id }).readonly(),
+	z.object({ kind: z.literal('cohort'), facet: id, value: z.string() }).readonly(),
+	z.object({ kind: z.literal('task'), taskId: id }).readonly(),
+])
+export type WorldTextRef = z.infer<typeof worldTextRefSchema>
+
+/** A perspective's words: its title, its description and its position's analysis. */
+export const worldPerspectiveTextSchema = z
+	.object({
+		topicId: z.number().int(),
+		sourceId: id,
+		title: z.string(),
+		description: z.string(),
+		analysis: z.string(),
+	})
+	.readonly()
+export type WorldPerspectiveText = z.infer<typeof worldPerspectiveTextSchema>
+
+/** A lens's words: its analysis and the quotes that back it. */
+export const worldLensTextSchema = z
+	.object({
+		topicId: z.number().int(),
+		facet: id,
+		value: z.string(),
+		analysis: z.string(),
+		quotes: z.array(worldQuoteSchema).readonly(),
+	})
+	.readonly()
+export type WorldLensText = z.infer<typeof worldLensTextSchema>
+
+/** An answer's words: its position where the task writes one, its first point. */
+export const worldAnswerTextSchema = z
+	.object({
+		taskId: id,
+		promptKey: id,
+		sourceId: id,
+		documentId: id,
+		position: z.string().nullable(),
+		lead: z.string().nullable(),
+	})
+	.readonly()
+export type WorldAnswerText = z.infer<typeof worldAnswerTextSchema>
+
+/**
+ * The writing one room's walls carry, by the ids the record names its rows
+ * with: a topic's key points' headlines (its rail), each of its documents'
+ * headlines (a source's rail), and the words of every perspective, lens and
+ * answer hung there. A part the ref's room does not hang is empty.
+ */
+export const worldTextSchema = z
+	.object({
+		ref: worldTextRefSchema,
+		points: z.array(z.string()).readonly(),
+		documents: z
+			.array(z.object({ id: id, points: z.array(z.string()).readonly() }).readonly())
+			.readonly(),
+		perspectives: z.array(worldPerspectiveTextSchema).readonly(),
+		lenses: z.array(worldLensTextSchema).readonly(),
+		answers: z.array(worldAnswerTextSchema).readonly(),
+	})
+	.readonly()
+export type WorldText = z.infer<typeof worldTextSchema>
+
+/* ── a reading: what a sheet adds, read when an item is opened ── */
+
 /**
  * The readings a room fetches when an item is opened — the key points the
- * record counts but does not carry (they are three quarters of its weight):
- * a source's perspective on a topic, a document's own analysis, a document's
- * answer to a task's prompt.
+ * record counts but does not carry, with their details and quotes: a topic's
+ * own, a source's perspective on a topic (with the perspective's own quotes),
+ * a document's own analysis, a document's answer to a task's prompt.
  */
 export const worldReadingRefSchema = z.discriminatedUnion('kind', [
+	z.object({ kind: z.literal('topic'), topicId: z.number().int() }).readonly(),
 	z.object({ kind: z.literal('perspective'), topicId: z.number().int(), sourceId: id }).readonly(),
 	z.object({ kind: z.literal('document'), documentId: id }).readonly(),
 	z.object({ kind: z.literal('answer'), taskId: id, promptKey: id, documentId: id }).readonly(),
@@ -217,7 +300,12 @@ export const worldReadingRefSchema = z.discriminatedUnion('kind', [
 export type WorldReadingRef = z.infer<typeof worldReadingRefSchema>
 
 export const worldReadingSchema = z
-	.object({ ref: worldReadingRefSchema, keyPoints: z.array(worldPointSchema).readonly() })
+	.object({
+		ref: worldReadingRefSchema,
+		keyPoints: z.array(worldPointSchema).readonly(),
+		/** The item's own quotes beside its points (a perspective's); empty for the rest. */
+		quotes: z.array(worldQuoteSchema).readonly(),
+	})
 	.readonly()
 export type WorldReading = z.infer<typeof worldReadingSchema>
 

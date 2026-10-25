@@ -147,6 +147,10 @@ export class ReportCap extends RpcTarget {
 	world() {
 		return this.#page('world', undefined)
 	}
+	/** One room's text for the island: the writing its walls carry. */
+	worldText(ref: unknown) {
+		return this.#page('worldText', ref)
+	}
 	worldReading(ref: unknown) {
 		return this.#page('worldReading', ref)
 	}
