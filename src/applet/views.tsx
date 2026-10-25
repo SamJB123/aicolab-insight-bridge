@@ -177,7 +177,11 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 			return positionColors(words().scale)
 		},
 		sourceSelection: (key) => ({ kind: 'source', key }),
-		citeTitle: `Open this ${words().nouns.entity}`,
+		// Read where a citation draws it, not here: the sheet is made in the
+		// component's body, where a read of the page is untracked.
+		get citeTitle() {
+			return `Open this ${words().nouns.entity}`
+		},
 	})
 
 	// ADDRESS → SHEET: the reading the address names is the one open (the
@@ -202,9 +206,15 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 
 	/* ── what core's pages read of their host ── */
 
-	const surface = (w: RunWords): ReportSurface => ({
-		words: w,
-		positionColors: positionColors(w.scale),
+	// The run's words as an accessor, read through getters: a page hands its
+	// surface to a context, which reads its value once and untracked.
+	const surface = (words: () => RunWords): ReportSurface => ({
+		get words() {
+			return words()
+		},
+		get positionColors() {
+			return positionColors(words().scale)
+		},
 		open: (target) => sheet.openDrawer(target),
 		Link: SectionLink,
 	})
@@ -226,8 +236,11 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 
 	/* ── the Brief's surface: its folds in the query, its chapter readings through the door ── */
 
+	// The page's data as an accessor: a surface is handed to a context, which
+	// reads its value once and untracked, so the data is read only where the
+	// page draws it.
 	const briefSurface = (
-		data: Extract<ReportPage, { section: 'topics' }>['data'],
+		page: () => Extract<ReportPage, { section: 'topics' }>['data'],
 	): BriefSurface => ({
 		expandedChapters: () => expandedSearch(props.at.page.expanded) ?? [],
 		onExpandedChaptersChange: (expanded) => {
@@ -239,20 +252,20 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 		},
 		vocabulary: {
 			get source() {
-				return data.words.nouns.entity
+				return page().words.nouns.entity
 			},
 			get sources() {
-				return data.words.nouns.entities
+				return page().words.nouns.entities
 			},
 			get title() {
-				return data.title
+				return page().title
 			},
 		},
 		get positions() {
-			return [...data.words.scale.order]
+			return [...page().words.scale.order]
 		},
 		get positionColors() {
-			return positionColors(data.words.scale)
+			return positionColors(page().words.scale)
 		},
 		openTopic: (topicClusterId) => sheet.openDrawer({ kind: 'topic', key: topicClusterId }),
 		openGroup: (superclusterId) => sheet.openDrawer({ kind: 'group', key: superclusterId }),
@@ -263,10 +276,14 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 	/* ── the record's surface: its filters and page in the query ── */
 
 	const sourcesSurface = (
-		data: Extract<ReportPage, { section: 'sources' }>['data'],
+		page: () => Extract<ReportPage, { section: 'sources' }>['data'],
 	): SourcesSurface => ({
-		vocabulary: data.vocabulary,
-		search: sourcesSearchOf(props.at.page),
+		get vocabulary() {
+			return page().vocabulary
+		},
+		get search() {
+			return sourcesSearchOf(props.at.page)
+		},
 		// A filter change resets to page 1 and REPLACES history; a page change pushes.
 		onSearch: (patch, kind) =>
 			props.host.navigator.go(
@@ -289,7 +306,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 						<OverviewPage
 							overview={data().overview}
 							landscape={data().landscape}
-							surface={surface(data().words)}
+							surface={surface(() => data().words)}
 							additions={data().additions}
 						/>
 					)}
@@ -306,7 +323,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 						>
 							<GalaxyPage
 								data={data().data}
-								surface={surface(data().words)}
+								surface={surface(() => data().words)}
 								navigation={{
 									nodeId: props.at.reading ? nodeIdOf(props.at.reading) : undefined,
 									documentId: props.at.document,
@@ -337,10 +354,10 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 					)}
 				</Match>
 				<Match when={props.page.section === 'topics' ? props.page.data : undefined}>
-					{(data) => <BriefPage d={data()} surface={briefSurface(data())} />}
+					{(data) => <BriefPage d={data()} surface={briefSurface(data)} />}
 				</Match>
 				<Match when={props.page.section === 'sources' ? props.page.data : undefined}>
-					{(data) => <SourcesPage d={data()} surface={sourcesSurface(data())} />}
+					{(data) => <SourcesPage d={data()} surface={sourcesSurface(data)} />}
 				</Match>
 				<Match when={props.page.section === 'search' ? props.page.data : undefined}>
 					{(data) => (
@@ -351,7 +368,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 							}
 							search={(text) => reads().topicSearch(text)}
 							placeholder={data().placeholder}
-							surface={surface(data().words)}
+							surface={surface(() => data().words)}
 						/>
 					)}
 				</Match>
@@ -360,7 +377,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 						<MethodPage
 							method={data().method}
 							data={data().data}
-							surface={surface(data().words)}
+							surface={surface(() => data().words)}
 							additions={data().additions}
 						/>
 					)}
@@ -371,7 +388,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 							endpoint={data().endpoint}
 							serverName={data().serverName}
 							access={{ kind: 'public' }}
-							surface={surface(data().words)}
+							surface={surface(() => data().words)}
 							additions={data().additions}
 						/>
 					)}
@@ -390,7 +407,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 							{(found) => (
 								<AnalysisPage
 									page={found()}
-									surface={surface(analysis().data.words)}
+									surface={surface(() => analysis().data.words)}
 									loaders={analysisLoaders(analysis().taskId, (request) => reads().drill(request))}
 								/>
 							)}

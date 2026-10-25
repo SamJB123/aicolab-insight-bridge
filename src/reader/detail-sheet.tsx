@@ -23,7 +23,7 @@
  */
 import { AdaptiveModalSheet } from '@aicolab/ui-solid'
 import { type JSX, Loading } from '@solidjs/web'
-import { createMemo, createSignal, Show } from 'solid-js'
+import { createMemo, createSignal, Show, untrack } from 'solid-js'
 import type { IBNodeId } from '../galaxy/types.ts'
 import { Reading } from './reader.tsx'
 import type { ReadingView } from './reading-view.ts'
@@ -82,10 +82,14 @@ export function createDetailSheet<S>(config: DetailSheetConfig<S>): DetailSheet<
 	let opener: HTMLElement | null = null
 	const state = () => ({ selection: selection(), level: level(), section: section() })
 	const restore = (next: DetailSheetState<S>) => {
-		if (JSON.stringify(state()) === JSON.stringify(next)) return
-		if (JSON.stringify(selection()) !== JSON.stringify(next.selection))
+		// What is open now, read once to compare: a host restores from an
+		// effect's apply phase, and restoring must not make it depend on the
+		// sheet it writes.
+		const current = untrack(state)
+		if (JSON.stringify(current) === JSON.stringify(next)) return
+		if (JSON.stringify(current.selection) !== JSON.stringify(next.selection))
 			setSelection(() => next.selection)
-		if (level()?.documentId !== next.level?.documentId) setLevel(next.level)
+		if (current.level?.documentId !== next.level?.documentId) setLevel(next.level)
 		setSection(next.section)
 	}
 	const changeLevel = (next: DetailLevel | null) => {
