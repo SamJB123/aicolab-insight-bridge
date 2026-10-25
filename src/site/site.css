@@ -794,6 +794,12 @@
 		   morphs the card into this stage (the shared `galaxy-stage` name) */
 		view-transition-name: galaxy-stage;
 	}
+	/* A host's mount of the galaxy section (core's applet view, ../applet):
+	   its wrapper stands between the host's stage and the shell, so it fills
+	   the stage as <main> does here, and the shell's 100% is the stage's. */
+	.ib-applet-section[data-section="galaxy"] {
+		block-size: 100%;
+	}
 
 	/* ── the landing's galaxy poster, a doorway card ──────────────────────────
 	   Core's overview draws it in the hero's right column (report.css
