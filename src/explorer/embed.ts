@@ -14,17 +14,27 @@
  *                      index (what the connector's search tools and the topic
  *                      search page both take).
  */
-import type { EmbeddingModel } from '@aicolab/insight-bridge-contracts/models'
+import { type EmbeddingModel, embeddingModelSchema } from '@aicolab/insight-bridge-contracts/models'
 import { resolvedModels } from '@aicolab/insight-bridge-contracts/run-config'
 import { type CorpusDb, runMeta } from '@aicolab/insight-bridge-contracts/schema'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { perRecord } from './reader.ts'
 import type { NearestPassages } from './tools.ts'
 
 export const VECTOR_DIMS = 1536
 
-/** The model the run embedded its passages with, from its own run config. */
-export async function runEmbeddingModel(db: CorpusDb): Promise<EmbeddingModel> {
+/**
+ * The model the run embedded its passages with, from its own run config.
+ * Kept per record and in the data centre's cache (./reader): a report's
+ * door reads it on every open, beside the run's facts.
+ */
+export const runEmbeddingModel = perRecord(readEmbeddingModel, undefined, {
+	name: 'embedding-model',
+	schema: embeddingModelSchema,
+})
+
+async function readEmbeddingModel(db: CorpusDb): Promise<EmbeddingModel> {
 	const [meta] = await db
 		.select({ runConfig: runMeta.runConfig })
 		.from(runMeta)

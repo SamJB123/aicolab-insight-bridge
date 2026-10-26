@@ -23,11 +23,22 @@
  *                 version holds for the isolate's life; a run store, whose
  *                 record changes under it, names no record and gets the
  *                 per-request memo alone.
+ *   shared        a `perRecord` read given a name and a schema is also kept
+ *                 in the data centre's cache (the Workers Cache API), under
+ *                 the record's version. An isolate is short-lived and a
+ *                 service binding runs its callee on the caller's server, so
+ *                 the isolate memo is mostly empty when a door opens; every
+ *                 server in a data centre shares its cache. An entry read
+ *                 back is checked against the schema, and one that fails is
+ *                 read again. Entries expire after an hour, which also bounds
+ *                 how long a deploy that changes what a read computes, over
+ *                 an unchanged record, can be answered from before it.
  *
  * An unmarked instance (a test's, a pipeline step's) is never memoised.
  */
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import { sql } from 'drizzle-orm'
+import type { z } from 'zod'
 
 const readers = new WeakMap<CorpusDb, { record: object | null }>()
 
@@ -92,14 +103,62 @@ export const recordVersion = perRequest(async (db: CorpusDb): Promise<string> =>
 		.join('|')
 })
 
+/** How a per-record read is also kept in the data centre's cache. */
+export interface SharedRead<T> {
+	/** The read's own name in the cache key, one per read. */
+	name: string
+	/** What an entry read back must parse as. */
+	schema: z.ZodType<T>
+}
+
+const SHARED_CACHE = 'insight-bridge-record'
+const SHARED_SECONDS = 3600
+
+/**
+ * The read from the data centre's cache when an entry for this version is
+ * there and parses, else read and stored. The cache failing never fails the
+ * read. Outside a Worker (no Cache API) it is the read.
+ */
+async function sharedRead<T>(
+	shared: SharedRead<T>,
+	version: string,
+	key: string,
+	read: () => Promise<T>,
+): Promise<T> {
+	if (typeof caches === 'undefined') return read()
+	const entry = `https://${SHARED_CACHE}.local/${[shared.name, version, key].map(encodeURIComponent).join('/')}`
+	const cache = await caches.open(SHARED_CACHE).catch(() => null)
+	if (!cache) return read()
+	const hit = await cache.match(entry).catch(() => undefined)
+	if (hit) {
+		const parsed = shared.schema.safeParse(await hit.json().catch(() => undefined))
+		if (parsed.success) return parsed.data
+	}
+	const value = await read()
+	await cache
+		.put(
+			entry,
+			new Response(JSON.stringify(value), {
+				headers: {
+					'content-type': 'application/json',
+					'cache-control': `max-age=${SHARED_SECONDS}`,
+				},
+			}),
+		)
+		.catch(() => undefined)
+	return value
+}
+
 /**
  * A read kept across requests for a named record while its version holds;
- * for a reader over no named record, once per request. A read that fails
- * is not kept.
+ * for a reader over no named record, once per request. Given `shared`, also
+ * kept in the data centre's cache under the version. A read that fails is
+ * not kept.
  */
 export function perRecord<A extends unknown[], T>(
 	read: (db: CorpusDb, ...args: A) => Promise<T>,
 	key: (...args: A) => string = () => '',
+	shared?: SharedRead<T>,
 ): (db: CorpusDb, ...args: A) => Promise<T> {
 	const kept = new WeakMap<object, Map<string, { version: string; value: Promise<T> }>>()
 	const once = perRequest(read, key)
@@ -115,7 +174,9 @@ export function perRecord<A extends unknown[], T>(
 		const k = key(...args)
 		const found = held.get(k)
 		if (found && found.version === version) return found.value
-		const value = read(db, ...args)
+		const value = shared
+			? sharedRead(shared, version, k, () => read(db, ...args))
+			: read(db, ...args)
 		held.set(k, { version, value })
 		value.catch(() => {
 			if (held.get(k)?.value === value) held.delete(k)

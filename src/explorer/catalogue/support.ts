@@ -6,10 +6,16 @@
  * landscape's profiles, a search's passages) and the standing caveats. Nothing
  * here decides an answer's shape: that is each read's own.
  */
-import type { Overview, RunWords, TopicProfile } from '@aicolab/insight-bridge-contracts/explorer'
+import {
+	overviewSchema,
+	type RunWords,
+	runWordsSchema,
+	type TopicProfile,
+} from '@aicolab/insight-bridge-contracts/explorer'
 import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import * as s from '@aicolab/insight-bridge-contracts/schema'
 import { asc, eq } from 'drizzle-orm'
+import { z } from 'zod'
 import { cap } from '../../grammar.ts'
 import * as x from '../data.ts'
 import { derivedFacets, type EffectiveFacets, loadFacetCache } from '../facets.ts'
@@ -26,26 +32,31 @@ export interface ToolReadContext {
 	scope?: ReadScope
 }
 
-/** What the descriptions and examples say about this run. */
-export interface ToolContext {
-	words: RunWords
-	overview: Overview
+/**
+ * What the descriptions and examples say about this run. A schema, because the
+ * facts are also kept in the data centre's cache (../reader) and an entry read
+ * back from there is checked against it.
+ */
+export const toolContextSchema = z.object({
+	words: runWordsSchema,
+	overview: overviewSchema,
 	/** The lens's values, in the profile's order (empty without a lens). */
-	lensValues: string[]
+	lensValues: z.array(z.string()),
 	/** The facets list_tags and tag_pivot read, keyed as written, headed as the site reads them. */
-	facets: { key: string; label: string }[]
+	facets: z.array(z.object({ key: z.string(), label: z.string() })),
 	/** Whether the run built a grouping tree above its topics. */
-	tree: boolean
+	tree: z.boolean(),
 	/** Real values from this run for the console's starting inputs. */
-	examples: {
-		topicId: number | null
-		query: string | null
-		documentId: string | null
-		sourceId: string | null
-		groupId: number | null
-		questionKey: string | null
-	}
-}
+	examples: z.object({
+		topicId: z.number().nullable(),
+		query: z.string().nullable(),
+		documentId: z.string().nullable(),
+		sourceId: z.string().nullable(),
+		groupId: z.number().nullable(),
+		questionKey: z.string().nullable(),
+	}),
+})
+export type ToolContext = z.infer<typeof toolContextSchema>
 
 /** The host's nearest passages to a query, by chunk id, when it binds a vector index. */
 export type NearestPassages = (query: string, topK: number) => Promise<ReadonlyMap<string, number>>
@@ -289,9 +300,15 @@ export async function facetFilter(
  * What the descriptions and examples say about this run, in the reader's
  * scope. Kept per record (../reader), under the scope it was read for: every
  * connector request used to read the overview, every topic and the tree
- * before its tool ran.
+ * before its tool ran. Also kept in the data centre's cache, which every
+ * server there shares: an isolate is short-lived, and building the facts
+ * took 280–540 ms on Training Data, up to 1.4 s (2026-10-26), where reading
+ * them back from that cache took 4–31 ms.
  */
-export const toolContext = perRecord(readToolContext, scopeKey)
+export const toolContext = perRecord(readToolContext, scopeKey, {
+	name: 'tool-context',
+	schema: toolContextSchema,
+})
 
 async function readToolContext(db: CorpusDb, scope?: ReadScope): Promise<ToolContext> {
 	const words = await x.runWords(db)
