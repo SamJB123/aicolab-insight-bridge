@@ -91,7 +91,7 @@ const exampleOf = (field: z.ZodType): unknown => {
 describe.skipIf(!file || !existsSync(file))('the report catalogue over a run database', () => {
 	const sqlite = new DatabaseSync(file ?? ':memory:', { readOnly: true })
 	// one reader for the whole test, over one record: the per-record memos hold across reads
-	const db = requestReader(drizzle({ client: sqlite }), {})
+	const db = requestReader(drizzle({ client: sqlite }), { binding: sqlite, name: 'sizes-test' })
 	let catalogue: ReportCatalogue
 	let ctx: ReportCtx
 	const rows: string[] = []

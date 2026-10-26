@@ -15,7 +15,8 @@
  *                 marks an instance that outlives a write, so a pipeline step
  *                 reads as it always did.
  *   per record    `requestReader(db, record)` also names the record the
- *                 reader is over — the D1 binding — and a read wrapped in
+ *                 reader is over — the D1 binding, and the record's name in
+ *                 the data centre's cache — and a read wrapped in
  *                 `perRecord` is kept across requests, under the record's
  *                 version (`recordVersion`: the committed build, the appends,
  *                 the documents, the newest ids), until that version changes.
@@ -33,6 +34,15 @@
  *                 read again. Entries expire after an hour, which also bounds
  *                 how long a deploy that changes what a read computes, over
  *                 an unchanged record, can be answered from before it.
+ *   the version   is kept in that cache too, under the record's name, so an
+ *                 open asks D1 nothing before its reads. Each request reads it
+ *                 from D1 as well, without waiting, and stores what it finds;
+ *                 so after a re-prepare the first request in a data centre
+ *                 reads the record as it was, and the ones after see the new
+ *                 version (the user's choice, 2026-10-27, over a 30-second
+ *                 expiry or a D1 read on every open: the read is 0.3 ms inside
+ *                 D1, 16–34 ms from the worker, and queues behind any heavy
+ *                 read on the same database, measured up to 1.3 s).
  *
  * An unmarked instance (a test's, a pipeline step's) is never memoised.
  */
@@ -40,10 +50,16 @@ import type { CorpusDb } from '@aicolab/insight-bridge-contracts/schema'
 import { sql } from 'drizzle-orm'
 import type { z } from 'zod'
 
-const readers = new WeakMap<CorpusDb, { record: object | null }>()
+/** The record a reader is over: its binding, kept by identity per isolate, and its name in the data centre's cache. */
+export interface NamedRecord {
+	binding: object
+	name: string
+}
+
+const readers = new WeakMap<CorpusDb, { record: NamedRecord | null }>()
 
 /** Mark `db` as one request's reader, over `record` when the host's record is immutable between deploys. */
-export function requestReader<Db extends CorpusDb>(db: Db, record?: object): Db {
+export function requestReader<Db extends CorpusDb>(db: Db, record?: NamedRecord): Db {
 	readers.set(db, { record: record ?? null })
 	return db
 }
@@ -75,11 +91,41 @@ export function perRequest<A extends unknown[], T>(
 }
 
 /**
- * What a record's version is made of: the run's row (its name and stamp), the
- * committed build, the committed appends, the documents and the newest ids of
- * the evidence tables. One statement of indexed lookups; read once per request.
+ * The record's version, once per request: from the data centre's cache for a
+ * reader over a named record, with D1 read alongside and its answer stored
+ * for the next request; else from D1.
  */
 export const recordVersion = perRequest(async (db: CorpusDb): Promise<string> => {
+	const record = readers.get(db)?.record
+	if (!record || typeof caches === 'undefined') return readVersion(db)
+	const cache = await caches.open(SHARED_CACHE).catch(() => null)
+	if (!cache) return readVersion(db)
+	const entry = `https://${SHARED_CACHE}.local/version/${encodeURIComponent(record.name)}`
+	const fresh = readVersion(db).then(async (version) => {
+		await cache
+			.put(
+				entry,
+				new Response(version, {
+					headers: { 'content-type': 'text/plain', 'cache-control': `max-age=${SHARED_SECONDS}` },
+				}),
+			)
+			.catch(() => undefined)
+		return version
+	})
+	const hit = await cache.match(entry).catch(() => undefined)
+	const kept = hit ? await hit.text().catch(() => '') : ''
+	if (!kept) return fresh
+	// The cached version answers; D1's, read alongside, refreshes the entry.
+	fresh.catch(() => undefined)
+	return kept
+})
+
+/**
+ * What a record's version is made of: the run's row (its name and stamp), the
+ * committed build, the committed appends, the documents and the newest ids of
+ * the evidence tables. One statement of indexed lookups.
+ */
+async function readVersion(db: CorpusDb): Promise<string> {
 	const [v] = await db.all<{
 		name: string | null
 		updated: number | null
@@ -101,7 +147,7 @@ export const recordVersion = perRequest(async (db: CorpusDb): Promise<string> =>
 	return [v?.name, v?.updated, v?.build, v?.appends, v?.documents, v?.points, v?.quotes, v?.chunks]
 		.map((part) => String(part ?? ''))
 		.join('|')
-})
+}
 
 /** How a per-record read is also kept in the data centre's cache. */
 export interface SharedRead<T> {
@@ -166,10 +212,10 @@ export function perRecord<A extends unknown[], T>(
 		const record = readers.get(db)?.record
 		if (!record) return once(db, ...args)
 		const version = await recordVersion(db)
-		let held = kept.get(record)
+		let held = kept.get(record.binding)
 		if (!held) {
 			held = new Map()
-			kept.set(record, held)
+			kept.set(record.binding, held)
 		}
 		const k = key(...args)
 		const found = held.get(k)
