@@ -19,12 +19,12 @@ import { BarList, DoorCard, PositionStrip, StatTiles } from '../site/figures.tsx
 import type { OverviewAdditions } from './additions.ts'
 import { kindLabel } from './analysis/common.tsx'
 import { Blocks } from './blocks.tsx'
+import { tasksOf } from './nav-items.ts'
 import {
 	cap,
 	fmt,
 	type ReportSurface,
 	ReportSurfaceProvider,
-	tasksOf,
 	useReportSurface,
 } from './surface.tsx'
 import './report.css'

@@ -18,7 +18,7 @@ import type {
 	SourcesPageData,
 } from '../explorer/catalogue/page-reads.ts'
 import { analysisPageSchema } from '../explorer/catalogue/readers.ts'
-import { reportNav } from '../report/nav.tsx'
+import { reportNav } from '../report/nav-items.ts'
 import { type SectionRef, sectionId } from './address.ts'
 
 /** A section as a host lists it: its segment under the report, its label, which section it is. */

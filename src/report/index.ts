@@ -42,16 +42,16 @@ export {
 export { HeatCell, StatRow } from './figures.tsx'
 export { GalaxyPage, type GalaxyPageProps } from './galaxy-page.tsx'
 export { MethodPage } from './method-page.tsx'
+export { type HostLink, ReportSections } from './nav.tsx'
 export {
 	type HeaderEntry,
-	type HostLink,
 	type HostNavItem,
 	headerEntries,
 	type MenuEntry,
 	type NavItem,
-	ReportSections,
 	reportNav,
-} from './nav.tsx'
+	tasksOf,
+} from './nav-items.ts'
 export { OverviewPage } from './overview-page.tsx'
 export { hostNavItemSchema } from './own-pages.ts'
 export { ProseText } from './prose.tsx'
@@ -60,7 +60,6 @@ export {
 	type ReportSection,
 	type ReportSurface,
 	ReportSurfaceContext,
-	tasksOf,
 	useReportSurface,
 } from './surface.tsx'
 export { TopicSearchPage } from './topic-search-page.tsx'

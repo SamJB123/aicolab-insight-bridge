@@ -48,10 +48,6 @@ const PageAnchor = (props: { to: string; class?: string; children: JSX.Element }
 	</a>
 )
 
-/** The run's custom analysis tasks, in its profile's order, each with its kind and reader-facing title. */
-export const tasksOf = (words: RunWords) =>
-	Object.entries(words.tasks).map(([taskId, t]) => ({ taskId, kind: t.type, title: t.title }))
-
 /** Solid 2: the context object is the provider; the default-less form throws without one. */
 export const ReportSurfaceContext = createContext<
 	ReportSurface & { Page: NonNullable<ReportSurface['Page']> }

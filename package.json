@@ -62,7 +62,8 @@
 		"./world/record": "./src/world/record.ts",
 		"./package.json": "./package.json",
 		"./reading-url": "./src/reading-url.tsx",
-		"./applet": "./src/applet/index.ts"
+		"./applet": "./src/applet/index.ts",
+		"./applet/reads": "./src/applet/reads.ts"
 	},
 	"scripts": {
 		"check-types": "tsc --noEmit",
