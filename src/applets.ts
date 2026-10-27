@@ -13,11 +13,10 @@ import { CORPORA } from './corpora.ts'
 export type { CorpusSlug } from './corpora.ts'
 export { isCorpusSlug } from './corpora.ts'
 
-/** The family: where its reports stand in a host's tree and on its chart. */
+/** The family: what its reports stand under in a host's tree and on its chart. */
 export const INSIGHT_BRIDGE_APPLET = defineApplet({
 	id: 'insight-bridge',
 	label: 'Insight Bridge',
-	direction: 2,
 })
 
 /** One applet per corpus, in the registry's order, each under the family. */
