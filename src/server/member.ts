@@ -3,9 +3,9 @@
  * Public by default; a signed-in Alliance member unlocks any member-tier tools.
  * Delegates to the canonical `resolveAuthSession`: `verifySession` maps the
  * session cookie → verified user, then `getOrgMembership` decides membership
- * (with lazy @aicolab.org auto-enrolment). Fails open to anonymous/public on
- * anything missing or thrown — public is the baseline tier for these corpora,
- * so anonymous and failure look the same.
+ * (a `member` row, or a verified email in a confirmed organisation domain).
+ * Fails open to anonymous/public on anything missing or thrown — public is
+ * the baseline tier for these corpora, so anonymous and failure look the same.
  *
  * The caller passes `env`. A shared package must not reach for a platform
  * global like `cloudflare:workers` — the bundler cannot resolve it from inside
@@ -31,7 +31,6 @@ export type Viewer = { userId: string | null; isMember: boolean }
 export type ViewerEnv = {
 	AUTH?: AuthSessionService
 	ALLIANCE_ORG_SLUG?: string
-	ALLIANCE_EMAIL_DOMAIN?: string
 }
 
 export async function resolveViewer(request: Request, env: ViewerEnv): Promise<Viewer> {
@@ -40,7 +39,6 @@ export async function resolveViewer(request: Request, env: ViewerEnv): Promise<V
 			auth: env.AUTH,
 			cookieHeader: request.headers.get('cookie') ?? '',
 			orgSlug: env.ALLIANCE_ORG_SLUG,
-			autoEnrollEmailDomain: env.ALLIANCE_EMAIL_DOMAIN,
 		})
 		return { userId: authSession.user?.id ?? null, isMember: authSession.member }
 	} catch {
