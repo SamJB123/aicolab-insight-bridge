@@ -43,8 +43,8 @@ const LABEL: Record<Exclude<ReportSection, 'sources'>, string> = {
 	connect: 'MCP',
 }
 
-/** The record is named by the run's own noun for a source ("Submissions"), as its landing card and page are. */
-const labelOf = (section: ReportSection, words: RunWords) =>
+/** A section's name in the header: the record is named by the run's own noun for a source ("Submissions"), as its landing card and page are. */
+export const sectionLabel = (section: ReportSection, words: RunWords) =>
 	section === 'sources'
 		? words.nouns.entities.charAt(0).toUpperCase() + words.nouns.entities.slice(1)
 		: LABEL[section]
@@ -65,7 +65,7 @@ function placedOf(
 	const tasks = tasksOf(words)
 	return words.sections.flatMap((section) => [
 		...(section !== 'analysis'
-			? [{ item: { section, label: labelOf(section, words) }, menu: null }]
+			? [{ item: { section, label: sectionLabel(section, words) }, menu: null }]
 			: tasks.map((t) => ({
 					item: { section, taskId: t.taskId, label: t.title },
 					menu: tasks.length > 1 ? LABEL.analysis : null,

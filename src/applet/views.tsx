@@ -31,6 +31,7 @@ import { AnalysisPage, analysisLoaders } from '../report/analysis-page.tsx'
 import { ConnectPage } from '../report/connect-page.tsx'
 import { GalaxyPage } from '../report/galaxy-page.tsx'
 import { MethodPage } from '../report/method-page.tsx'
+import { sectionLabel } from '../report/nav.tsx'
 import { OverviewPage } from '../report/overview-page.tsx'
 import type { ReportSurface } from '../report/surface.tsx'
 import { TopicSearchPage } from '../report/topic-search-page.tsx'
@@ -72,6 +73,13 @@ export interface ReportSectionViewProps {
 	page: ReportPage
 	/** Where the reader is: this section, a reading open on it, the page's own query. */
 	at: ReportTarget
+	/**
+	 * How a reading open on the section shows: in the detail SHEET over the page (the
+	 * report's own site), or AS THE PAGE, in the page's room, with the way back to the
+	 * section (the hub, settled 2026-10-27: a reading is the room the viewer stands in,
+	 * so its address is a page of its own). The sheet unless said otherwise.
+	 */
+	readings?: 'sheet' | 'page'
 }
 
 /**
@@ -81,6 +89,13 @@ export interface ReportSectionViewProps {
 export function ReportSectionView(props: ReportSectionViewProps) {
 	const reads = () => readsOf(props.host.door)
 	const words = (): RunWords => props.page.data.words
+	/** A reading shows as the page, not in the sheet. */
+	const asPage = () => props.readings === 'page'
+	/** The section this is, named as the header names it: the way back from a reading shown as the page. */
+	const sectionName = (): string =>
+		props.at.section === 'analysis'
+			? (words().tasks[props.at.taskId ?? '']?.title ?? sectionLabel('analysis', words()))
+			: sectionLabel(props.at.section, words())
 	/** This section, as a target with nothing open: the links' and the page's own moves' base. */
 	const here = (): ReportTarget => ({
 		section: props.at.section,
@@ -135,9 +150,11 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 	/* ── the readings: the detail sheet over the report's object, its words the run's ── */
 
 	const sheet = createDetailSheet<ReadingTarget>({
+		// A reading opened in the sheet rides the page's own history entry; one
+		// shown as the page is a page of its own, and the way back is back.
 		onChange: ({ selection, level, section }) =>
 			props.host.navigator.go(stay(selection, {}, { document: level?.documentId, tab: section }), {
-				replace: true,
+				replace: !asPage(),
 			}),
 		load: async (selection, level) => {
 			if (level) {
@@ -298,9 +315,16 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 		return typeof value === 'string' && value ? value : undefined
 	}
 
+	/** A reading shown as the page stands in for the section's page while the
+	 *  address names one (the galaxy keeps its own rail). */
+	const readingAsPage = () => asPage() && props.at.section !== 'galaxy' && props.at.reading !== null
+
 	return (
 		<div class="ib-applet-section" data-section={props.at.section}>
 			<Switch>
+				<Match when={readingAsPage()}>
+					<sheet.DetailPage backLabel={sectionName()} />
+				</Match>
 				<Match when={props.page.section === 'overview' ? props.page.data : undefined}>
 					{(data) => (
 						<OverviewPage
@@ -415,7 +439,7 @@ export function ReportSectionView(props: ReportSectionViewProps) {
 					)}
 				</Match>
 			</Switch>
-			<Show when={props.at.section !== 'galaxy'}>
+			<Show when={props.at.section !== 'galaxy' && !asPage()}>
 				<sheet.DetailDrawer />
 			</Show>
 		</div>

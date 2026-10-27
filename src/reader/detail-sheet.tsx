@@ -2,7 +2,11 @@
  * The detail sheet — the app-side host for the Reading. Any view calls
  * `openDrawer(selection)` from a click handler; the single `<DetailDrawer/>`
  * resolves that selection into a READING through the app's own adapter and
- * renders it with the shared reader inside ui-solid's AdaptiveModalSheet.
+ * renders it with the shared reader inside ui-solid's AdaptiveModalSheet —
+ * or, where a host shows a reading AS A PAGE in the page's own room (the
+ * hub's page beside the world, settled 2026-10-27: the reading is the
+ * room the viewer stands in), the single `<DetailPage/>` renders the same
+ * reading in place, with the way back to the page it came from.
  *
  * The sheet owns everything that was being copied per app (settled
  * 2026-09-16, when four apps were found running the same 122-line file that
@@ -70,6 +74,8 @@ export interface DetailSheet<S> {
 	openSource: (key: string) => void
 	selection: () => S | null
 	DetailDrawer: () => JSX.Element
+	/** The reading in place of the page, with the way back to it. */
+	DetailPage: (props: { backLabel: string }) => JSX.Element
 	/** Inline citation of a source, for prose. */
 	Cite: (props: { id: string; label?: string; muted?: boolean }) => JSX.Element
 	PositionChip: (props: { position: string | null }) => JSX.Element
@@ -143,73 +149,89 @@ export function createDetailSheet<S>(config: DetailSheetConfig<S>): DetailSheet<
 		</span>
 	)
 
-	const DetailDrawer = () => {
+	const title = () => {
+		const s = selection()
+		return s === null ? '' : config.kindLabel(s, level())
+	}
+	const visit = (id: string) => {
+		const target = config.parseNodeId(id)
+		if (target !== null) openDrawer(target)
+	}
+	/** The selection's reading, as the drawer and the page both read it. The
+	 *  reader's way up is a level's way back to its parent; as the page,
+	 *  the top level's is the way back to the page (`back`), closing it. */
+	const Read = (props: { back?: string }) => {
 		const view = createMemo(() => {
 			const s = selection()
 			return s === null ? null : config.load(s, level())
 		})
-		const title = () => {
-			const s = selection()
-			return s === null ? '' : config.kindLabel(s, level())
-		}
-		const visit = (id: string) => {
-			const target = config.parseNodeId(id)
-			if (target !== null) openDrawer(target)
-		}
 		return (
-			<AdaptiveModalSheet
-				open={selection() !== null}
-				label="Detail"
-				eyebrow="From the record"
-				title={title()}
-				onDismiss={closeDrawer}
-				scrollLabel="Detail content"
-				class="dw-sheet"
-			>
-				<Show when={selection() !== null}>
-					<div class="dw">
-						<Loading fallback={<div class="dw-loading">Reading the record…</div>}>
-							<Show
-								when={view()}
-								fallback={<div class="dw-loading">Nothing in the record for this selection.</div>}
-							>
-								{(v) => (
-									<Reading
-										eyebrow={v().eyebrow}
-										title={v().title}
-										detail={v().detail}
-										mix={v().mix}
-										mixOrder={config.mixOrder}
-										mixColors={config.mixColors}
-										flags={v().flags}
-										content={() => v().content}
-										onVisit={visit}
-										onOpenDocument={(row) =>
-											changeLevel({
-												kind: 'document',
-												documentId: row.documentId,
-												label: row.label,
-											})
-										}
-										upLabel={v().upLabel}
-										onUp={() => changeLevel(null)}
-										section={section()}
-										onSectionChange={(value) => {
-											setSection(value)
-											config.onChange?.({ selection: selection(), level: level(), section: value })
-										}}
-										visitLabel={
-											config.visitLabel ? (row) => config.visitLabel?.(row.id) ?? '' : undefined
-										}
-									/>
-								)}
-							</Show>
-						</Loading>
-					</div>
-				</Show>
-			</AdaptiveModalSheet>
+			<div class="dw">
+				<Loading fallback={<div class="dw-loading">Reading the record…</div>}>
+					<Show
+						when={view()}
+						fallback={<div class="dw-loading">Nothing in the record for this selection.</div>}
+					>
+						{(v) => (
+							<Reading
+								eyebrow={v().eyebrow}
+								title={v().title}
+								detail={v().detail}
+								mix={v().mix}
+								mixOrder={config.mixOrder}
+								mixColors={config.mixColors}
+								flags={v().flags}
+								content={() => v().content}
+								onVisit={visit}
+								onOpenDocument={(row) =>
+									changeLevel({
+										kind: 'document',
+										documentId: row.documentId,
+										label: row.label,
+									})
+								}
+								upLabel={v().upLabel ?? props.back}
+								onUp={() => (v().upLabel ? changeLevel(null) : closeDrawer())}
+								section={section()}
+								onSectionChange={(value) => {
+									setSection(value)
+									config.onChange?.({ selection: selection(), level: level(), section: value })
+								}}
+								visitLabel={
+									config.visitLabel ? (row) => config.visitLabel?.(row.id) ?? '' : undefined
+								}
+							/>
+						)}
+					</Show>
+				</Loading>
+			</div>
 		)
 	}
+
+	const DetailDrawer = () => (
+		<AdaptiveModalSheet
+			open={selection() !== null}
+			label="Detail"
+			eyebrow="From the record"
+			title={title()}
+			onDismiss={closeDrawer}
+			scrollLabel="Detail content"
+			class="dw-sheet"
+		>
+			<Show when={selection() !== null}>
+				<Read />
+			</Show>
+		</AdaptiveModalSheet>
+	)
+
+	/** The reading as the page: the reading itself, its way up the way back
+	 *  to the page it stands in for (closing it). Reading until a selection
+	 *  is restored (a host's address names one). */
+	const DetailPage = (props: { backLabel: string }) => (
+		<Show when={selection() !== null} fallback={<div class="dw-loading">Reading the record…</div>}>
+			<Read back={props.backLabel} />
+		</Show>
+	)
 
 	return {
 		openDrawer,
@@ -219,6 +241,7 @@ export function createDetailSheet<S>(config: DetailSheetConfig<S>): DetailSheet<
 		state,
 		restore,
 		DetailDrawer,
+		DetailPage,
 		Cite,
 		PositionChip,
 	}
