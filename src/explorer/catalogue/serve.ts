@@ -14,7 +14,7 @@
  *                    (`surfaceOf` joins the methods to the catalogue's served operations)
  *                    and answers NotFound over the socket.
  *   serveReportMcp   the MCP server for one request: the capability's surface as tools,
- *                    the resource bindings, the view where the client can show one, the
+ *                    the resource bindings, the MCP App view where the client can show one, the
  *                    skills, and the Tasks extension for a caller who owns a task room.
  *   reportRest       the REST router over the catalogue, built once per catalogue.
  *
@@ -495,7 +495,7 @@ export async function mcpBodyOf(request: Request): Promise<unknown> {
 
 /**
  * Serve one MCP request as this capability: the tool list is its surface, every tool calls
- * it; each read with a resource binding is a resource; the readings' view is offered to a
+ * it; each read with a resource binding is a resource; the readings' MCP App view is offered to a
  * client that declared the UI extension; the skills are served; a client that declared the
  * Tasks extension is handed a long read as a task, when the caller owns a room. The body
  * was read once by the Worker and is handed on pre-parsed. With the caller's tasks, the

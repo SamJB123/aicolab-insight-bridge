@@ -16,7 +16,7 @@
  * The serving half (the capability class, MCP and REST over it) is ./serve, a separate
  * subpath: it stands on `cloudflare:workers`, and this half runs anywhere zod does.
  */
-import type { AnyOperation, View } from '@aicolab/app-kit/api/define'
+import type { AnyOperation, McpAppView } from '@aicolab/app-kit/api/define'
 import type { ReportCtx } from './context.ts'
 import { readersFor } from './readers.ts'
 import { GROUP, readsFor } from './reads.ts'
@@ -102,8 +102,8 @@ export interface ReportCatalogue {
 }
 
 export interface CatalogueOptions {
-	/** The MCP App that renders a reading's result, for a host that declared the UI extension (the app's own build). */
-	view?: View
+	/** The MCP App view that renders a reading's result, for a host that declared the UI extension (the app's own build). */
+	mcpAppView?: McpAppView
 	/**
 	 * The report's own operations (a read only its tables can answer), served after core's
 	 * in every surface. Built by the host once per run, as this catalogue is; the host's
@@ -112,31 +112,40 @@ export interface CatalogueOptions {
 	own?: readonly AnyOperation<ReportCtx>[]
 }
 
-/** The operations a view renders: the four readings a drawer opens. */
-const VIEWED = new Set(['topic_reading', 'group_reading', 'source_reading', 'document_reading'])
+/** The operations an MCP App view renders: the four readings a drawer opens. */
+const MCP_APP_VIEW_READS = new Set([
+	'topic_reading',
+	'group_reading',
+	'source_reading',
+	'document_reading',
+])
 
 const built = new WeakMap<ToolContext, Map<string, ReportCatalogue>>()
 
 /**
  * The catalogue for a run's facts, built once per `ToolContext` object (which ./support
- * keeps per record version) and per view.
+ * keeps per record version) and per MCP App view.
  */
 export function reportCatalogue(run: ToolContext, options: CatalogueOptions = {}): ReportCatalogue {
 	const own = options.own ?? []
-	const key = `${options.view?.uri ?? ''}|${own.map((operation) => operation.name).join(',')}`
+	const key = `${options.mcpAppView?.uri ?? ''}|${own.map((operation) => operation.name).join(',')}`
 	const kept = built.get(run)?.get(key)
 	if (kept) return kept
 	const reads = readsFor(run)
 	const readers = readersFor(run)
 	const tasks = tasksFor(run)
-	const withView = (operation: AnyOperation<ReportCtx>): AnyOperation<ReportCtx> =>
-		options.view && VIEWED.has(operation.name) ? { ...operation, view: options.view } : operation
-	const operations = [...reads.served, ...tasks.served, ...readers.served, ...own].map(withView)
+	const withMcpAppView = (operation: AnyOperation<ReportCtx>): AnyOperation<ReportCtx> =>
+		options.mcpAppView && MCP_APP_VIEW_READS.has(operation.name)
+			? { ...operation, mcpAppView: options.mcpAppView }
+			: operation
+	const operations = [...reads.served, ...tasks.served, ...readers.served, ...own].map(
+		withMcpAppView,
+	)
 	const byName = new Map<string, AnyOperation<ReportCtx>>()
 	for (const group of [reads, tasks, readers]) {
 		for (const [name, value] of Object.entries(group)) {
 			if (name === 'served' || !isOperation(value)) continue
-			byName.set(value.name, withView(value))
+			byName.set(value.name, withMcpAppView(value))
 		}
 	}
 	for (const operation of own) {
