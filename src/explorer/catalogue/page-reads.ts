@@ -8,6 +8,7 @@
  * of the same reads; these are the page's own.
  */
 import { NotFound } from '@aicolab/app-kit/api/define'
+import type { HexIslandSpecInput } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
 import type {
 	AnalysisPage,
 	GalaxyData,
@@ -76,6 +77,8 @@ export type NavPageData = {
 	words: RunWords
 	/** The report's own pages, in the header after the sections they name. */
 	pages: HostNavItem[]
+	/** What the report says of its island, as its host declares it; none for the default. */
+	island?: HexIslandSpecInput
 }
 
 /**
@@ -84,7 +87,11 @@ export type NavPageData = {
  * report's places before any page is read (the hub's ring for a report).
  */
 export function navPage(ctx: ReportCtx): NavPageData {
-	return { words: ctx.run.words, pages: [...(ctx.host.ownPages ?? [])] }
+	return {
+		words: ctx.run.words,
+		pages: [...(ctx.host.ownPages ?? [])],
+		...(ctx.host.island ? { island: ctx.host.island } : {}),
+	}
 }
 
 export type OverviewPageData = {

@@ -39,10 +39,10 @@ describe('the report world', () => {
 		for (const g of record.groups) expect(ids.has(`g:${g.id}`)).toBe(true)
 		expect(ids.has('hall')).toBe(true)
 		expect(ids.has('office')).toBe(true)
-		// The sky is on the table in the island's square, not in a room.
+		// The sky is on the table in the galaxy's own cell, not in a room.
 		expect(ids.has('map-room')).toBe(false)
 		const island = built.world.spaces.find((s) => s.id === 'island')
-		expect(island?.interactables.some((i) => i.id === 'examine:sky-table')).toBe(true)
+		expect(island?.interactables.some((i) => i.id === 'examine:landmark:galaxy')).toBe(true)
 		// Every exit's target entry exists (parseChessboardWorld checked). A
 		// traversable item lands before an item of the other room that leads
 		// back here (or at that room's door), so the dive can be reversed —

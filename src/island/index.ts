@@ -1,13 +1,21 @@
 // An Insight Bridge report as an ISLAND of a host's archipelago
 // (@aicolab/atlas): the content half — the registry of report islands,
-// the sections their buildings are, the sky table at the square's heart,
-// the plan in every form the atlas composes it, the declaration, the
-// scene document, the world of rooms built from the record, and the
-// island program a host registers with the chart. Worker-safe: a host's
+// the sections their buildings are, the report's hex island laid on its
+// map's cells with the sky table in the galaxy's cell, the square island
+// it was first built as (its oracle) in every form the atlas composes it,
+// the declarations, the scene document, the world of rooms built from the
+// record, and the island program a host registers with the chart. Worker-safe: a host's
 // scope (evaluated by its server) reads it. The scenes and the setup —
 // the browser's — are `./setup` (solid/setup.tsx).
 
 export { declareReportIsland, reportDeclaration } from './declaration.ts'
+export {
+	REPORT_ISLAND_OPTIONS,
+	realiseReportHex,
+	reportHexDeclaration,
+	reportHexIsland,
+	reportPlaces,
+} from './hex-island.ts'
 export {
 	hexReportIslandPlan,
 	type IslandPlanOf,
@@ -40,6 +48,7 @@ export {
 	type ReportSectionEntry,
 	type ReportSectionKind,
 	reportIslandSpec,
+	sectionIdOfBuilding,
 	sectionOfBuilding,
 	sectionsOf,
 } from './sections.ts'

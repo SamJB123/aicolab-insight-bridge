@@ -4,8 +4,7 @@
 // is reported, not failed, so one site being down fails nothing).
 
 import { describe, expect, it } from 'vitest'
-import { reportDeclaration } from './declaration.ts'
-import { realiseReportIsland } from './plan.ts'
+import { realiseReportHex } from './hex-island.ts'
 import { REPORT_ISLANDS, type ReportIsland } from './registry.ts'
 import { buildReportWorld, worldRecordSchema } from './world.ts'
 
@@ -29,9 +28,9 @@ describe('every served report, on its real record', () => {
 				)
 				return
 			}
-			const realised = realiseReportIsland(reportDeclaration(record, island))
+			const realised = realiseReportHex(record, island)
 			const started = performance.now()
-			const report = buildReportWorld(record, () => realised.reportPlan, island)
+			const report = buildReportWorld(record, island, realised.plan)
 			// The archipelago builds every report's world at boot: each must be
 			// quick about it (Watchful State, 4,000 sources, once took 75 s).
 			expect(

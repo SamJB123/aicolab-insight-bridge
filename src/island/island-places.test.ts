@@ -1,15 +1,15 @@
 // A report island's places (@aicolab/atlas island-places.ts), read from
 // its declaration and laid on its built world: its sections are its
-// buildings, every room behind a door its section's, the sky table the
-// galaxy's home.
+// buildings, every room behind a door its section's, the sky table in the
+// galaxy's own cell the galaxy's home. Each thing is named as its hex
+// island's destination declares it (kolo's landmark feature id).
 
 import {
 	islandPlacesOf,
 	placeOfSpace,
 } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
 import { describe, expect, it } from 'vitest'
-import { reportDeclaration } from './declaration.ts'
-import { realiseReportIsland } from './plan.ts'
+import { realiseReportHex } from './hex-island.ts'
 import { reportIsland } from './registry.ts'
 import { syntheticRecord } from './synthetic-record.ts'
 import { buildReportWorld } from './world.ts'
@@ -18,8 +18,8 @@ describe("a report island's places", () => {
 	it('its sections are its buildings, every room behind a door its section’s', () => {
 		const island = reportIsland('training-data')
 		const record = syntheticRecord()
-		const realised = realiseReportIsland(reportDeclaration(record, island))
-		const { world } = buildReportWorld(record, () => realised.reportPlan, island)
+		const realised = realiseReportHex(record, island)
+		const { world } = buildReportWorld(record, island, realised.plan)
 		const places = islandPlacesOf(realised.document, world, world.start)
 		expect(places.island).toBe('training-data')
 		expect(places.spaces.get(world.start)).toBe('')
@@ -32,20 +32,20 @@ describe("a report island's places", () => {
 		for (const landmark of ['method', 'connect', 'search']) {
 			expect(places.homes.get(landmark)).toEqual({
 				space: world.start,
-				mark: `examine:${landmark}`,
-				entry: `at:${landmark}`,
+				mark: `examine:landmark:${landmark}`,
+				entry: `at:landmark:${landmark}`,
 			})
 		}
 		expect(places.homes.get('galaxy')).toEqual({
 			space: world.start,
-			mark: 'examine:sky-table',
-			entry: 'at:sky-table',
+			mark: 'examine:landmark:galaxy',
+			entry: 'at:landmark:galaxy',
 		})
 		for (const topic of record.topics) expect(places.spaces.get(`t:${topic.id}`)).toBe('topics')
 		for (const source of record.sources) {
 			expect(places.spaces.get(`s:${source.id}`)).toBe('sources')
 		}
-		expect(places.marks.get('examine:sky-table')).toBe('galaxy')
+		expect(places.marks.get('examine:landmark:galaxy')).toBe('galaxy')
 		expect(places.regions.get('plaza')).toBe('')
 		// Each space as a host reads it: the outdoors and a section's front
 		// room are homes; a room deeper in is its section's, named below it.

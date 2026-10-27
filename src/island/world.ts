@@ -90,15 +90,10 @@ import {
 	type WorldTopic,
 	worldRecordSchema,
 } from '../world/index.ts'
-import {
-	type IslandPlanOf,
-	islandPlanOfReport,
-	type ReportIslandPlan,
-	reportIslandPlan,
-} from './plan.ts'
+import { realiseReportHex } from './hex-island.ts'
 import { type ReportIsland, TRAINING_DATA } from './registry.ts'
-import { holdsRooms, sectionOfBuilding } from './sections.ts'
-import { SKY_TABLE_ID, starsOf, TOPIC_ACCENT } from './sky-table.ts'
+import { holdsRooms, sectionIdOfBuilding, sectionOfBuilding } from './sections.ts'
+import { REPORT_OWNER, SKY_TABLE_ID, starsOf, TOPIC_ACCENT } from './sky-table.ts'
 
 export { worldRecordSchema }
 
@@ -194,7 +189,8 @@ export interface ReportSky {
 
 export interface ReportWorldBuild {
 	world: ChessboardWorld
-	plan: ReportIslandPlan
+	/** The island the world stands on, as it was realised. */
+	plan: IslandPlan
 	sky: ReportSky
 	rooms: ReportRoomBuild[]
 	/** Each building's rooms as its plan is drawn from them — the same
@@ -990,11 +986,13 @@ class ReportSite extends DeclaredIsland {
 		const { record, rooms, frontOf } = this.report
 		const site = record?.site
 		const nouns = nounsOf(record)
-		const harbour = plan.harbour
-		if (!harbour)
-			throw new Error(`[report] '${this.key}' has no harbour for its docent to walk from`)
+		// The docent walks from where a visitor arrives to the Hall's door.
+		const arrival = plan.entry.position
 		const hallBuilding = plan.buildings.find((b) => sectionOfBuilding(b.id)?.kind === 'topics')
-		const hallStep = hallBuilding ? plan.doorstep(hallBuilding) : harbour.steps
+		const hallStep = hallBuilding ? plan.doorstep(hallBuilding) : arrival
+		// The sky table: the thing the report draws as its table, wherever
+		// the island stands it.
+		const table = plan.owned.find((o) => o.owner === REPORT_OWNER && o.model === SKY_TABLE_ID)
 		/** A landmark's words: what it is, and the way to its place — the
 		 *  section it is, on the page beside the world (settled 2026-10-27);
 		 *  the desk finds things here as well. */
@@ -1052,8 +1050,8 @@ class ReportSite extends DeclaredIsland {
 				id: 'guide:docent',
 				label: 'The docent',
 				route: [
-					[harbour.steps[0], SURFACE_LEVEL, harbour.steps[1] - 6],
-					[hallStep[0], SURFACE_LEVEL, hallStep[1] + 6],
+					[arrival[0], SURFACE_LEVEL, arrival[1]],
+					[hallStep[0], SURFACE_LEVEL, hallStep[1]],
 				],
 				dwellSeconds: 8,
 				talkSeconds: 40,
@@ -1061,12 +1059,12 @@ class ReportSite extends DeclaredIsland {
 					lines: [
 						{
 							text: site
-								? `Welcome to ${site.title}. ${site.standfirst ?? ''} The square is just up the avenue: its table shows the whole record as a sky. The Hall of Topics stands at the top of the island; the Archive holds every ${nouns.entity}.`
+								? `Welcome to ${site.title}. ${site.standfirst ?? ''} The square is just up the avenue, and the sky table shows the whole record as a sky. The Hall of Topics holds every topic; the Archive holds every ${nouns.entity}.`
 								: 'Welcome. The record has not arrived yet; the buildings stand ready.',
 							choices: [{ label: 'Where do I start?', next: 1 }, { label: 'Thank you.' }],
 						},
 						{
-							text: `If you know what you are looking for, the sky table in the square will find it and walk you there. If you want the shape of it first, stand at the table and look up.`,
+							text: `If you know what you are looking for, the sky table will find it and walk you there. If you want the shape of it first, stand at the table and look up.`,
 							choices: [{ label: 'On my way.' }],
 						},
 					],
@@ -1075,21 +1073,25 @@ class ReportSite extends DeclaredIsland {
 			words: {
 				// The sky table: the record as a sky — the report's galaxy, whose
 				// place it is — and the way to any of it.
-				[SKY_TABLE_ID]: {
-					dialogue: {
-						lines: [
-							{
-								speaker: 'The sky table',
-								text: `${record ? plural(record.topics.length, 'topic', 'topics') : 'The topics'} as stars, placed by who engaged what, and ${nouns.entities} as the dust between them. Choose any star or any ${nouns.entity} and the table will walk you there.`,
-								choices: [
-									{ label: 'Find something', action: { type: FIND_ACTION } },
-									placeChoice('See the galaxy', 'galaxy'),
-									{ label: 'Just looking, thanks.' },
-								],
+				...(table
+					? {
+							[table.id]: {
+								dialogue: {
+									lines: [
+										{
+											speaker: 'The sky table',
+											text: `${record ? plural(record.topics.length, 'topic', 'topics') : 'The topics'} as stars, placed by who engaged what, and ${nouns.entities} as the dust between them. Choose any star or any ${nouns.entity} and the table will walk you there.`,
+											choices: [
+												{ label: 'Find something', action: { type: FIND_ACTION } },
+												placeChoice('See the galaxy', 'galaxy'),
+												{ label: 'Just looking, thanks.' },
+											],
+										},
+									],
+								},
 							},
-						],
-					},
-				},
+						}
+					: {}),
 				// The landmarks: the beacon, the method board, the information desk.
 				...Object.fromEntries(
 					plan.buildings.flatMap((b) => {
@@ -1101,7 +1103,9 @@ class ReportSite extends DeclaredIsland {
 			interiors: Object.fromEntries(
 				plan.buildings.flatMap((b) => {
 					const front = frontOf(b.id)
-					return front ? [[b.id, { space: front, entry: `door:entrance:${b.id}` }]] : []
+					return front
+						? [[b.id, { space: front, entry: `door:entrance:${sectionIdOfBuilding(b.id)}` }]]
+						: []
 				}),
 			),
 			spaces: rooms,
@@ -1116,10 +1120,11 @@ class ReportSite extends DeclaredIsland {
  */
 export function buildReportWorld(
 	record: WorldRecord | null,
-	planOf: IslandPlanOf = reportIslandPlan,
 	island: ReportIsland = TRAINING_DATA,
+	/** The island the world stands on: the report's hex island, as its
+	 *  record's standard sections lay it, unless the caller realised it. */
+	plan: IslandPlan = realiseReportHex(record, island).plan,
 ): ReportWorldBuild {
-	const plan = planOf(record, island.slug)
 	const items = new Map<string, ReportItem>()
 	const nodes = new Map<string, Node>()
 	const links: Link[] = []
@@ -2923,10 +2928,13 @@ export function buildReportWorld(
 			return nodes.has(qhallSpace(section.taskId)) ? qhallSpace(section.taskId) : null
 		return null
 	}
-	/** The island's pin at a building's door (the base makes it, atlas
-	 *  island/declared-world.ts: `door:<building>`), where its front room's
-	 *  way back lands. */
-	const islandEntryOf = (buildingId: string) => `door:${buildingId}`
+	/** Each section's building as the island declares it, by the section's
+	 *  own address (the rooms name their building so). */
+	const declaredBuildingOf = new Map(plan.buildings.map((b) => [sectionIdOfBuilding(b.id), b.id]))
+	/** The island's pin at a section's building's door (the base makes it,
+	 *  atlas island/declared-world.ts: `door:<building>`), where its front
+	 *  room's way back lands. */
+	const islandEntryOf = (section: string) => `door:${declaredBuildingOf.get(section) ?? section}`
 
 	for (const build of roomBuilds) {
 		const wing = wingSpaces.get(build.spaceId)
@@ -3159,7 +3167,7 @@ export function buildReportWorld(
 		rooms: spaces,
 		frontOf: frontSpaceOfBuilding,
 	})
-	const world = site_.world(islandPlanOfReport(plan, SURFACE_LEVEL, stars))
+	const world = site_.world(plan)
 
 	/** A room as its text writes it up: each exhibit's card (still named for
 	 *  where it leads), its rail's panels, and its things' words. */

@@ -1,8 +1,10 @@
-// A report world's SCENES: the island from its plan, built from the
-// three-resources kit (@aicolab/atlas scenes/island-scene.ts) with the
-// sky table the report draws at the square's heart, and one pair room per
-// room the world was built with — every room drawn from the same build
-// the content is, through the museum's own room builder. A room's walls
+// A report world's SCENES: its outdoors as its setup builds it — the hex
+// island as any declared island is built (@aicolab/atlas declared-spaces.ts),
+// the sky table the report draws in the galaxy's cell; or the square
+// island as it was first built, its oracle, from the three-resources kit
+// (scenes/island-scene.ts) with the sky table at the square's heart — and
+// one pair room per room the world was built with — every room drawn from
+// the same build the content is, through the museum's own room builder. A room's walls
 // carry its text (core's `worldText`: its cards' words, its rail's
 // panels), read through the report's door as the room is built; the
 // scene waits for it, and the room joins the world as its text writes it
@@ -79,21 +81,20 @@ export function buildReportRoomSpace(build: ReportRoomBuild, bare = false): Prom
 	})
 }
 
-/** The adapter for a report world — every space built BARE when asked
- *  (atlas world-setups.ts BuildOptions): the same triangles, nothing
- *  fetched or painted to be seen, for the walker with no renderer. `texts`
- *  reads a room's text; with none, or bare, a room stands as the record
- *  alone gives it. */
+/** The adapter for a report world: its outdoors as the caller builds it
+ *  (a declared island's own builders, atlas declared-spaces.ts; the oracle's
+ *  square), and every room — each built BARE when asked (atlas
+ *  world-setups.ts BuildOptions): the same triangles, nothing fetched or
+ *  painted to be seen, for the walker with no renderer. `texts` reads a
+ *  room's text; with none, or bare, a room stands as the record alone
+ *  gives it. */
 export function createReportAdapter(
 	build: ReportWorldBuild,
-	models: ModelMetadata[] | null,
-	island: ReportIslandSceneOptions = {},
+	outdoors: Readonly<Record<string, SpaceBuilder>>,
 	bare = false,
 	texts: ReportTexts | null = null,
 ): SceneAdapter {
-	const builders: Record<string, SpaceBuilder> = {
-		island: () => buildReportIslandSpace(build.plan, build.sky.stars, models, { ...island, bare }),
-	}
+	const builders: Record<string, SpaceBuilder> = { ...outdoors }
 	for (const room of build.rooms) {
 		builders[room.spaceId] = async () => {
 			const text = !bare && texts && room.text ? await texts.of(room.text) : null

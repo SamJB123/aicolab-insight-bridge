@@ -1,9 +1,10 @@
 /** @jsxImportSource @solidjs/web */
 // An Insight Bridge report's island SETUP (@aicolab/atlas world-setups.ts
-// IslandSetup), the browser half of its program (../program.ts): the same
-// island for every report, declared from its record (the island alone
-// when the record cannot be read), realised, its rooms on its record, its
-// record and readings through the report's door on the host — and the
+// IslandSetup), the browser half of its program (../program.ts): the
+// report's hex island, declared from its record, its sections and its
+// specification (the island alone when the record cannot be read),
+// realised, its rooms on its record, its record and readings through the
+// report's door on the host — and the
 // report's LENS on its rooms (atlas content/lens.ts: a building's rooms as
 // the scope finding is held to, the plan drawn round a room, which things
 // read) and its READING SHEET (ReportSheet.tsx). The report's ORACLE is
@@ -12,17 +13,16 @@
 // held to.
 
 import { worldCell } from '@aicolab/atlas/chart/chart-data.ts'
-import { islandDocument } from '@aicolab/atlas/chessboard/content/island/island-document.ts'
 import { islandPlacesOf } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/island/programs.ts'
+import { realiseIsland } from '@aicolab/atlas/chessboard/content/island/realise.ts'
 import type {
 	ReadingSheetProps,
 	SpaceLens,
 	WorldScope,
 } from '@aicolab/atlas/chessboard/content/lens.ts'
 import { worldOfKey } from '@aicolab/atlas/chessboard/content/world-keys.ts'
-import { ownersFor } from '@aicolab/atlas/chessboard/scenes/island-owners.ts'
-import type { IslandSceneOptions } from '@aicolab/atlas/chessboard/scenes/island-scene.ts'
+import { declaredBuilders, groundOf } from '@aicolab/atlas/chessboard/scenes/declared-spaces.ts'
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
 import {
 	type IslandSetup,
@@ -32,8 +32,7 @@ import {
 } from '@aicolab/atlas/solid/chessboard/world-setups.ts'
 import { SURFACE_LEVEL } from '@aicolab/atlas/three/levels.ts'
 import { createMemo } from 'solid-js'
-import { reportDeclaration } from '../declaration.ts'
-import { type IslandPlanOf, islandPlanOfReport, realiseReportIsland } from '../plan.ts'
+import { type IslandPlanOf, islandPlanOfReport, reportIslandPlan } from '../plan.ts'
 import {
 	type ReportContent,
 	reportIslandProgram,
@@ -42,7 +41,8 @@ import {
 } from '../program.ts'
 import { type ReportIsland, type ReportSlug, reportIsland } from '../registry.ts'
 import type { IslandSceneOf } from '../scene-document.ts'
-import { createReportAdapter } from '../scenes/spaces.ts'
+import { buildReportIslandSpace, createReportAdapter } from '../scenes/spaces.ts'
+import { starsOf } from '../sky-table.ts'
 import type { ReportTexts } from '../texts.ts'
 import {
 	buildingLabel,
@@ -139,46 +139,59 @@ export function reportIslandSetup(
 		skeleton: () => worldOfKey(key),
 		content: (host: AtlasHost) => program.content(host),
 	}
+	// The report's HEX ISLAND, as its program declares it from what the door
+	// gave (../hex-island.ts), realised and built as any declared island is,
+	// with the report's rooms behind its doors.
 	const declared: WorldSetup<ReportContent> = {
 		...shared,
 		callbackPath: `/overture/${slug}/island`,
 		build: (models, content, options) => {
 			const bare = options.bare === true
-			const realised = realiseReportIsland(
-				reportDeclaration(content?.record ?? null, island, content?.sections ?? undefined),
-			)
-			const report = buildReportWorld(content?.record ?? null, () => realised.reportPlan, island)
-			const document: IslandSceneOptions['document'] = (partOf, field) =>
-				islandDocument(realised, partOf, field)
-			const plan = islandPlanOfReport(report.plan, SURFACE_LEVEL, report.sky.stars)
+			const realised = realiseIsland(program.declaration(content))
+			const report = buildReportWorld(content?.record ?? null, island, realised.plan)
 			const built = reportBuild(report, island, options.host)
 			return {
 				...built,
 				adapter: createReportAdapter(
 					report,
-					models,
-					{ document: (_plan, partOf, field) => document(partOf, field) },
+					declaredBuilders(realised, models, 'island', bare),
 					bare,
 					built.texts,
 				),
-				island: { plan, document, owners: ownersFor(plan, models, bare).owners },
+				island: groundOf(realised, models, bare),
 				places: islandPlacesOf(realised.document, report.world, report.world.start),
 			}
 		},
 	}
+	// The island as it was FIRST BUILT, its oracle: the square island, laid
+	// by the oracle plan or the composition a host hands in, its kit placed
+	// from the plan or from a scene document written from it.
 	const asBuilt: WorldSetup<ReportContent> = {
 		...shared,
 		callbackPath: `/place/${slug}/island`,
 		build: (models, content, options) => {
-			const report = buildReportWorld(content?.record ?? null, oracle.plan, island)
+			const bare = options.bare === true
+			const record = content?.record ?? null
+			const square = (oracle.plan ?? reportIslandPlan)(record, island.slug)
+			const stars = starsOf(record)
+			const report = buildReportWorld(
+				record,
+				island,
+				islandPlanOfReport(square, SURFACE_LEVEL, stars),
+			)
 			const built = reportBuild(report, island, options.host)
 			return {
 				...built,
 				adapter: createReportAdapter(
 					report,
-					models,
-					oracle.scene ? { document: oracle.scene } : {},
-					options.bare === true,
+					{
+						island: () =>
+							buildReportIslandSpace(square, stars, models, {
+								...(oracle.scene ? { document: oracle.scene } : {}),
+								bare,
+							}),
+					},
+					bare,
 					built.texts,
 				),
 			}

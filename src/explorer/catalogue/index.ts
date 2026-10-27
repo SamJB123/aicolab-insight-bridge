@@ -23,6 +23,12 @@ import { GROUP, readsFor } from './reads.ts'
 import type { ToolContext } from './support.ts'
 import { tasksFor } from './tasks.ts'
 
+// What a report says of its island (its host's `island`): the atlas's one definition.
+export type {
+	CellRef,
+	Facing,
+	HexIslandSpecInput,
+} from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
 export type { PageHooks, ReadingAdditionsFor, ReportCtx, ReportHost } from './context.ts'
 export { readContext, siteOf } from './context.ts'
 export {

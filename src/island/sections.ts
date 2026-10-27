@@ -19,6 +19,7 @@ import type {
 	SquareIslandSpec,
 } from '@aicolab/atlas/chessboard/content/island/square-declaration.ts'
 import type { BuildingWords } from '@aicolab/atlas/chessboard/content/island/vocabulary.ts'
+import { landmarkOfFeature } from '@aicolab/kolo/island'
 import type { WorldRecord } from '../world/index.ts'
 import { skyTableHeart } from './sky-table.ts'
 
@@ -103,8 +104,9 @@ export interface ReportSectionEntry {
 }
 
 /** The sections every report has when its own site is not asked: what a
- *  standard report lists, in its order. */
-const DEFAULT_SECTIONS = (record: WorldRecord | null): ReportSectionEntry[] => [
+ *  standard report lists, in its order (its galaxy first). */
+export const DEFAULT_SECTIONS = (record: WorldRecord | null): ReportSectionEntry[] => [
+	{ id: 'galaxy', label: 'Galaxy', section: 'galaxy' },
 	{ id: 'topics', label: 'Topics', section: 'topics' },
 	{ id: 'sources', label: 'Sources', section: 'sources' },
 	...(record?.tasks ?? []).map((task) => ({
@@ -219,10 +221,21 @@ export function sectionsOf(
 	})
 }
 
+/** The section's own address a building of the island stands for: its id
+ *  as the square island declares it, or as a hex island's destination
+ *  declares it (kolo's landmark feature id). */
+export const sectionIdOfBuilding = (buildingId: string): string =>
+	landmarkOfFeature(buildingId) ?? buildingId
+
 /** The section a building of the island is, from its id — the id is the
  *  section's own address ('topics', 'sources', 'analysis:<task>',
- *  'search', 'method', 'connect'); null for a building that is none. */
-export function sectionOfBuilding(id: string): { kind: ReportSectionKind; taskId?: string } | null {
+ *  'search', 'method', 'connect'), as the square island declares it, or
+ *  that address as a hex island's destination declares it (kolo's
+ *  landmark feature id); null for a building that is none. */
+export function sectionOfBuilding(
+	buildingId: string,
+): { kind: ReportSectionKind; taskId?: string } | null {
+	const id = sectionIdOfBuilding(buildingId)
 	if (id.startsWith('analysis:')) return { kind: 'analysis', taskId: id.slice('analysis:'.length) }
 	switch (id) {
 		case 'topics':
