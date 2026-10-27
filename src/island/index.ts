@@ -21,7 +21,6 @@ export {
 	type ReportContent,
 	reportIslandProgram,
 	reportReading,
-	reportSession,
 	reportTextsOf,
 } from './program.ts'
 export {

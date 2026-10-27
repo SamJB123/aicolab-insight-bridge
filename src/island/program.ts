@@ -3,7 +3,8 @@
 // read through its door on the host's root — the applet seam's row the
 // report's slug names, which answers with core's `ReportCap` (its
 // `world`, `worldText`, `worldReading` and `navPage`), the one way a
-// report is read (settled 2026-10-25) — or, with no host at hand, the
+// report is read (settled 2026-10-25), over the host's one session for
+// the report (../applet/session.ts) — or, with no host at hand, the
 // record its site serves publicly; its declaration is the island declared
 // from that record, the island alone without it (its buildings closed);
 // its skeleton the island alone. The setup — the scenes, the rooms, the
@@ -16,11 +17,9 @@ import {
 	type IslandProgram,
 	programKey,
 } from '@aicolab/atlas/chessboard/content/island/programs.ts'
-import type { AtlasHost, AtlasSocket } from '@aicolab/atlas/host.ts'
-import { type AppletSession, createAppletSession } from '@aicolab/room-service/client/applet'
-import type { RpcStub } from 'capnweb-experimental-hibernation'
+import type { AtlasHost } from '@aicolab/atlas/host.ts'
 import { sectionsOf } from '../applet/reads.ts'
-import type { ReportCap } from '../explorer/catalogue/serve.ts'
+import { reportSession } from '../applet/session.ts'
 import {
 	type WorldReading,
 	type WorldReadingRef,
@@ -42,40 +41,20 @@ export interface ReportContent {
 	sections: readonly ReportSectionEntry[] | null
 }
 
-/** A report's object (core's `ReportCap`) as the wire delivers it: the
- *  class itself, as a stub. */
-type ReportSession = AppletSession<RpcStub<ReportCap>>
-
-/** One session per report per host socket, for the page's life (the
- *  applet client re-acquires the object when the transport breaks under
- *  it); a report the host's root has no door for rejects at the seam. */
-const sessions = new WeakMap<AtlasSocket, Map<string, ReportSession>>()
-
-export function reportSession(host: AtlasHost, slug: ReportSlug): ReportSession {
-	let ofHost = sessions.get(host.socket)
-	if (!ofHost) {
-		ofHost = new Map()
-		sessions.set(host.socket, ofHost)
-	}
-	let session = ofHost.get(slug)
-	if (!session) {
-		session = createAppletSession<RpcStub<ReportCap>>(host.socket, slug)
-		ofHost.set(slug, session)
-	}
-	return session
-}
-
-/** One item's reading, through the report's door. */
+/** One item's reading, through the report's door: the host's one session
+ *  for the report over its socket (../applet/session.ts), the same its
+ *  page face reads through. */
 export const reportReading = (
 	host: AtlasHost,
 	slug: ReportSlug,
 	ref: WorldReadingRef,
-): Promise<WorldReading | null> => reportSession(host, slug).run((cap) => cap.worldReading(ref))
+): Promise<WorldReading | null> =>
+	reportSession(host.socket, slug).run((cap) => cap.worldReading(ref))
 
 /** The island's room texts, through the report's door, kept for the
  *  island's life (texts.ts). */
 export const reportTextsOf = (host: AtlasHost, slug: ReportSlug): ReportTexts =>
-	createReportTexts((ref) => reportSession(host, slug).run((cap) => cap.worldText(ref)))
+	createReportTexts((ref) => reportSession(host.socket, slug).run((cap) => cap.worldText(ref)))
 
 /** The report's world record and its own sections through its door.
  *  Unavailable is not an error: the island stands with its buildings
@@ -84,7 +63,7 @@ export const reportTextsOf = (host: AtlasHost, slug: ReportSlug): ReportTexts =>
  *  island a standard report's. */
 async function reportContent(island: ReportIsland, host: AtlasHost): Promise<ReportContent | null> {
 	try {
-		const session = reportSession(host, island.slug)
+		const session = reportSession(host.socket, island.slug)
 		const [record, sections] = await Promise.all([
 			session.run((cap) => cap.world()),
 			session

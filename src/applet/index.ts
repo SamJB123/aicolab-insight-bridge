@@ -32,4 +32,5 @@ export {
 	sectionPage,
 	sectionsOf,
 } from './reads.ts'
+export { type ReportSession, reportSession } from './session.ts'
 export { ReportProblem, ReportSectionView, type ReportSectionViewProps } from './views.tsx'
