@@ -9,7 +9,7 @@
 // up.
 
 import type { BuiltSpace } from '@aicolab/atlas/chessboard/scenes/built-space.ts'
-import { buildGalleryRoomSpace } from '@aicolab/atlas/chessboard/scenes/island-geometry.ts'
+import { buildGalleryRoomSpace } from '@aicolab/atlas/chessboard/scenes/gallery-space.ts'
 import { ownersFor, registerIslandOwners } from '@aicolab/atlas/chessboard/scenes/island-owners.ts'
 import { buildIslandSpace } from '@aicolab/atlas/chessboard/scenes/island-scene.ts'
 import {

@@ -7,8 +7,8 @@
 // The one thing the report draws; every other thing on its island is the
 // kit's.
 
-import { nodeMaterial, shaded } from '@aicolab/atlas/chessboard/scenes/island-geometry.ts'
 import type { IslandOwner, OwnedModel } from '@aicolab/atlas/chessboard/scenes/owners.ts'
+import { nodeMaterial, shaded } from '@aicolab/atlas/chessboard/scenes/scene-materials.ts'
 import * as THREE from 'three/webgpu'
 import { z } from 'zod'
 import { REPORT_OWNER, SKY_TABLE_ID } from '../sky-table.ts'

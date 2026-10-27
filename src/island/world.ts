@@ -46,7 +46,6 @@ import {
 } from '@aicolab/atlas/chessboard/content/island/declared-world.ts'
 import { placeChoice } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
 import type { IslandBuilding, IslandPlan } from '@aicolab/atlas/chessboard/content/island/plan.ts'
-import type { ChartInlay } from '@aicolab/atlas/chessboard/content/island-world.ts'
 import { maxItemsFor, planItemRoom } from '@aicolab/atlas/chessboard/content/item-room-plan.ts'
 import { READ_ACTION } from '@aicolab/atlas/chessboard/content/lens.ts'
 import {
@@ -59,6 +58,7 @@ import {
 	planNaveRoom,
 } from '@aicolab/atlas/chessboard/content/nave-plan.ts'
 import {
+	type ChartInlay,
 	type DoorStyle,
 	GALLERY_FLOOR_TOP,
 	onWallPlan,
