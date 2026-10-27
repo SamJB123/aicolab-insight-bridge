@@ -63,7 +63,9 @@
 		"./package.json": "./package.json",
 		"./reading-url": "./src/reading-url.tsx",
 		"./applet": "./src/applet/index.ts",
-		"./applet/reads": "./src/applet/reads.ts"
+		"./applet/reads": "./src/applet/reads.ts",
+		"./island": "./src/island/index.ts",
+		"./island/setup": "./src/island/solid/setup.tsx"
 	},
 	"scripts": {
 		"check-types": "tsc --noEmit",
@@ -84,9 +86,11 @@
 	},
 	"dependencies": {
 		"@aicolab/app-kit": "workspace:^",
+		"@aicolab/atlas": "workspace:^",
 		"@aicolab/better-auth": "workspace:^",
 		"@aicolab/room-service": "workspace:^",
 		"@modelcontextprotocol/server": "catalog:",
+		"capnweb-experimental-hibernation": "catalog:",
 		"d3-force": "catalog:"
 	},
 	"devDependencies": {
@@ -102,9 +106,11 @@
 		"@types/d3-force": "catalog:",
 		"@types/node": "catalog:",
 		"@types/three": "catalog:",
+		"@webgpu/types": "catalog:",
 		"solid-js": "catalog:",
 		"three": "catalog:",
 		"typescript": "catalog:",
+		"vite": "catalog:",
 		"vitest": "catalog:",
 		"zod": "catalog:"
 	}

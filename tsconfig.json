@@ -1,5 +1,14 @@
 {
-	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"scripts/**/*.mts",
+		// The island layer (src/island) types against the atlas's rooms (its
+		// host, @aicolab/atlas/host.ts), whose env is the global Cloudflare.Env
+		// the atlas generates from its own wrangler config: read here as the
+		// atlas's own check reads it, never generated again.
+		"../../packages/atlas/worker-configuration.d.ts"
+	],
 	"compilerOptions": {
 		"target": "ES2024",
 		"jsx": "preserve",
@@ -8,9 +17,18 @@
 		"lib": ["ES2024", "DOM", "DOM.Iterable"],
 		// The ambient sets core's own check reads: Node for the prepare scripts and the
 		// tests, the Workers runtime for the catalogue's serving half (explorer/catalogue/
-		// serve). Named here, never as a reference in a source file: a consumer's program
-		// has its own generated runtime types, and a second copy breaks its `Cloudflare.Env`.
-		"types": ["node", "@types/d3-force", "@types/three", "@cloudflare/workers-types"],
+		// serve), Vite's module forms (`?raw`) and WebGPU for the atlas the island layer
+		// builds on. Named here, never as a reference in a source file: a consumer's
+		// program has its own generated runtime types, and a second copy breaks its
+		// `Cloudflare.Env`.
+		"types": [
+			"node",
+			"@types/d3-force",
+			"@types/three",
+			"@cloudflare/workers-types",
+			"vite/client",
+			"@webgpu/types"
+		],
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,
