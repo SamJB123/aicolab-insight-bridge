@@ -13,9 +13,7 @@
  *   ?…                        what the page keeps of its own: the record's filters and
  *                             page, a search's `query`, the Brief's folded chapters
  *
- * On a report's island (the atlas) a section stands in its building's front room and a
- * reading is the room it names; the mapping both ways is here too, so a host's world
- * face and its page face agree on where a URL is. Pure, and typed without Solid.
+ * Pure, and typed without Solid.
  */
 import { parseNodeId, type ReadingTarget } from '../explorer/readings.ts'
 import type { ReportSection } from '../report/surface.tsx'
@@ -118,42 +116,4 @@ export function targetOf(
 		...(tab ? { tab } : {}),
 		page: pageSearchOf(search),
 	}
-}
-
-/* ── the island's rooms ── */
-
-/**
- * The room on the report's island a section stands in (the atlas's report world: the
- * Topics building's front hall, the Sources building's office, a task's hall), or null
- * for a section with no room of its own, which stands at the island's outdoors.
- */
-export function roomOfSection(section: ReportSection, taskId?: string): string | null {
-	switch (section) {
-		case 'topics':
-			return 'hall'
-		case 'sources':
-			return 'office'
-		case 'analysis':
-			return taskId ? `q:${taskId}` : null
-		default:
-			return null
-	}
-}
-
-/**
- * The section a room of the island belongs to: the Topics building (its hall, a group's
- * or a topic's room), the Sources building (its office, a facet's hall, a cohort's lobby,
- * a source's room), a task's hall or one of its question rooms; null for the outdoors
- * and any other space, which belong to the report itself.
- */
-export function sectionOfRoom(room: string): SectionRef | null {
-	if (room === 'hall' || room.startsWith('t:') || room.startsWith('g:'))
-		return { section: 'topics' }
-	if (room === 'office' || room.startsWith('s:') || room.startsWith('c:') || room.startsWith('f:'))
-		return { section: 'sources' }
-	if (room.startsWith('q:')) {
-		const taskId = room.slice('q:'.length).split(':')[0]
-		return taskId ? { section: 'analysis', taskId } : null
-	}
-	return null
 }

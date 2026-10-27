@@ -18,11 +18,9 @@ export {
 	pageSearchOf,
 	type ReportAddress,
 	type ReportTarget,
-	roomOfSection,
 	type SectionRef,
 	sectionId,
 	sectionOfId,
-	sectionOfRoom,
 	targetOf,
 } from './address.ts'
 export type { ReportAppletHost, ReportNavigator } from './host.ts'
