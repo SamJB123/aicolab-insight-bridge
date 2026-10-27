@@ -7,9 +7,9 @@
  * and every sibling app picks it up on its next deploy.
  */
 
-export type Corpus = {
+export interface Corpus<Slug extends string = string> {
 	/** Stable id; a consumer app passes its own to mark itself current. */
-	slug: string
+	slug: Slug
 	/** The app's own name, as it brands itself. */
 	name: string
 	/** What the corpus is, in one line. */
@@ -23,40 +23,44 @@ export type Corpus = {
 	scale: string
 }
 
-export const CORPORA: Corpus[] = [
-	{
+/** A corpus as the registry lists it, its slug kept as the literal it is, so the
+ *  registry's slugs are a type (`CorpusSlug`) a host's doors are held to. */
+const corpus = <Slug extends string>(entry: Corpus<Slug>): Corpus<Slug> => entry
+
+export const CORPORA = [
+	corpus({
 		slug: 'second-chair',
 		name: 'Second Chair',
 		blurb:
 			'AI and the legal profession: scholarship, industry evidence, primary legal materials and practitioner interviews, 1949–2026, assembled by David B. Wilkins and Anthea Roberts for the AI and the Legal Profession research program of the Center on the Legal Profession at Harvard Law School.',
 		url: 'https://insightbridge-secondchair.aicolab.org',
 		scale: '1,501 sources · 369 topics',
-	},
-	{
+	}),
+	corpus({
 		slug: 'first-resort',
 		name: 'First Resort',
 		blurb:
 			'The public submissions and hearing evidence to the Joint Standing Committee on Foreign Affairs, Defence and Trade’s 2026 inquiry into the role of Australia’s international development program in preventing conflict.',
 		url: 'https://insightbridge-firstresort.aicolab.org',
 		scale: '88 submitters · 7 topics',
-	},
-	{
+	}),
+	corpus({
 		slug: 'training-data',
 		name: 'Training Data',
 		blurb:
 			'What Australia told Parliament about AI: the 170 public submissions to the Joint Select Committee on Artificial Intelligence’s 2026 inquiry, read whole and placed against the committee’s 14 terms of reference.',
 		url: 'https://insightbridge-trainingdata.aicolab.org',
 		scale: '170 submitters · 23 topics',
-	},
-	{
+	}),
+	corpus({
 		slug: 'long-form',
 		name: 'Long Form',
 		blurb:
 			'The transcripts of The Joe Walker Podcast: 133 long-form conversations with economists, scientists, historians, policymakers and other thinkers, 2018–2026, read by period.',
 		url: 'https://insightbridge-longform.aicolab.org',
 		scale: '133 episodes · 68 topics',
-	},
-	{
+	}),
+	corpus({
 		slug: 'one-basin',
 		name: 'One Basin',
 		blurb:
@@ -66,8 +70,8 @@ export const CORPORA: Corpus[] = [
 		// connectors published before the domain existed.
 		url: 'https://insightbridge-onebasin.aicolab.org',
 		scale: '999 submissions · 86 topics',
-	},
-	{
+	}),
+	corpus({
 		slug: 'audit-corpus',
 		// The app's own masthead brand. Its published MCP connector still carries the
 		// formal name, so the blurb opens with that for anyone who knows it by it.
@@ -81,8 +85,14 @@ export const CORPORA: Corpus[] = [
 		// resource name and 404s — it was listed here in error until 2026-08-08.
 		url: 'https://auditcorpus.aicolab.org',
 		scale: '4,183 reports · 276 topics',
-	},
+	}),
 ]
+
+/** A corpus of the registry, by its slug. */
+export type CorpusSlug = (typeof CORPORA)[number]['slug']
+
+export const isCorpusSlug = (value: string): value is CorpusSlug =>
+	CORPORA.some((c) => c.slug === value)
 
 /** The family minus the app asking — what to show as "elsewhere". */
 export const siblings = (slug: string): Corpus[] => CORPORA.filter((c) => c.slug !== slug)

@@ -20,6 +20,7 @@
 		".": "./src/index.ts",
 		"./brief": "./src/brief/index.ts",
 		"./corpora": "./src/corpora.ts",
+		"./applets": "./src/applets.ts",
 		"./explorer": "./src/explorer/data.ts",
 		"./explorer/facets": "./src/explorer/facets.ts",
 		"./explorer/readings": "./src/explorer/readings.ts",
