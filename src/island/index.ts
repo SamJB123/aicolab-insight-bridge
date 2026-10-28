@@ -10,10 +10,10 @@
 
 export { declareReportIsland, reportDeclaration } from './declaration.ts'
 export {
-	REPORT_ISLAND_OPTIONS,
 	realiseReportHex,
 	reportHexDeclaration,
 	reportHexIsland,
+	reportIslandOptions,
 	reportPlaces,
 } from './hex-island.ts'
 export {

@@ -45,7 +45,11 @@ import {
 	type IslandWords,
 } from '@aicolab/atlas/chessboard/content/island/declared-world.ts'
 import { placeChoice } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
-import type { IslandBuilding, IslandPlan } from '@aicolab/atlas/chessboard/content/island/plan.ts'
+import {
+	type IslandBuilding,
+	type IslandPlan,
+	surfaceHeightAt,
+} from '@aicolab/atlas/chessboard/content/island/plan.ts'
 import { maxItemsFor, planItemRoom } from '@aicolab/atlas/chessboard/content/item-room-plan.ts'
 import { READ_ACTION } from '@aicolab/atlas/chessboard/content/lens.ts'
 import {
@@ -64,7 +68,6 @@ import {
 	onWallPlan,
 	type RoomPlan,
 } from '@aicolab/atlas/chessboard/content/room-plan.ts'
-import { SURFACE_LEVEL } from '@aicolab/atlas/three/levels.ts'
 import {
 	type ChessboardInteractable,
 	type ChessboardMap,
@@ -1060,8 +1063,8 @@ class ReportSite extends DeclaredIsland {
 				id: 'guide:docent',
 				label: 'The docent',
 				route: [
-					[arrival[0], SURFACE_LEVEL, arrival[1]],
-					[hallStep[0], SURFACE_LEVEL, hallStep[1]],
+					[arrival[0], surfaceHeightAt(plan.terrain, arrival[0], arrival[1]), arrival[1]],
+					[hallStep[0], surfaceHeightAt(plan.terrain, hallStep[0], hallStep[1]), hallStep[1]],
 				],
 				dwellSeconds: 8,
 				talkSeconds: 40,

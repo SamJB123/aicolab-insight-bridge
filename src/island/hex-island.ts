@@ -25,6 +25,7 @@ import {
 	DEFAULT_HEX_ISLAND_SPEC,
 	type HexIslandSpec,
 } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
+import type { ShoreKind } from '@aicolab/atlas/chessboard/content/island/plan.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/island/programs.ts'
 import {
 	type RealisedIsland,
@@ -45,12 +46,12 @@ import {
 
 /** How a report island is declared beyond what it lays: the report draws
  *  what the kit does not (its sky table), in the toolkit's own look, its
- *  shore a beach. */
-export const REPORT_ISLAND_OPTIONS: DestinationIslandOptions = {
+ *  shore what its specification says. */
+export const reportIslandOptions = (shore: ShoreKind): DestinationIslandOptions => ({
 	owner: REPORT_OWNER,
 	ownsLook: false,
-	shore: 'beach',
-}
+	shore,
+})
 
 /** The report's places, in its door's order: the galaxy the sky table its
  *  owner draws, told the record's stars; each section the island has a
@@ -121,10 +122,11 @@ export function reportHexDeclaration(
 	spec?: HexIslandSpec | null,
 	writtenAt: HexPoint = worldCentre(programKey(island.slug)),
 ): IslandDocument {
+	const hex = reportHexIsland(record, island, sections, spec)
 	return declareDestinationIsland(
 		island.slug,
-		reportHexIsland(record, island, sections, spec).destination,
-		REPORT_ISLAND_OPTIONS,
+		hex.destination,
+		reportIslandOptions(hex.shore),
 		writtenAt,
 	)
 }
