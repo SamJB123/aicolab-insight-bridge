@@ -55,7 +55,9 @@ export const REPORT_ISLAND_OPTIONS: DestinationIslandOptions = {
 /** The report's places, in its door's order: the galaxy the sky table its
  *  owner draws, told the record's stars; each section the island has a
  *  form for the kit's building for it. The overview, the island itself, is
- *  no place of its own. */
+ *  no place of its own. Every one is a place the host's tree and map list,
+ *  so its name shows always in the world: a visitor sees at a glance which
+ *  thing there is which place there. */
 export function reportPlaces(
 	record: WorldRecord | null,
 	sections: readonly ReportSectionEntry[] = DEFAULT_SECTIONS(record),
@@ -74,6 +76,7 @@ export function reportPlaces(
 						told: { radius: SKY_TABLE_RADIUS, stars },
 						radius: SKY_TABLE_RADIUS,
 					},
+					nameShown: 'always',
 				},
 			]
 		}
@@ -85,6 +88,7 @@ export function reportPlaces(
 						label: section.label,
 						description: section.description,
 						stands: { kit: FORM_OF[section.kind] },
+						nameShown: 'always',
 					},
 				]
 			: []
