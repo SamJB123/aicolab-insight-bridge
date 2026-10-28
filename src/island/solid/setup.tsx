@@ -38,7 +38,6 @@ import {
 	type ReportContent,
 	reportDeclaration,
 	reportIslandProgram,
-	reportOutline,
 	reportReading,
 	reportTextsOf,
 } from '../program.ts'
@@ -153,7 +152,6 @@ export function reportIslandSetup(
 		finding: { label: 'Find anything', placeholder: 'Find a topic, a name, a question…' },
 		skeleton: () => worldOfKey(key),
 		content: (host: AtlasHost) => program.content(host),
-		outline: (host: AtlasHost) => reportOutline(island, host),
 	}
 	// The report's HEX ISLAND, as its program declares it from what the door
 	// gave (../hex-island.ts), realised and built as any declared island is,

@@ -47,7 +47,8 @@ import { keptRead } from './world-cache.ts'
  *  report's, as the default lays it). Its OUTLINE has no record: the
  *  island laid as its sections and specification say, its buildings
  *  closed and its table bare — the ground the archipelago holds of it
- *  wherever the visitor is (atlas WorldSetup.outline). */
+ *  wherever the visitor is, and its berth and piers (atlas
+ *  IslandProgram.outline). */
 export interface ReportContent {
 	record: WorldRecord | null
 	sections: readonly ReportSectionEntry[] | null
@@ -198,6 +199,7 @@ export function reportIslandProgram(slug: ReportSlug): IslandProgram<ReportConte
 		key: slug,
 		content: (host) => reportContent(island, host),
 		fetchContent: () => fetchReportContent(island),
+		outline: (host) => reportOutline(island, host),
 		declaration: (content) => reportDeclaration(slug, content),
 		skeleton: () => buildReportWorld(null, island).world,
 	}
