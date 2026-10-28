@@ -30,6 +30,7 @@ import {
 	type WorldReading,
 	type WorldReadingRef,
 	type WorldRecord,
+	worldReadingSchema,
 	worldRecordSchema,
 } from '../world/index.ts'
 import { reportHexDeclaration } from './hex-island.ts'
@@ -37,6 +38,7 @@ import { type ReportIsland, type ReportSlug, reportIsland } from './registry.ts'
 import type { ReportSectionEntry } from './sections.ts'
 import { createReportTexts, type ReportTexts } from './texts.ts'
 import { buildReportWorld } from './world.ts'
+import { keptRead } from './world-cache.ts'
 
 /** What a report island is built from: the report's world record, the
  *  report's own sections as its door lists them, and what it says of its
@@ -51,17 +53,48 @@ export interface ReportContent {
 /** One item's reading, through the report's door: the host's one session
  *  for the report over its socket (../applet/session.ts), the same its
  *  page face reads through. */
-export const reportReading = (
+export const reportReading = async (
 	host: AtlasHost,
 	slug: ReportSlug,
 	ref: WorldReadingRef,
-): Promise<WorldReading | null> =>
-	reportSession(host.socket, slug).run((cap) => cap.worldReading(ref))
+): Promise<WorldReading | null> => {
+	const answer = await keptRead(
+		slug,
+		await versionOf(host, slug),
+		'world-reading',
+		JSON.stringify(ref),
+		() => reportSession(host.socket, slug).run((cap) => cap.worldReading(ref)),
+	)
+	return answer == null ? null : worldReadingSchema.parse(answer)
+}
 
 /** The island's room texts, through the report's door, kept for the
- *  island's life (texts.ts). */
+ *  island's life (texts.ts) and in the browser (world-cache.ts). */
 export const reportTextsOf = (host: AtlasHost, slug: ReportSlug): ReportTexts =>
-	createReportTexts((ref) => reportSession(host.socket, slug).run((cap) => cap.worldText(ref)))
+	createReportTexts(async (ref) =>
+		keptRead(slug, await versionOf(host, slug), 'world-text', JSON.stringify(ref), () =>
+			reportSession(host.socket, slug).run((cap) => cap.worldText(ref)),
+		),
+	)
+
+/** The version of each report's record, as its door last said it: what the
+ *  island's reads are kept in the browser under (world-cache.ts). Asked as
+ *  the island's content is read, so an island built again asks again; null
+ *  where the door says none (a report that serves no world, or a door from
+ *  before it could say), and then nothing is kept. */
+const versions = new Map<ReportSlug, Promise<string | null>>()
+const askVersion = (host: AtlasHost, slug: ReportSlug): Promise<string | null> => {
+	const asked = reportSession(host.socket, slug)
+		.run((cap) => cap.worldVersion())
+		.then(
+			(version) => (typeof version === 'string' ? version : null),
+			() => null,
+		)
+	versions.set(slug, asked)
+	return asked
+}
+const versionOf = (host: AtlasHost, slug: ReportSlug): Promise<string | null> =>
+	versions.get(slug) ?? askVersion(host, slug)
 
 /** The report's world record, its own sections and its island's
  *  specification through its door. Unavailable is not an error: the island
@@ -72,8 +105,9 @@ export const reportTextsOf = (host: AtlasHost, slug: ReportSlug): ReportTexts =>
 async function reportContent(island: ReportIsland, host: AtlasHost): Promise<ReportContent | null> {
 	try {
 		const session = reportSession(host.socket, island.slug)
+		const version = await askVersion(host, island.slug)
 		const [record, nav] = await Promise.all([
-			session.run((cap) => cap.world()),
+			keptRead(island.slug, version, 'world', '', () => session.run((cap) => cap.world())),
 			session
 				.run((cap) => cap.navPage())
 				.catch((err: unknown) => {

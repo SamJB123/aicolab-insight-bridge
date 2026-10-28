@@ -147,6 +147,10 @@ export class ReportCap extends RpcTarget {
 	world() {
 		return this.#page('world', undefined)
 	}
+	/** The version of the record the island is built from: what a browser keeps its copy under. */
+	worldVersion() {
+		return this.#page('worldVersion', undefined)
+	}
 	/** One room's text for the island: the writing its walls carry. */
 	worldText(ref: unknown) {
 		return this.#page('worldText', ref)

@@ -52,7 +52,10 @@ import {
 	type WorldText,
 	type WorldTextRef,
 	worldReadingRefSchema,
+	worldReadingSchema,
+	worldRecordSchema,
 	worldTextRefSchema,
+	worldTextSchema,
 } from '../../world/schema.ts'
 import {
 	type AnalysisDrill,
@@ -62,7 +65,9 @@ import {
 } from '../analysis.ts'
 import { loadFacetCache } from '../facets.ts'
 import * as pages from '../pages.ts'
+import { perRecord, recordVersion } from '../reader.ts'
 import { documentName } from '../readings.ts'
+import { scopeKey } from '../scope.ts'
 import type { ReportCtx } from './context.ts'
 import { briefConfigOf, galaxyOptionsOf, sourcesConfigOf } from './readers.ts'
 import { readingOf, readingTargetSchema } from './reading-of.ts'
@@ -334,11 +339,36 @@ export async function analysisDrillOf(
 	return { data, names: await namesOf(ctx, listedIn(request.kind, data)) }
 }
 
+/*
+ * An island's three reads, each kept per record (../reader) while its version
+ * holds, in the isolate and in the data centre's cache every server there
+ * shares: building the island record read the whole record from D1 on every
+ * call (Second Chair's 3.9 MB took 1.4–2.5 s, a second call no faster,
+ * 2026-10-28). Kept whichever way they are asked: the door (`ReportCap`) and
+ * the site's routes read through these. A record's version names its run, and
+ * a run's shape is its app's own, so the shape is no part of a key.
+ */
+const keptWorld = perRecord(
+	worldRecord,
+	(config) => JSON.stringify([config.slug, config.words ?? null, scopeKey(config.scope)]),
+	{ name: 'world', schema: worldRecordSchema },
+)
+const keptWorldText = perRecord(
+	worldText,
+	(ref, _shape, scope) => JSON.stringify([ref, scopeKey(scope)]),
+	{ name: 'world-text', schema: worldTextSchema.nullable() },
+)
+const keptWorldReading = perRecord(
+	worldReading,
+	(ref, _shape, scope) => JSON.stringify([ref, scopeKey(scope)]),
+	{ name: 'world-reading', schema: worldReadingSchema.nullable() },
+)
+
 /** The report as an island is built from it, or null where the report serves no world. */
 export async function worldOf(ctx: ReportCtx): Promise<WorldRecord | null> {
 	const world = ctx.host.world
 	if (world === null) return null
-	return worldRecord(ctx.db, {
+	return keptWorld(ctx.db, {
 		slug: ctx.host.slug,
 		shape: world?.shape ?? CANONICAL_RUN_SHAPE,
 		...(world?.words ? { words: world.words } : {}),
@@ -346,11 +376,20 @@ export async function worldOf(ctx: ReportCtx): Promise<WorldRecord | null> {
 	})
 }
 
+/** The version of the record an island is built from, or null where the report serves no
+ *  world: what a browser keeps the island's reads under, so a copy it holds is used only
+ *  while the record is the same (island/world-cache.ts). The version the reads above are
+ *  kept under, read from the data centre's cache. */
+export async function worldVersionOf(ctx: ReportCtx): Promise<string | null> {
+	if (ctx.host.world === null) return null
+	return recordVersion(ctx.db)
+}
+
 /** One room's text for an island: the writing its walls carry, read when it is entered. */
 export async function worldTextOf(ctx: ReportCtx, ref: WorldTextRef): Promise<WorldText | null> {
 	const world = ctx.host.world
 	if (world === null) return null
-	return worldText(ctx.db, ref, world?.shape ?? CANONICAL_RUN_SHAPE, ctx.scope)
+	return keptWorldText(ctx.db, ref, world?.shape ?? CANONICAL_RUN_SHAPE, ctx.scope)
 }
 
 /** One item's reading for an island: the key points the record counts but does not carry. */
@@ -360,7 +399,7 @@ export async function worldReadingOf(
 ): Promise<WorldReading | null> {
 	const world = ctx.host.world
 	if (world === null) return null
-	return worldReading(ctx.db, ref, world?.shape ?? CANONICAL_RUN_SHAPE, ctx.scope)
+	return keptWorldReading(ctx.db, ref, world?.shape ?? CANONICAL_RUN_SHAPE, ctx.scope)
 }
 
 /* ───────────────────────── the pages by name ───────────────────────── */
@@ -388,6 +427,7 @@ export type PageResults = {
 	analysisDrill: AnalysisDrillData
 	reading: ReadingView | null
 	world: WorldRecord | null
+	worldVersion: string | null
 	worldText: WorldText | null
 	worldReading: WorldReading | null
 }
@@ -414,6 +454,7 @@ const PAGE_READS: { [N in PageName]: (ctx: ReportCtx, input: unknown) => Promise
 		analysisDrill: (ctx, input) => analysisDrillOf(ctx, analysisDrillSchema.parse(input)),
 		reading: (ctx, input) => readingOf(ctx, readingTargetSchema.parse(input)),
 		world: (ctx) => worldOf(ctx),
+		worldVersion: (ctx) => worldVersionOf(ctx),
 		worldText: (ctx, input) => worldTextOf(ctx, worldTextRefSchema.parse(input)),
 		worldReading: (ctx, input) => worldReadingOf(ctx, worldReadingRefSchema.parse(input)),
 	}

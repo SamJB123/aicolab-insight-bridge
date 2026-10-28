@@ -60,6 +60,7 @@ export {
 	topicSearchOf,
 	worldOf,
 	worldReadingOf,
+	worldVersionOf,
 } from './page-reads.ts'
 export {
 	analysisPageSchema,
