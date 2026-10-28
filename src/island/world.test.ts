@@ -40,8 +40,13 @@ describe('the report world', () => {
 		expect(world.start).toBe('island')
 		const island = world.spaces.find((s) => s.id === 'island')
 		expect(island?.guide?.id).toBe('guide:docent')
-		// The buildings stand, but with no record their doors lead nowhere yet.
-		expect(island?.interactables.some((i) => i.id === 'exit:chart')).toBe(true)
+		// The buildings stand, but with no record their doors lead nowhere
+		// yet: each is looked at, not entered.
+		expect(island?.interactables.some((i) => i.id === 'examine:landmark:topics')).toBe(true)
+		expect(island?.interactables.some((i) => i.id.startsWith('exit:landmark:'))).toBe(false)
+		// No way off to the chart, and no glyph naming the island where you arrive.
+		expect(island?.interactables.some((i) => i.id === 'exit:chart')).toBe(false)
+		expect(island?.interactables.some((i) => i.id === 'examine:place:arrival')).toBe(false)
 	})
 
 	it('declares each room by name and way in, and reads its ways out unbuilt as built', () => {
