@@ -13,6 +13,7 @@
 // held to.
 
 import { worldCell } from '@aicolab/atlas/chart/chart-data.ts'
+import type { HexIslandSpec } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
 import { islandPlacesOf } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/island/programs.ts'
 import { realiseIsland } from '@aicolab/atlas/chessboard/content/island/realise.ts'
@@ -35,6 +36,7 @@ import { createMemo } from 'solid-js'
 import { type IslandPlanOf, islandPlanOfReport, reportIslandPlan } from '../plan.ts'
 import {
 	type ReportContent,
+	reportDeclaration,
 	reportIslandProgram,
 	reportReading,
 	reportTextsOf,
@@ -119,17 +121,23 @@ const reportBuild = (
 /** A report island's setups: as declared, and as it was first built — the
  *  oracle, planned by the oracle plan or by the composition a host hands
  *  in (`plan`), its kit placed from the plan or from a scene document
- *  written from it (`scene`). */
+ *  written from it (`scene`). With a DRAFT (a host's editor of the
+ *  island's specification), the island is declared from the draft as it
+ *  stands when the world is built, in place of the specification its door
+ *  gives, and explored alone: a draft is no island anyone else stands on. */
 export function reportIslandSetup(
 	slug: ReportSlug,
 	oracle: { plan?: IslandPlanOf; scene?: IslandSceneOf } = {},
+	draft?: () => HexIslandSpec,
 ): IslandSetup {
 	const island = reportIsland(slug)
 	const program = reportIslandProgram(slug)
 	// The report's world key: its program's, which the host registered
 	// beside this.
 	const key = programKey(slug)
+	const alone: Pick<WorldSetup, 'relay'> = draft ? { relay: false } : {}
 	const shared = {
+		...alone,
 		// Its room is its cell's (room-service lattice rooms): the archipelago's
 		// visitors on this island and its own route's meet there.
 		name: worldCell(key).cell,
@@ -147,7 +155,9 @@ export function reportIslandSetup(
 		callbackPath: `/overture/${slug}/island`,
 		build: (models, content, options) => {
 			const bare = options.bare === true
-			const realised = realiseIsland(program.declaration(content))
+			const realised = realiseIsland(
+				draft ? reportDeclaration(slug, content, draft()) : program.declaration(content),
+			)
 			const report = buildReportWorld(content?.record ?? null, island, realised.plan)
 			const built = reportBuild(report, island, options.host)
 			return {

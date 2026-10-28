@@ -24,6 +24,7 @@ import {
 	programKey,
 } from '@aicolab/atlas/chessboard/content/island/programs.ts'
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
+import type { IslandDocument } from '@aicolab/kolo/island'
 import { sectionsOf } from '../applet/reads.ts'
 import { reportSession } from '../applet/session.ts'
 import {
@@ -147,22 +148,31 @@ async function fetchReportContent(island: ReportIsland): Promise<ReportContent |
 /** The point a report's island is written at: its own cell's centre. */
 const reportCellOf = (slug: ReportSlug) => worldCentre(programKey(slug))
 
+/** A report's island as declared from its content, by the specification
+ *  given — the one its door gave, unless another is handed in (a host's
+ *  draft of it) — at its own cell, which the chart has placed: the program
+ *  is asked by key. */
+export function reportDeclaration(
+	slug: ReportSlug,
+	content: ReportContent | null,
+	spec: HexIslandSpec | null = content?.spec ?? null,
+): IslandDocument {
+	return reportHexDeclaration(
+		content?.record ?? null,
+		reportIsland(slug),
+		content?.sections ?? null,
+		spec,
+		reportCellOf(slug),
+	)
+}
+
 export function reportIslandProgram(slug: ReportSlug): IslandProgram<ReportContent> {
 	const island = reportIsland(slug)
 	return {
 		key: slug,
 		content: (host) => reportContent(island, host),
 		fetchContent: () => fetchReportContent(island),
-		declaration: (content) =>
-			reportHexDeclaration(
-				content?.record ?? null,
-				island,
-				content?.sections ?? null,
-				content?.spec ?? null,
-				// Declared at its own cell, which the chart has placed: the
-				// program is asked by key.
-				reportCellOf(slug),
-			),
+		declaration: (content) => reportDeclaration(slug, content),
 		skeleton: () => buildReportWorld(null, island).world,
 	}
 }
