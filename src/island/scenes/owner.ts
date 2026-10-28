@@ -33,6 +33,14 @@ const toldSchema = z.object({
 	),
 })
 
+/** The face's paint, ONE for every table on the page: the same on each
+ *  island, painted once and never disposed with a table. */
+let bed: THREE.CanvasTexture | null = null
+const sharedSkyBed = (): THREE.CanvasTexture => {
+	bed ??= skyBed()
+	return bed
+}
+
 /** The face's paint: dark glass with a faint grid, the hologram's bed,
  *  painted on a canvas. */
 function skyBed(): THREE.CanvasTexture {
@@ -140,7 +148,7 @@ function buildSkyTable(
 	group.add(rail)
 
 	// The face, painted as the sky's bed.
-	const texture = bare ? null : skyBed()
+	const texture = bare ? null : sharedSkyBed()
 	const faceMaterial = new THREE.MeshStandardNodeMaterial({ roughness: 0.15, metalness: 0 })
 	if (texture) faceMaterial.map = texture
 	const face = new THREE.Mesh(new THREE.CircleGeometry(faceRadius, 64), faceMaterial)
@@ -179,7 +187,7 @@ function buildSkyTable(
 			if (sky) lights.add(sky)
 		},
 		dispose() {
-			texture?.dispose()
+			// The face's paint is every table's (sharedSkyBed): it stays.
 			group.traverse((object) => {
 				if (object instanceof THREE.Mesh) object.geometry.dispose()
 			})
