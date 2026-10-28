@@ -3,7 +3,7 @@
 // the sky table the report draws in the galaxy's cell; or the square
 // island as it was first built, its oracle, from the three-resources kit
 // (scenes/island-scene.ts) with the sky table at the square's heart — and
-// one pair room per room the world was built with — every room drawn from
+// one pair room per room of the world — each built as it is entered, from
 // the same build the content is, through the museum's own room builder. A room's walls
 // carry its text (core's `worldText`: its cards' words, its rail's
 // panels), read through the report's door as the room is built; the
@@ -95,12 +95,17 @@ export function createReportAdapter(
 	texts: ReportTexts | null = null,
 ): SceneAdapter {
 	const builders: Record<string, SpaceBuilder> = { ...outdoors }
-	for (const room of build.rooms) {
-		builders[room.spaceId] = async () => {
-			const text = !bare && texts && room.text ? await texts.of(room.text) : null
-			const written = text ? build.withText(room.spaceId, text) : null
-			const scene = await buildReportRoomSpace(written?.room ?? room, bare)
-			return written ? { ...scene, space: written.space } : scene
+	for (const { spaceId } of build.rooms) {
+		// Built as it is entered: the scene, and the space as it is once in
+		// (the world declares it by name and way in), let go with it.
+		builders[spaceId] = async () => {
+			const built = build.roomAt(spaceId)
+			if (!built) throw new Error(`[report] no room '${spaceId}'`)
+			const ref = built.room.text
+			const text = !bare && texts && ref ? await texts.of(ref) : null
+			const written = text ? build.withText(built, text) : built
+			const scene = await buildReportRoomSpace(written.room, bare)
+			return { ...scene, space: written.space }
 		}
 	}
 	return createSceneAdapter(builders)

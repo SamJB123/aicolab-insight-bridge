@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import { type WorldRecord, worldRecordSchema } from '../world/index.ts'
 import { syntheticRecord } from './synthetic-record.ts'
-import { buildReportWorld } from './world.ts'
+import { buildReportWorld, everyRoom } from './world.ts'
 
 /** The synthetic record grown by one family of seven groups, each with a
  *  topic lensed for the Academia cohort, and one topic that also belongs
@@ -39,7 +39,7 @@ function wideRecord(): WorldRecord {
 
 /** Exhibits of a room that hang on no alley, rail or plinth. */
 const offAlleys = (build: ReturnType<typeof buildReportWorld>, spaceId: string) => {
-	const room = build.rooms.find((r) => r.spaceId === spaceId)
+	const room = build.roomAt(spaceId)?.room
 	if (!room) throw new Error(`no room ${spaceId}`)
 	return room.exhibits.filter(
 		(e) =>
@@ -60,7 +60,8 @@ describe('items that an alley holds elsewhere hang nowhere else', () => {
 		expect(offAlleys(build, lobby).map((e) => e.itemId)).toEqual([])
 		// Every lens the lobby's topics carry hangs exactly once across the
 		// lobby and its hans.
-		const hung = build.rooms
+		const hung = everyRoom(build)
+			.map((r) => r.room)
 			.filter((r) => r.spaceId === lobby || r.spaceId.startsWith(`${lobby}:w:`))
 			.flatMap((r) => r.exhibits.map((e) => e.itemId))
 			.filter((id) => id.startsWith('lens:'))
@@ -69,9 +70,7 @@ describe('items that an alley holds elsewhere hang nowhere else', () => {
 
 	it('a group room hangs a non-primary member’s card in its alleys', () => {
 		const group = 'g:21'
-		const cards = build.rooms
-			.find((r) => r.spaceId === group)
-			?.exhibits.filter((e) => e.itemId === 'card:g:21--t:1:a')
+		const cards = build.roomAt(group)?.room.exhibits.filter((e) => e.itemId === 'card:g:21--t:1:a')
 		expect(cards?.length).toBe(1)
 		expect(cards?.[0]?.anchorId.startsWith('anchor:bay:')).toBe(true)
 		expect(offAlleys(build, group)).toEqual([])

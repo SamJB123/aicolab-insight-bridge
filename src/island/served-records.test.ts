@@ -38,8 +38,10 @@ describe('every served report, on its real record', () => {
 				`${island.corpus.name} took too long to build`,
 			).toBeLessThan(5_000)
 			const ids = new Set(report.world.spaces.map((space) => space.id))
+			// Every room's doors as the world reads them before it is built.
 			const broken = report.world.spaces.flatMap((space) =>
-				space.interactables
+				report
+					.waysOf(space)
 					.filter((item) => item.exit && 'space' in item.exit && !ids.has(item.exit.space))
 					.map(
 						(item) =>

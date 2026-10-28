@@ -38,6 +38,7 @@ import {
 	type ReportContent,
 	reportDeclaration,
 	reportIslandProgram,
+	reportOutline,
 	reportReading,
 	reportTextsOf,
 } from '../program.ts'
@@ -103,14 +104,20 @@ const reportBuild = (
 	report: ReportWorldBuild,
 	island: ReportIsland,
 	host: AtlasHost,
-): Pick<WorldBuild, 'world' | 'rooms' | 'findables' | 'lensAt' | 'sheet'> & {
+): Pick<WorldBuild, 'world' | 'roomAt' | 'waysOf' | 'findables' | 'lensAt' | 'sheet'> & {
 	texts: ReportTexts
 } => {
 	const texts = reportTextsOf(host, island.slug)
 	const lens = reportLens(report)
 	return {
 		world: report.world,
-		rooms: report.rooms,
+		// A room's plan and ways, unbuilt: the room itself is built as it is
+		// entered.
+		roomAt: (spaceId) => {
+			const plan = report.planOf(spaceId)
+			return plan ? { spaceId, plan } : undefined
+		},
+		waysOf: report.waysOf,
 		findables: report.findables,
 		lensAt: () => lens,
 		sheet: reportSheet(report, texts, host, island.slug),
@@ -146,6 +153,7 @@ export function reportIslandSetup(
 		finding: { label: 'Find anything', placeholder: 'Find a topic, a name, a question…' },
 		skeleton: () => worldOfKey(key),
 		content: (host: AtlasHost) => program.content(host),
+		outline: (host: AtlasHost) => reportOutline(island, host),
 	}
 	// The report's HEX ISLAND, as its program declares it from what the door
 	// gave (../hex-island.ts), realised and built as any declared island is,
@@ -169,7 +177,7 @@ export function reportIslandSetup(
 					built.texts,
 				),
 				island: groundOf(realised, models, bare),
-				places: islandPlacesOf(realised.document, report.world, report.world.start),
+				places: islandPlacesOf(realised.document, report.world, report.world.start, report.waysOf),
 			}
 		},
 	}

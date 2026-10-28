@@ -77,11 +77,16 @@ function skyBed(): THREE.CanvasTexture {
  *  at its baked place on its thread of light, and the hologram's own
  *  cool glow. Bare, the face is left unpainted: a build with no renderer
  *  has no canvas and no one to see it. */
+/** The table as drawn, and its stars told again. */
+interface SkyTable extends OwnedModel {
+	restar(stars: readonly { x: number; y: number; r: number }[]): void
+}
+
 function buildSkyTable(
 	radius: number,
 	stars: readonly { x: number; y: number; r: number }[],
 	bare: boolean,
-): OwnedModel {
+): SkyTable {
 	const group = new THREE.Group()
 	group.name = SKY_TABLE_ID
 	const stone = nodeMaterial('#cfc6b4', 0.9)
@@ -146,55 +151,33 @@ function buildSkyTable(
 	face.userData.navmesh = false
 	group.add(face)
 
-	// The stars, and their threads.
+	// The stars, and their threads, told again when the record comes or goes.
 	const lights = new THREE.Group()
 	lights.position.y = TABLE_FACE_Y
 	lights.userData.collidable = false
 	lights.userData.navmesh = false
 	group.add(lights)
-	const count = stars.length
-	if (count > 0) {
-		const span = radius * 0.82
-		const starMesh = new THREE.InstancedMesh(
-			new THREE.SphereGeometry(1, 10, 8),
-			new THREE.MeshBasicNodeMaterial({ color: '#ffffff' }),
-			count,
-		)
-		const threads = new THREE.InstancedMesh(
-			new THREE.CylinderGeometry(0.006, 0.006, 1, 4),
-			new THREE.MeshBasicNodeMaterial({ color: '#8fb6ff', transparent: true, opacity: 0.35 }),
-			count,
-		)
-		const m = new THREE.Matrix4()
-		const colour = new THREE.Color()
-		stars.forEach((star, i) => {
-			const x = (star.x - 0.5) * 2 * span
-			const z = (star.y - 0.5) * 2 * span
-			const h = 0.25 + star.r * 0.6
-			const s = 0.06 + star.r * 0.14
-			m.makeScale(s, s, s)
-			m.setPosition(x, h, z)
-			starMesh.setMatrixAt(i, m)
-			colour.set(STAR_COLOURS[i % STAR_COLOURS.length] ?? '#ffe6b0')
-			starMesh.setColorAt(i, colour)
-			m.makeScale(1, h, 1)
-			m.setPosition(x, h / 2, z)
-			threads.setMatrixAt(i, m)
-		})
-		starMesh.instanceMatrix.needsUpdate = true
-		if (starMesh.instanceColor) starMesh.instanceColor.needsUpdate = true
-		threads.instanceMatrix.needsUpdate = true
-		for (const mesh of [starMesh, threads]) {
-			mesh.userData.collidable = false
-			mesh.userData.navmesh = false
-			lights.add(mesh)
-		}
-	}
+	let sky = starsOver(radius, stars)
+	if (sky) lights.add(sky)
 	const glow = new THREE.PointLight('#9cc4ff', 10, 9, 1.8)
 	glow.position.y = 1.4
 	lights.add(glow)
+	const drop = (stale: THREE.Group | null) => {
+		if (!stale) return
+		stale.removeFromParent()
+		stale.traverse((object) => {
+			if (!(object instanceof THREE.Mesh)) return
+			object.geometry.dispose()
+			if (!Array.isArray(object.material)) object.material.dispose()
+		})
+	}
 	return {
 		object: group,
+		restar(next) {
+			drop(sky)
+			sky = starsOver(radius, next)
+			if (sky) lights.add(sky)
+		},
 		dispose() {
 			texture?.dispose()
 			group.traverse((object) => {
@@ -204,14 +187,76 @@ function buildSkyTable(
 	}
 }
 
+/** A star per topic at its baked place on its thread of light, over the
+ *  table's face; null for a sky with no stars (a bare table). */
+function starsOver(
+	radius: number,
+	stars: readonly { x: number; y: number; r: number }[],
+): THREE.Group | null {
+	const count = stars.length
+	if (count === 0) return null
+	const sky = new THREE.Group()
+	const span = radius * 0.82
+	const starMesh = new THREE.InstancedMesh(
+		new THREE.SphereGeometry(1, 10, 8),
+		new THREE.MeshBasicNodeMaterial({ color: '#ffffff' }),
+		count,
+	)
+	const threads = new THREE.InstancedMesh(
+		new THREE.CylinderGeometry(0.006, 0.006, 1, 4),
+		new THREE.MeshBasicNodeMaterial({ color: '#8fb6ff', transparent: true, opacity: 0.35 }),
+		count,
+	)
+	const m = new THREE.Matrix4()
+	const colour = new THREE.Color()
+	stars.forEach((star, i) => {
+		const x = (star.x - 0.5) * 2 * span
+		const z = (star.y - 0.5) * 2 * span
+		const h = 0.25 + star.r * 0.6
+		const s = 0.06 + star.r * 0.14
+		m.makeScale(s, s, s)
+		m.setPosition(x, h, z)
+		starMesh.setMatrixAt(i, m)
+		colour.set(STAR_COLOURS[i % STAR_COLOURS.length] ?? '#ffe6b0')
+		starMesh.setColorAt(i, colour)
+		m.makeScale(1, h, 1)
+		m.setPosition(x, h / 2, z)
+		threads.setMatrixAt(i, m)
+	})
+	starMesh.instanceMatrix.needsUpdate = true
+	if (starMesh.instanceColor) starMesh.instanceColor.needsUpdate = true
+	threads.instanceMatrix.needsUpdate = true
+	for (const mesh of [starMesh, threads]) {
+		mesh.userData.collidable = false
+		mesh.userData.navmesh = false
+		sky.add(mesh)
+	}
+	return sky
+}
+
 /** The report, drawing what is its own: the sky table — bare, when the
- *  space is built bare (atlas island-owners.ts OwnerEntry). */
+ *  space is built bare (atlas island-owners.ts OwnerEntry) — its stars
+ *  told again as the record comes in after the island's ground, or goes. */
 export function createReportOwner(bare = false): IslandOwner {
+	const tables = new Set<SkyTable>()
 	return {
 		model(name, props) {
 			if (name !== SKY_TABLE_ID) throw new Error(`[${REPORT_OWNER}] no '${name}' to draw`)
 			const told = toldSchema.parse(props)
-			return buildSkyTable(told.radius, told.stars, bare)
+			const table = buildSkyTable(told.radius, told.stars, bare)
+			tables.add(table)
+			return {
+				object: table.object,
+				dispose() {
+					tables.delete(table)
+					table.dispose()
+				},
+			}
+		},
+		retell(name, props) {
+			if (name !== SKY_TABLE_ID) return
+			const told = toldSchema.parse(props)
+			for (const table of tables) table.restar(told.stars)
 		},
 	}
 }

@@ -19,8 +19,8 @@ describe("a report island's places", () => {
 		const island = reportIsland('training-data')
 		const record = syntheticRecord()
 		const realised = realiseReportHex(record, island)
-		const { world } = buildReportWorld(record, island, realised.plan)
-		const places = islandPlacesOf(realised.document, world, world.start)
+		const { world, waysOf } = buildReportWorld(record, island, realised.plan)
+		const places = islandPlacesOf(realised.document, world, world.start, waysOf)
 		expect(places.island).toBe('training-data')
 		expect(places.spaces.get(world.start)).toBe('')
 		// A building's home is the room behind its door; a landmark's the

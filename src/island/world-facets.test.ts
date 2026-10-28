@@ -36,9 +36,9 @@ function twoFacetRecord(): WorldRecord {
 }
 
 const plaques = (build: ReturnType<typeof buildReportWorld>, spaceId: string) =>
-	build.rooms
-		.find((r) => r.spaceId === spaceId)
-		?.exhibits.map((e) => e.itemId)
+	build
+		.roomAt(spaceId)
+		?.room.exhibits.map((e) => e.itemId)
 		.filter((id) => id.startsWith('plaque:')) ?? []
 
 describe('a hall per analysed facet', () => {
@@ -60,7 +60,7 @@ describe('a hall per analysed facet', () => {
 	})
 
 	it('a cohort’s way back is its facet’s hall, and the map draws the hall with its cohorts', () => {
-		const lobby = build.rooms.find((r) => r.spaceId === 'c:era:early')
+		const lobby = build.roomAt('c:era:early')?.room
 		expect(lobby?.plan.doors.some((d) => d.doorId === 'door:f:era--c:era:early')).toBe(true)
 		const map = mapOf(build, 'f:era')
 		const drawn = new Set(map?.spaces.map((s) => s.id))

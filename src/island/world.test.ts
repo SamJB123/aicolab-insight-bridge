@@ -1,16 +1,19 @@
 // The report world, built from a record: every topic and source a room,
 // every doorway with its counterpart, every room within the planner's cap.
-// The island alone (no record) is what the relay builds.
+// The island alone (no record) is what the relay builds. Rooms are declared
+// by name and built on entry; the checks here build them all, and hold
+// each room's ways out, read unbuilt, to the ways it has once built.
 //
 // A real record is used when REPORT_FIXTURE names one (the JSON `/api/world`
 // serves); without it the test builds a small synthetic record.
 
 import { readFileSync } from 'node:fs'
 import { maxItemsFor } from '@aicolab/atlas/chessboard/content/item-room-plan.ts'
+import type { ChessboardSpace } from '@aicolab/kolo/chessboard/content'
 import { describe, expect, it } from 'vitest'
 import { type WorldRecord, worldRecordSchema } from '../world/index.ts'
 import { syntheticRecord, syntheticText } from './synthetic-record.ts'
-import { buildReportWorld, itemWithText } from './world.ts'
+import { buildReportWorld, everyRoom, itemWithText, type ReportWorldBuild } from './world.ts'
 
 const synthetic = (): WorldRecord => syntheticRecord()
 
@@ -18,6 +21,17 @@ const fixture = (): WorldRecord | null => {
 	const path = process.env.REPORT_FIXTURE
 	if (!path) return null
 	return worldRecordSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
+}
+
+/** The world with every room built, as a visitor entering each finds it:
+ *  the rooms as built, and the world's spaces with each room in full. */
+const whole = (built: ReportWorldBuild) => {
+	const every = everyRoom(built)
+	const full = new Map(every.map((b) => [b.space.id, b.space]))
+	return {
+		rooms: every.map((b) => b.room),
+		spaces: built.world.spaces.map((s): ChessboardSpace => full.get(s.id) ?? s),
+	}
 }
 
 describe('the report world', () => {
@@ -30,10 +44,34 @@ describe('the report world', () => {
 		expect(island?.interactables.some((i) => i.id === 'exit:chart')).toBe(true)
 	})
 
+	it('declares each room by name and way in, and reads its ways out unbuilt as built', () => {
+		const built = buildReportWorld(fixture() ?? synthetic())
+		for (const declared of built.world.spaces) {
+			const room = built.roomAt(declared.id)
+			if (!room) continue
+			// Declared light: nothing on its walls until it is entered.
+			expect(declared.interactables, declared.id).toEqual([])
+			expect(declared.defaultEntry).toBe(room.space.defaultEntry)
+			expect(room.space.entries.some((e) => e.id === declared.defaultEntry)).toBe(true)
+			expect([declared.label, declared.subtitle]).toEqual([room.space.label, room.space.subtitle])
+			// Its ways, read unbuilt, are the built room's own, in its order.
+			const ways = (space: ChessboardSpace) =>
+				built
+					.waysOf(space)
+					.flatMap((w) => (w.exit ? [{ id: w.id, kind: w.kind, exit: w.exit }] : []))
+			expect(ways(declared), declared.id).toEqual(
+				room.space.interactables.flatMap((i) =>
+					i.exit ? [{ id: i.id, kind: i.kind, exit: i.exit }] : [],
+				),
+			)
+		}
+	})
+
 	it('gives every topic and source a room, every doorway its counterpart', () => {
 		const record = fixture() ?? synthetic()
 		const built = buildReportWorld(record)
-		const ids = new Set(built.world.spaces.map((s) => s.id))
+		const { rooms, spaces } = whole(built)
+		const ids = new Set(spaces.map((s) => s.id))
 		for (const t of record.topics) expect(ids.has(`t:${t.id}`)).toBe(true)
 		for (const s of record.sources) expect(ids.has(`s:${s.id}`)).toBe(true)
 		for (const g of record.groups) expect(ids.has(`g:${g.id}`)).toBe(true)
@@ -41,20 +79,24 @@ describe('the report world', () => {
 		expect(ids.has('office')).toBe(true)
 		// The sky is on the table in the galaxy's own cell, not in a room.
 		expect(ids.has('map-room')).toBe(false)
-		const island = built.world.spaces.find((s) => s.id === 'island')
+		const island = spaces.find((s) => s.id === 'island')
 		expect(island?.interactables.some((i) => i.id === 'examine:landmark:galaxy')).toBe(true)
-		// Every exit's target entry exists (parseChessboardWorld checked). A
-		// traversable item lands before an item of the other room that leads
-		// back here (or at that room's door), so the dive can be reversed —
-		// except a bay's heading card, the one-way into a family's or a
-		// task's front room, which lands at that room's own door.
+		// Every exit's target entry exists. A traversable item lands before an
+		// item of the other room that leads back here (or at that room's door),
+		// so the dive can be reversed — except a bay's heading card, the
+		// one-way into a family's or a task's front room, which lands at that
+		// room's own door.
 		let traversable = 0
-		for (const space of built.world.spaces) {
+		for (const space of spaces) {
 			for (const item of space.interactables) {
 				if (!item.exit || 'leave' in item.exit) continue
 				const link = item.exit
-				const target = built.world.spaces.find((s) => s.id === link.space)
+				const target = spaces.find((s) => s.id === link.space)
 				expect(target, `${space.id} → ${link.space}`).toBeDefined()
+				expect(
+					target?.entries.some((e) => e.id === link.entry),
+					`${item.id} → ${link.space} ${link.entry}`,
+				).toBe(true)
 				if (item.kind !== 'examine') continue
 				traversable++
 				const landing = target?.interactables.find(
@@ -80,7 +122,7 @@ describe('the report world', () => {
 		// A room has one way back, at most one way on, every exhibit on an
 		// anchor of its own, and a list room no more items than the planner
 		// hangs.
-		for (const room of built.rooms) {
+		for (const room of rooms) {
 			// One way back, at most one way on, and a nave room's doors into
 			// its cohorts' wings.
 			expect(room.plan.doors.length).toBeLessThanOrEqual(
@@ -107,11 +149,11 @@ describe('the report world', () => {
 		// analysed facet) as a named region, the cohort's lens at its mouth.
 		const firstFacet = record.facets[0]
 		for (const t of record.topics) {
-			const room = built.rooms.find((r) => r.spaceId === `t:${t.id}`)
+			const room = rooms.find((r) => r.spaceId === `t:${t.id}`)
 			expect(room?.plan.character, `t:${t.id}`).toBe('nave')
 			const rail = room?.plan.fixtures.find((f) => f.kind === 'rail')
 			expect(rail?.kind === 'rail' ? rail.panels.length : -1).toBe(t.keyPoints)
-			const space = built.world.spaces.find((s) => s.id === `t:${t.id}`)
+			const space = spaces.find((s) => s.id === `t:${t.id}`)
 			if (t.keyPoints > 0) {
 				expect(space?.interactables.some((i) => i.id === `item:points:${t.id}`)).toBe(true)
 			}
@@ -124,7 +166,7 @@ describe('the report world', () => {
 				),
 			)
 			const regions = new Set(
-				built.world.spaces
+				spaces
 					.filter((s) => s.id === `t:${t.id}` || s.id.startsWith(`t:${t.id}-`))
 					.flatMap((s) => (s.regions ?? []).map((r) => r.id.replace(/:\d+$/, ''))),
 			)
@@ -150,13 +192,11 @@ describe('the report world', () => {
 						}`
 					: `grade:${value}`
 				const wingPrefix = `t:${t.id}:w:`
-				const inHub = built.world.spaces
+				const inHub = spaces
 					.filter((s) => s.id === `t:${t.id}` || s.id.startsWith(`t:${t.id}-`))
 					.flatMap((s) => s.interactables)
 					.filter((i) => members.some((m) => i.id === `item:perspective:${t.id}:${m.sourceId}`))
-				const wings = built.world.spaces.filter((s) =>
-					s.id.startsWith(wingPrefix + bay.replace(/:/g, '-')),
-				)
+				const wings = spaces.filter((s) => s.id.startsWith(wingPrefix + bay.replace(/:/g, '-')))
 				if (members.length <= 12) {
 					expect(inHub.length, `t:${t.id} ${bay} all in the hub`).toBe(members.length)
 					expect(wings.length, `t:${t.id} ${bay} needs no wing`).toBe(0)
@@ -171,7 +211,7 @@ describe('the report world', () => {
 			}
 			for (const l of t.lenses) {
 				if (l.facet !== firstFacet?.key || !cohorts.has(l.value)) continue
-				const heading = built.rooms
+				const heading = rooms
 					.filter((r) => r.spaceId === `t:${t.id}` || r.spaceId.startsWith(`t:${t.id}-`))
 					.flatMap((r) => r.exhibits)
 					.find((e) => e.itemId.startsWith(`lens:${t.id}:`) && e.anchorId.endsWith(':head'))
@@ -188,14 +228,14 @@ describe('the report world', () => {
 					.toLowerCase()
 					.replace(/[^a-z0-9]+/g, '-')
 					.replace(/^-|-$/g, '')}`
-				const room = built.rooms.find((r) => r.spaceId === cs)
+				const room = rooms.find((r) => r.spaceId === cs)
 				if (!room) continue
 				expect(room.plan.character, cs).toBe('nave')
 				expect(
 					room.plan.fixtures.some((f) => f.kind === 'chart'),
 					`${cs} info desk`,
 				).toBe(true)
-				const space = built.world.spaces.find((s) => s.id === cs)
+				const space = spaces.find((s) => s.id === cs)
 				expect(
 					space?.interactables.some((i) => i.id === 'examine:info-desk'),
 					`${cs} desk`,
@@ -208,19 +248,21 @@ describe('the report world', () => {
 					const primary = t.parents.find((p) => p.isPrimary) ?? t.parents[0]
 					const alley = primary ? `g:${primary.groupId}` : 'topics'
 					// The lens hangs in the lobby (or its han), in its topic's own group's alley.
-					const rooms = built.rooms.filter(
+					const lobbyRooms = rooms.filter(
 						(r) =>
 							r.spaceId === cs ||
 							r.spaceId.startsWith(`${cs}-`) ||
 							r.spaceId.startsWith(`${cs}:w:`),
 					)
-					const hung = rooms
+					const hung = lobbyRooms
 						.flatMap((r) => r.exhibits)
 						.find((e) => e.itemId.startsWith(`lens:${t.id}:`))
 					expect(hung, `${cs} lens for topic ${t.id}`).toBeDefined()
-					const anchor = rooms.flatMap((r) => r.plan.anchors).find((a) => a.id === hung?.anchorId)
-					if (rooms.length === 1) expect(anchor?.bay, `${cs} lens ${t.id} alley`).toBe(alley)
-					if (rooms.length === 1)
+					const anchor = lobbyRooms
+						.flatMap((r) => r.plan.anchors)
+						.find((a) => a.id === hung?.anchorId)
+					if (lobbyRooms.length === 1) expect(anchor?.bay, `${cs} lens ${t.id} alley`).toBe(alley)
+					if (lobbyRooms.length === 1)
 						expect(regions.has(alley), `${cs} alley ${alley} is a region`).toBe(true)
 				}
 			}
@@ -228,12 +270,12 @@ describe('the report world', () => {
 		// The synthetic run's lobby for Academia: Group A1's alley is a cross-alley
 		// of Family A's, and the room's outline steps for it.
 		if (!process.env.REPORT_FIXTURE) {
-			const lobby = built.world.spaces.find((s) => s.id === 'c:sector:academia')
+			const lobby = spaces.find((s) => s.id === 'c:sector:academia')
 			const ids = (lobby?.regions ?? []).map((r) => r.id)
 			expect(ids).toContain('g:10')
 			expect(ids).toContain('g:11')
 			expect(ids).toContain('topics')
-			const room = built.rooms.find((r) => r.spaceId === 'c:sector:academia')
+			const room = rooms.find((r) => r.spaceId === 'c:sector:academia')
 			expect((room?.plan.outline?.length ?? 0) > 8, 'a stepped outline with a cross-alley').toBe(
 				true,
 			)
@@ -243,7 +285,7 @@ describe('the report world', () => {
 		// and a reading per document. Its family and analysis alleys are named
 		// by painted signs, not cards.
 		for (const s of record.sources) {
-			const room = built.rooms.find((r) => r.spaceId === `s:${s.id}`)
+			const room = rooms.find((r) => r.spaceId === `s:${s.id}`)
 			expect(room?.plan.character, `s:${s.id}`).toBe('nave')
 			expect(
 				room?.exhibits.some((e) => e.itemId.startsWith('card:')),
@@ -271,7 +313,7 @@ describe('the report world', () => {
 		// Every strong membership hangs in the topic's room — or in the topic's
 		// wing for its cohort — as a traversable item.
 		for (const m of record.memberships) {
-			const topicRooms = built.world.spaces.filter(
+			const topicRooms = spaces.filter(
 				(s) =>
 					s.id === `t:${m.topicId}` ||
 					s.id.startsWith(`t:${m.topicId}-`) ||
@@ -285,9 +327,9 @@ describe('the report world', () => {
 			expect(found, `no way from topic ${m.topicId} to ${m.sourceId}`).toBe(true)
 		}
 		console.info(
-			`[report-world] ${built.world.spaces.length} spaces, ${built.rooms.length} rooms, ${built.items.size} items, ${built.findables.length} findables; ` +
-				`largest room ${Math.max(...built.rooms.map((r) => r.plan.width))}×${Math.max(...built.rooms.map((r) => r.plan.depth))}; ` +
-				`wings ${built.rooms.filter((r) => /-\d+$/.test(r.spaceId)).length}; world JSON ${Math.round(JSON.stringify(built.world).length / 1024)} KB`,
+			`[report-world] ${spaces.length} spaces, ${rooms.length} rooms, ${built.items.size} items, ${built.findables.length} findables; ` +
+				`largest room ${Math.max(...rooms.map((r) => r.plan.width))}×${Math.max(...rooms.map((r) => r.plan.depth))}; ` +
+				`wings ${rooms.filter((r) => /-\d+$/.test(r.spaceId)).length}; world JSON ${Math.round(JSON.stringify(built.world).length / 1024)} KB`,
 		)
 	})
 
@@ -300,7 +342,7 @@ describe('the report world', () => {
 				: null
 		}
 		// Each room names whose text it carries; a hall, a group and the office carry none.
-		const roomOf = (id: string) => built.rooms.find((r) => r.spaceId === id)
+		const roomOf = (id: string) => built.roomAt(id)?.room
 		expect(roomOf('t:1')?.text).toEqual({ kind: 'topic', topicId: 1 })
 		expect(roomOf('s:alpha')?.text).toEqual({ kind: 'source', sourceId: 'alpha' })
 		expect(roomOf('c:sector:academia')?.text).toEqual({
@@ -313,25 +355,27 @@ describe('the report world', () => {
 		// Before its text, the rail is planned and blank, and the card says nothing of the stance.
 		expect(railOf(roomOf('t:1'))).toEqual([''])
 		const stance = 'item:perspective:1:alpha'
-		const before = built.world.spaces
-			.find((s) => s.id === 't:1')
-			?.interactables.find((i) => i.id === stance)
+		const topicRoom = built.roomAt('t:1')
+		if (!topicRoom) throw new Error('no room t:1')
+		const before = topicRoom.space.interactables.find((i) => i.id === stance)
 		expect(before?.preview?.text).toBe('')
 		// Its text writes them.
-		const ref = roomOf('t:1')?.text
+		const ref = topicRoom.room.text
 		if (!ref) throw new Error('t:1 carries no text')
-		const topic = built.withText('t:1', syntheticText(ref))
-		expect(railOf(topic?.room)).toEqual(['A point'])
-		const after = topic?.space.interactables.find((i) => i.id === stance)
+		const topic = built.withText(topicRoom, syntheticText(ref))
+		expect(railOf(topic.room)).toEqual(['A point'])
+		const after = topic.space.interactables.find((i) => i.id === stance)
 		expect(after?.preview?.text).toBe('Alpha supports topic 1.')
 		expect(after?.dialogue?.lines[0]?.text).toBe('Alpha supports topic 1.')
-		expect(topic?.room.exhibits.find((e) => e.itemId === 'perspective:1:alpha')?.card.excerpt).toBe(
+		expect(topic.room.exhibits.find((e) => e.itemId === 'perspective:1:alpha')?.card.excerpt).toBe(
 			'Alpha supports topic 1.',
 		)
 		// A one-document source's rail is its document's headlines; its answer reads its lead.
-		const source = built.withText('s:alpha', syntheticText({ kind: 'source', sourceId: 'alpha' }))
-		expect(railOf(source?.room)).toEqual(['One', 'Two', 'Three'])
-		const answer = source?.room.exhibits.find((e) => e.itemId.startsWith('answer:terms:'))
+		const sourceRoom = built.roomAt('s:alpha')
+		if (!sourceRoom) throw new Error('no room s:alpha')
+		const source = built.withText(sourceRoom, syntheticText({ kind: 'source', sourceId: 'alpha' }))
+		expect(railOf(source.room)).toEqual(['One', 'Two', 'Three'])
+		const answer = source.room.exhibits.find((e) => e.itemId.startsWith('answer:terms:'))
 		expect(answer?.card.excerpt).toBe('Source alpha: Alpha answers (a).')
 		// The sheet's item, as the text writes it.
 		const item = built.items.get('perspective:1:alpha')

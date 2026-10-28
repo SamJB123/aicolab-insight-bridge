@@ -77,7 +77,9 @@ import {
 	FIND_ACTION,
 	type Findable,
 	type PlanTurn,
+	type SpaceWay,
 	turnOffset,
+	type WaysOf,
 } from '@aicolab/kolo/chessboard/content'
 import { sectionName } from '../report/nav-items.ts'
 import {
@@ -191,15 +193,41 @@ export interface ReportSky {
 	stars: { x: number; y: number; r: number; accent: string; label: string }[]
 }
 
+/** A room as the record places it, unbuilt: its building, the room it is
+ *  reached from (a wing's previous wing, a han's alley's room, a room's
+ *  way up), and its door that way. */
+export interface ReportRoomInBuilding {
+	spaceId: string
+	building: string
+	parent: string | null
+	upDoorId: string | null
+}
+
+/** A room built: as the scene draws it, and as the world has it once it
+ *  is in (its doors, its exhibits, its chart table). */
+export interface ReportBuiltRoom {
+	room: ReportRoomBuild
+	space: ChessboardSpace
+}
+
 export interface ReportWorldBuild {
+	/** The world, its rooms declared by name and way in (`roomAt` builds
+	 *  them). */
 	world: ChessboardWorld
 	/** The island the world stands on, as it was realised. */
 	plan: IslandPlan
 	sky: ReportSky
-	rooms: ReportRoomBuild[]
-	/** Each building's rooms as its plan is drawn from them — the same
-	 *  rooms the map re-plots when it shows a subset of the building. */
-	buildings: ReadonlyMap<string, readonly BuildingRoom[]>
+	/** Every room, unbuilt, in the order the world lists them. */
+	rooms: readonly ReportRoomInBuilding[]
+	/** A room built, afresh each time it is asked for; null when the world
+	 *  has no such room. */
+	roomAt(spaceId: string): ReportBuiltRoom | null
+	/** A room's plan alone, built when asked (the map). */
+	planOf(spaceId: string): RoomPlan | null
+	/** A space's ways out (kolo route.ts WaysOf): a room's unbuilt — its
+	 *  doors and the items that go through, by the ids its built things
+	 *  have; any other space's its own. */
+	waysOf: WaysOf
 	items: ReadonlyMap<string, ReportItem>
 	/** What the record holds, for finding: every theme, topic, cohort,
 	 *  source and question, each the room it has — its themes first. */
@@ -207,10 +235,16 @@ export interface ReportWorldBuild {
 	record: WorldRecord | null
 	/** A room as its text writes it up: its cards, its rail, its things'
 	 *  words — what its scene is built from once the text is read. */
-	withText(
-		spaceId: string,
-		text: WorldText,
-	): { room: ReportRoomBuild; space: ChessboardSpace } | null
+	withText(built: ReportBuiltRoom, text: WorldText): ReportBuiltRoom
+}
+
+/** Every room of a world built — for a test or an audit that reads them
+ *  all; a visitor's world builds a room only as it is entered. */
+export function everyRoom(build: ReportWorldBuild): ReportBuiltRoom[] {
+	return build.rooms.flatMap((room) => {
+		const built = build.roomAt(room.spaceId)
+		return built ? [built] : []
+	})
 }
 
 /** A subset of the record's rooms, named by one of the record's own
@@ -295,7 +329,7 @@ export function relatedRooms(build: ReportWorldBuild, scope: ReportScope): Set<s
 	// it, so anything whose parent chain reaches a selected room. (A front
 	// hall is never a seed: everything in its building is reached from it.)
 	const related = new Set(seeds)
-	for (const rooms of build.buildings.values()) {
+	for (const rooms of byBuilding(build.rooms).values()) {
 		const parentOf = new Map(rooms.map((r) => [r.spaceId, r.parent]))
 		for (const room of rooms) {
 			let current: string | null = room.spaceId
@@ -311,6 +345,17 @@ export function relatedRooms(build: ReportWorldBuild, scope: ReportScope): Set<s
 	return related
 }
 
+/** Rooms by the building they are in, each building's in the world's order. */
+function byBuilding(rooms: readonly ReportRoomInBuilding[]): Map<string, ReportRoomInBuilding[]> {
+	const out = new Map<string, ReportRoomInBuilding[]>()
+	for (const room of rooms) {
+		const list = out.get(room.building) ?? []
+		list.push(room)
+		out.set(room.building, list)
+	}
+	return out
+}
+
 /** A building's plain name on the map: Topics, Sources, a task's title,
  *  else its front room's own name (a lobby). */
 export function buildingLabel(build: ReportWorldBuild, spaceId: string): string {
@@ -319,8 +364,8 @@ export function buildingLabel(build: ReportWorldBuild, spaceId: string): string 
 	if (building === 'sources') return 'Sources'
 	const task = build.record?.tasks.find((t) => `analysis:${t.id}` === building)
 	if (task) return task.title
-	const front = build.rooms.find((r) => r.spaceId === building)
-	return front?.label ?? build.world.spaces.find((s) => s.id === spaceId)?.label ?? ''
+	const labelOf = (id: string | undefined) => build.world.spaces.find((s) => s.id === id)?.label
+	return labelOf(building) ?? labelOf(spaceId) ?? ''
 }
 
 /* ── the map's rule ─────────────────────────────────────────────────────── */
@@ -424,8 +469,14 @@ export function mapOf(build: ReportWorldBuild, spaceId: string): ChessboardMap |
 	if (!building) return null
 	// Every building's rooms: the rule crosses buildings (a source's lobby
 	// is a building of its own; its office is another).
-	const rooms = [...build.buildings.values()].flat()
+	const rooms = build.rooms
 	const byId = new Map(rooms.map((r) => [r.spaceId, r]))
+	// The plans of the rooms the rule looks at, each planned once.
+	const plans = new Map<string, RoomPlan | null>()
+	const planOf = (id: string): RoomPlan | undefined => {
+		if (!plans.has(id)) plans.set(id, byId.has(id) ? build.planOf(id) : null)
+		return plans.get(id) ?? undefined
+	}
 	const entities = entityRooms(record)
 	// The room you stand in: a wing or a han is its room.
 	const homeOf = (id: string): string => {
@@ -458,7 +509,7 @@ export function mapOf(build: ReportWorldBuild, spaceId: string): ChessboardMap |
 	const turns = new Map<string, PlanTurn>()
 	const turnOf = (id: string): PlanTurn => turns.get(id) ?? 0
 	const faceTurn = (id: string, doorId: string, wanted: [number, number]): PlanTurn => {
-		const plan = byId.get(id)?.plan
+		const plan = planOf(id)
 		const door = plan?.doors.find((d) => d.doorId === doorId)
 		const wall = door ? plan?.walls.find((w) => w.id === door.wallId) : undefined
 		if (!wall) return 0
@@ -507,7 +558,7 @@ export function mapOf(build: ReportWorldBuild, spaceId: string): ChessboardMap |
 	/** Which way a door on a room's plan faces: its wall's outward normal,
 	 *  as a step on the grid (x east, z south = down the plan). */
 	const doorDir = (id: string, doorId: string): DoorStep => {
-		const plan = byId.get(id)?.plan
+		const plan = planOf(id)
 		const door = plan?.doors.find((d) => d.doorId === doorId)
 		const wall = door ? plan?.walls.find((w) => w.id === door.wallId) : undefined
 		if (!plan || !wall) return { dir: [0, 1], lateral: 0 }
@@ -540,8 +591,8 @@ export function mapOf(build: ReportWorldBuild, spaceId: string): ChessboardMap |
 	}
 	/** The door of `room` that opens on `other`: the same door id on both plans. */
 	const doorBetween = (room: string, other: string): string | null => {
-		const mine = byId.get(room)?.plan.doors ?? []
-		const theirs = new Set((byId.get(other)?.plan.doors ?? []).map((d) => d.doorId))
+		const mine = planOf(room)?.doors ?? []
+		const theirs = new Set((planOf(other)?.doors ?? []).map((d) => d.doorId))
 		return mine.find((d) => theirs.has(d.doorId))?.doorId ?? null
 	}
 	const placeOverflow = (ofHome: string) => {
@@ -586,9 +637,9 @@ export function mapOf(build: ReportWorldBuild, spaceId: string): ChessboardMap |
 		}
 	}
 	const gridRooms = [...drawn].flatMap((id) => {
-		const room = byId.get(id)
+		const plan = planOf(id)
 		const cell = cells.get(id)
-		return room && cell ? [{ spaceId: id, plan: room.plan, cell, turn: turnOf(id) }] : []
+		return plan && cell ? [{ spaceId: id, plan, cell, turn: turnOf(id) }] : []
 	})
 	// Every door shared by two drawn rooms.
 	const doors: { doorId: string; a: string; b: string }[] = []
@@ -646,7 +697,7 @@ export function scopeOfRoom(build: ReportWorldBuild, spaceId: string): ReportSco
 	// A wing or a han stands in the room it continues: up the parent links
 	// to the first room that is an entity's own.
 	let id = spaceId
-	for (const rooms of build.buildings.values()) {
+	for (const rooms of byBuilding(build.rooms).values()) {
 		const parentOf = new Map(rooms.map((r) => [r.spaceId, r.parent]))
 		if (!parentOf.has(id)) continue
 		for (let hops = 0; hops < 64; hops++) {
@@ -2749,12 +2800,23 @@ export function buildReportWorld(
 			})
 		}
 	}
-	const roomBuilds: ReportRoomBuild[] = []
-	const spaces: ChessboardSpace[] = []
+	/* ── rooms: declared by name, built on entry ─────────────────────────── */
+	// Every room is declared by its name and its way in. Its plan, its
+	// exhibits and its things are built when someone enters it (`roomAt`),
+	// and held only as long as whoever entered holds them; its ways out are
+	// read from the wings and links above (`waysOf`), with the ids its built
+	// things will have.
 	const wingSpaces = new Map(wings.map((w) => [w.spaceId, w]))
-	const buildingRooms = new Map<string, BuildingRoom[]>()
+	/** Each link by the door it is, and the link up into each room. */
+	const linkByDoor = new Map<string, Link>()
+	const upLinkOf = new Map<string, Link>()
+	for (const link of links) {
+		if (!linkByDoor.has(`door:${link.id}`)) linkByDoor.set(`door:${link.id}`, link)
+		if (link.upFor && !upLinkOf.has(link.upFor)) upLinkOf.set(link.upFor, link)
+	}
 
-	for (const wing of wings) {
+	/** A room's plan, and where each of its items hangs on it. */
+	const planOfWing = (wing: Wing): { plan: RoomPlan; anchorOfItem: Map<string, string> } => {
 		const node = wing.node
 		const upDoorId = wing.up
 			? wing.up.doorId
@@ -2826,14 +2888,26 @@ export function buildReportWorld(
 			for (const id of wing.itemIds) hangOn(id, planned.anchorOfItem.get(id))
 			plan = planned
 		}
-		const label = wing.count > 1 ? `${node.label} ${numeral(wing.index)}` : node.label
-		roomBuilds.push({
+		return { plan, anchorOfItem }
+	}
+	/** A room's name, and the line under it: a wing is its room's, numbered. */
+	const labelOfWing = (wing: Wing): string =>
+		wing.count > 1 ? `${wing.node.label} ${numeral(wing.index)}` : wing.node.label
+	const subtitleOfWing = (wing: Wing): string =>
+		wing.count > 1
+			? `${wing.node.subtitle} · wing ${numeral(wing.index)} of ${wing.count}`
+			: wing.node.subtitle
+	/** A room as built on its plan: its exhibits, its text, its rail. */
+	const roomOfWing = (
+		wing: Wing,
+		plan: RoomPlan,
+		anchorOfItem: ReadonlyMap<string, string>,
+	): ReportRoomBuild => {
+		const node = wing.node
+		return {
 			spaceId: wing.spaceId,
-			label,
-			subtitle:
-				wing.count > 1
-					? `${node.subtitle} · wing ${numeral(wing.index)} of ${wing.count}`
-					: node.subtitle,
+			label: labelOfWing(wing),
+			subtitle: subtitleOfWing(wing),
 			accent: node.accent,
 			building: node.building,
 			plan,
@@ -2854,81 +2928,93 @@ export function buildReportWorld(
 			}),
 			text: node.text,
 			rail: wing.index === 0 ? node.rail : null,
-		})
-		const list = buildingRooms.get(node.building) ?? []
-		list.push({
-			spaceId: wing.spaceId,
-			plan,
-			parent: wing.parentSpace,
-			upDoorId: wing.up ? wing.up.doorId : null,
-		})
-		buildingRooms.set(node.building, list)
+		}
 	}
+	/** A room as the record places it, unbuilt: its building, the room it is
+	 *  reached from, and its door that way. */
+	const rooms: ReportRoomInBuilding[] = wings.map((wing) => ({
+		spaceId: wing.spaceId,
+		building: wing.node.building,
+		parent: wing.parentSpace,
+		upDoorId: wing.up ? wing.up.doorId : null,
+	}))
+	/** A building's rooms with their plans, as its map is drawn from them:
+	 *  planned when a chart of the building is built, and let go with it. */
+	const buildingRoomsOf = (building: string): BuildingRoom[] =>
+		wings
+			.filter((wing) => wing.node.building === building)
+			.map((wing) => ({
+				spaceId: wing.spaceId,
+				plan: planOfWing(wing).plan,
+				parent: wing.parentSpace,
+				upDoorId: wing.up ? wing.up.doorId : null,
+			}))
 
 	/* ── the sky: every topic a star, for the table in the island's square ── */
 	const stars = starsOf(record)
 
-	/* ── floor plans per building, and the Hall's chart inlay ── */
-	const plansOf = new Map<string, ChessboardMap>()
-	for (const [building, rooms] of buildingRooms) plansOf.set(building, buildingPlan(rooms))
-	const hallMap = plansOf.get('topics')
-	if (hallMap) {
-		const lights: ChartInlay['lights'] = []
-		for (const build of roomBuilds) {
-			if (build.building !== 'hall' || !build.spaceId.startsWith('t:')) continue
-			const tile = hallMap.spaces.find((s) => s.id === build.spaceId)
-			if (tile)
-				lights.push({
-					x: tile.rect.x + tile.rect.w / 2,
-					y: tile.rect.y + tile.rect.h / 2,
-					accent: ACCENT.topic,
-				})
+	/* ── a room's chart table: its building's floor plan ── */
+	/** The chart a room's table shows, when it has one: the Hall's is the
+	 *  Topics building's plan, the office's the Record Office's, a cohort
+	 *  lobby's info desk the lobby's own — the lobby and its hans — with a
+	 *  light for every lens and card where it hangs (the rooms those lead to
+	 *  are not on that plan; they are the lights). */
+	const chartOf = (wing: Wing): ChartInlay | null => {
+		const accentsOf = (building: string) =>
+			wings
+				.filter((w) => w.node.building === building)
+				.map((w) => ({ spaceId: w.spaceId, accent: w.node.accent }))
+		if (wing.spaceId === 'hall') {
+			const map = buildingPlan(buildingRoomsOf('topics'))
+			const lights: ChartInlay['lights'] = []
+			for (const w of wings) {
+				if (w.node.building !== 'hall' || !w.spaceId.startsWith('t:')) continue
+				const tile = map.spaces.find((s) => s.id === w.spaceId)
+				if (tile)
+					lights.push({
+						x: tile.rect.x + tile.rect.w / 2,
+						y: tile.rect.y + tile.rect.h / 2,
+						accent: ACCENT.topic,
+					})
+			}
+			return { map, accents: accentsOf('topics'), lights }
 		}
-		const inlay: ChartInlay = {
-			map: hallMap,
-			accents: roomBuilds
-				.filter((b) => b.building === 'topics')
-				.map((b) => ({ spaceId: b.spaceId, accent: b.accent })),
-			lights,
+		if (wing.spaceId === 'office') {
+			return {
+				map: buildingPlan(buildingRoomsOf('sources')),
+				accents: accentsOf('sources'),
+				lights: [],
+			}
 		}
-		const hall = roomBuilds.find((b) => b.spaceId === 'hall')
-		if (hall) hall.chart = inlay
-	}
-	const officeMap = plansOf.get('sources')
-	const office = roomBuilds.find((b) => b.spaceId === 'office')
-	if (officeMap && office) {
-		// The office's chart table: the Record Office's plan.
-		office.chart = {
-			map: officeMap,
-			accents: roomBuilds
-				.filter((b) => b.building === 'sources')
-				.map((b) => ({ spaceId: b.spaceId, accent: b.accent })),
-			lights: [],
-		}
-	}
-	// A cohort lobby's info desk: the lobby's own plan — the lobby and its
-	// hans — with a light for every lens and card where it hangs. The rooms
-	// those lead to are not on this plan; they are the lights.
-	for (const build of roomBuilds) {
-		const desk = wingSpaces.get(build.spaceId)?.nave?.desk
-		if (!desk || desk === 'chart') continue
-		const map = plansOf.get(build.building)
-		if (!map) continue
-		const rooms = roomBuilds.filter((b) => b.building === build.building)
-		build.chart = {
+		const desk = wing.nave?.desk
+		if (!desk || desk === 'chart') return null
+		const building = wing.node.building
+		const planned = wings
+			.filter((w) => w.node.building === building)
+			.map((w) => ({ wing: w, ...planOfWing(w) }))
+		const map = buildingPlan(
+			planned.map(({ wing: w, plan }) => ({
+				spaceId: w.spaceId,
+				plan,
+				parent: w.parentSpace,
+				upDoorId: w.up ? w.up.doorId : null,
+			})),
+		)
+		return {
 			map,
-			accents: rooms.map((b) => ({ spaceId: b.spaceId, accent: b.accent })),
-			lights: rooms.flatMap((room) => {
-				const tile = map.spaces.find((s) => s.id === room.spaceId)
+			accents: accentsOf(building),
+			lights: planned.flatMap(({ wing: w, plan, anchorOfItem }) => {
+				const tile = map.spaces.find((s) => s.id === w.spaceId)
 				if (!tile) return []
-				return room.exhibits.flatMap((exhibit) => {
-					const anchor = room.plan.anchors.find((a) => a.id === exhibit.anchorId)
-					if (!anchor) return []
+				return w.itemIds.flatMap((itemId) => {
+					const anchorId = anchorOfItem.get(itemId)
+					const anchor = plan.anchors.find((a) => a.id === anchorId)
+					if (!anchor || !items.has(itemId)) return []
 					return [
 						{
 							x: tile.rect.x + tile.rect.w / 2 + anchor.position[0],
 							y: tile.rect.y + tile.rect.h / 2 + anchor.position[2],
-							accent: exhibit.itemId.startsWith('lens:') ? ACCENT.topic : ACCENT.source,
+							accent: itemId.startsWith('lens:') ? ACCENT.topic : ACCENT.source,
 						},
 					]
 				})
@@ -2958,8 +3044,135 @@ export function buildReportWorld(
 	 *  room's way back lands. */
 	const islandEntryOf = (section: string) => `door:${declaredBuildingOf.get(section) ?? section}`
 
-	for (const build of roomBuilds) {
-		const wing = wingSpaces.get(build.spaceId)
+	/** A door out of a room: what it is called, and where it leads. */
+	interface WingDoor {
+		doorId: string
+		label: string
+		description: string
+		to: { space: string; entry: string }
+	}
+	/** A room's doors, in the order it lists them: its way up (or, for a
+	 *  front hall, back outside), its wing's onward door, and the doors at
+	 *  its alleys' ends on to their hans. */
+	const doorsOfWing = (wing: Wing): WingDoor[] => {
+		const node = wing.node
+		const doors: WingDoor[] = []
+		if (wing.up) {
+			const link = linkByDoor.get(wing.up.doorId)
+			// The way back lands before the card for this room on the other side
+			// (or at that side's own door, when the other side is a wing's).
+			const otherNode = link ? (link.a === node.id ? link.b : link.a) : null
+			const otherItem = link ? (link.a === node.id ? link.itemB : link.itemA) : null
+			const to =
+				wing.up.to || (link && otherNode ? endSpace.get(`${link.id}|${otherNode}`) : undefined)
+			// A door must lead somewhere: a way up with no room at its far end
+			// is a fault in the build, never a door to nowhere.
+			if (!to) {
+				throw new Error(
+					`[report-world] room '${wing.spaceId}': its way up (${wing.up.doorId}, link '${link?.id ?? '?'}') has no room at '${otherNode ?? '?'}'`,
+				)
+			}
+			doors.push({
+				doorId: wing.up.doorId,
+				label: wing.up.label,
+				description: wing.up.description,
+				to: {
+					space: to,
+					entry: wing.up.to ? wing.up.doorId : otherItem ? `item:${otherItem}` : wing.up.doorId,
+				},
+			})
+		} else if (isFront(node)) {
+			doors.push({
+				doorId: `door:entrance:${node.building}`,
+				label: 'Back outside',
+				description: 'Through the doors to the island.',
+				to: { space: 'island', entry: islandEntryOf(node.building) },
+			})
+		}
+		if (wing.onward) {
+			doors.push({
+				doorId: wing.onward.doorId,
+				label: wing.onward.label,
+				description: 'On through the wing.',
+				to: { space: wing.onward.to, entry: wing.onward.doorId },
+			})
+		}
+		// The doors at the alleys' ends: each on to its han, landing at
+		// the han's own door.
+		for (const h of everyHallway(wing.nave?.hallways ?? [])) {
+			if (!h.door) continue
+			const to = endSpace.get(`${h.door.link.id}|${h.door.wingId}`)
+			if (!to) throw new Error(`[report-world] wing '${h.door.wingId}' has no room`)
+			doors.push({
+				doorId: `door:${h.door.link.id}`,
+				label: h.door.link.labelA,
+				description: h.door.link.descriptionA,
+				to: { space: to, entry: `door:${h.door.link.id}` },
+			})
+		}
+		return doors
+	}
+	/** Where a room is entered when nothing says where: its way up, or a
+	 *  front hall's doors from the island. */
+	const defaultEntryOf = (wing: Wing): string =>
+		wing.up ? wing.up.doorId : isFront(wing.node) ? `door:entrance:${wing.node.building}` : ''
+	/** Where an item on a room's wall goes through to, when it is one end
+	 *  of a link: the room at the other end — landing before that end's own
+	 *  item, or at its door when the other end is the way back. */
+	const exitOfItem = (wing: Wing, itemId: string): { space: string; entry: string } | undefined => {
+		const end = wing.linkOfItem.get(itemId)
+		if (end?.link.taste) {
+			// A taste goes through to the room itself, landing at its door.
+			const room = end.link.b
+			const upOf = upLinkOf.get(room)
+			const roomNode = nodes.get(room)
+			return {
+				space: room,
+				entry: upOf ? `door:${upOf.id}` : `door:entrance:${roomNode?.building ?? room}`,
+			}
+		}
+		if (!end) return undefined
+		const { link, side } = end
+		const otherNode = side === 'a' ? link.b : link.a
+		const otherItem = side === 'a' ? link.itemB : link.itemA
+		const to = endSpace.get(`${link.id}|${otherNode}`)
+		if (!to) throw new Error(`[report-world] link '${link.id}' has no end in '${otherNode}'`)
+		return { space: to, entry: otherItem ? `item:${otherItem}` : `door:${link.id}` }
+	}
+	/** A space's ways out: a room's, unbuilt — its doors and the items that
+	 *  go through, by the ids its built things have, in the order it lists
+	 *  them; any other space's (the island) its own. */
+	const waysOf = (space: ChessboardSpace): readonly SpaceWay[] => {
+		const wing = wingSpaces.get(space.id)
+		if (!wing) return space.interactables
+		const ways: SpaceWay[] = doorsOfWing(wing).map((door) => ({
+			id: `exit:${door.doorId}`,
+			kind: 'exit',
+			exit: door.to,
+		}))
+		for (const itemId of wing.itemIds) {
+			if (!items.has(itemId)) continue
+			const exit = exitOfItem(wing, itemId)
+			if (exit) ways.push({ id: `item:${itemId}`, kind: 'examine', exit })
+		}
+		return ways
+	}
+	/** A room as the world declares it before it is built: its name, and
+	 *  the way in, where its plan will put it. */
+	const declaredRoom = (wing: Wing): ChessboardSpace => {
+		const defaultEntry = defaultEntryOf(wing)
+		return {
+			id: wing.spaceId,
+			label: labelOfWing(wing),
+			subtitle: subtitleOfWing(wing),
+			defaultEntry,
+			entries: [{ id: defaultEntry, position: [0, GALLERY_FLOOR_TOP, 0] }],
+			interactables: [],
+		}
+	}
+
+	/** A room as a space: its doors, its exhibits, its chart table. */
+	const spaceOfRoom = (wing: Wing, build: ReportRoomBuild): ChessboardSpace => {
 		const roomPlan = build.plan
 		const doorPlanOf = (doorId: string) => {
 			const found = roomPlan.doors.find((d) => d.doorId === doorId)
@@ -2968,102 +3181,27 @@ export function buildReportWorld(
 		}
 		const entries: ChessboardSpace['entries'][number][] = []
 		const interactables: ChessboardInteractable[] = []
-		const addDoor = (
-			doorId: string,
-			label: string,
-			description: string,
-			to: { space: string; entry: string },
-		) => {
-			const d = doorPlanOf(doorId)
-			entries.push({ id: doorId, position: d.entry, facing: d.facing })
+		for (const door of doorsOfWing(wing)) {
+			const d = doorPlanOf(door.doorId)
+			entries.push({ id: door.doorId, position: d.entry, facing: d.facing })
 			interactables.push({
-				id: `exit:${doorId}`,
-				label,
-				description,
+				id: `exit:${door.doorId}`,
+				label: door.label,
+				description: door.description,
 				kind: 'exit',
 				position: d.glyph,
 				approach: d.approach,
-				exit: to,
+				exit: door.to,
 			})
 		}
-		let defaultEntry = ''
-		if (wing) {
-			const node = wing.node
-			if (wing.up) {
-				const link = links.find((l) => `door:${l.id}` === wing.up?.doorId)
-				// The way back lands before the card for this room on the other side
-				// (or at that side's own door, when the other side is a wing's).
-				const otherNode = link ? (link.a === node.id ? link.b : link.a) : null
-				const otherItem = link ? (link.a === node.id ? link.itemB : link.itemA) : null
-				const to =
-					wing.up.to || (link && otherNode ? endSpace.get(`${link.id}|${otherNode}`) : undefined)
-				// A door must lead somewhere: a way up with no room at its far end
-				// is a fault in the build, never a door to nowhere.
-				if (!to) {
-					throw new Error(
-						`[report-world] room '${build.spaceId}': its way up (${wing.up.doorId}, link '${link?.id ?? '?'}') has no room at '${otherNode ?? '?'}'`,
-					)
-				}
-				addDoor(wing.up.doorId, wing.up.label, wing.up.description, {
-					space: to,
-					entry: wing.up.to ? wing.up.doorId : otherItem ? `item:${otherItem}` : wing.up.doorId,
-				})
-				defaultEntry = wing.up.doorId
-			} else if (isFront(node)) {
-				const doorId = `door:entrance:${node.building}`
-				addDoor(doorId, 'Back outside', 'Through the doors to the island.', {
-					space: 'island',
-					entry: islandEntryOf(node.building),
-				})
-				defaultEntry = doorId
-			}
-			if (wing.onward) {
-				addDoor(wing.onward.doorId, wing.onward.label, 'On through the wing.', {
-					space: wing.onward.to,
-					entry: wing.onward.doorId,
-				})
-			}
-			// The doors at the alleys' ends: each on to its han, landing at
-			// the han's own door.
-			for (const h of everyHallway(wing.nave?.hallways ?? [])) {
-				if (!h.door) continue
-				const to = endSpace.get(`${h.door.link.id}|${h.door.wingId}`)
-				if (!to) throw new Error(`[report-world] wing '${h.door.wingId}' has no room`)
-				addDoor(`door:${h.door.link.id}`, h.door.link.labelA, h.door.link.descriptionA, {
-					space: to,
-					entry: `door:${h.door.link.id}`,
-				})
-			}
-		} else {
-			throw new Error(`[report] room ${build.spaceId} was built without a wing`)
-		}
+		const defaultEntry = defaultEntryOf(wing)
 		// Items on the walls: each one read where it hangs, and the ones that
-		// are one end of a link jumped through to the room at the other end —
-		// landing before that end's own item, or at its door when the other
-		// end is the way back.
+		// are one end of a link jumped through to the room at the other end.
 		for (const exhibit of build.exhibits) {
 			const anchor = roomPlan.anchors.find((a) => a.id === exhibit.anchorId)
 			const item = items.get(exhibit.itemId)
 			if (!anchor || !item) continue
-			const end = wing?.linkOfItem.get(item.id)
-			let exit: { space: string; entry: string } | undefined
-			if (end?.link.taste) {
-				// A taste goes through to the room itself, landing at its door.
-				const room = end.link.b
-				const upOf = links.find((l) => l.upFor === room)
-				const roomNode = nodes.get(room)
-				exit = {
-					space: room,
-					entry: upOf ? `door:${upOf.id}` : `door:entrance:${roomNode?.building ?? room}`,
-				}
-			} else if (end) {
-				const { link, side } = end
-				const otherNode = side === 'a' ? link.b : link.a
-				const otherItem = side === 'a' ? link.itemB : link.itemA
-				const to = endSpace.get(`${link.id}|${otherNode}`)
-				if (!to) throw new Error(`[report-world] link '${link.id}' has no end in '${otherNode}'`)
-				exit = { space: to, entry: otherItem ? `item:${otherItem}` : `door:${link.id}` }
-			}
+			const exit = exitOfItem(wing, item.id)
 			const jump = exit
 				? [
 						{
@@ -3117,7 +3255,7 @@ export function buildReportWorld(
 		if (chart && chart.kind === 'chart') {
 			// A cohort lobby's INFO DESK: the same table, its finding held to
 			// this cohort's sources and the topics it has a lens on.
-			const table = wing?.nave?.desk ?? null
+			const table = wing.nave?.desk ?? null
 			const desk = table && table !== 'chart' ? table : null
 			interactables.push({
 				id: desk ? 'examine:info-desk' : 'examine:chart-table',
@@ -3155,7 +3293,7 @@ export function buildReportWorld(
 			})
 		}
 		const longest = Math.max(roomPlan.width, roomPlan.depth)
-		spaces.push({
+		return {
 			id: build.spaceId,
 			label: build.label,
 			subtitle: build.subtitle,
@@ -3178,7 +3316,24 @@ export function buildReportWorld(
 			// building. Carried on every room, the world's parse copied the
 			// Archive's plan of 1,700 rooms into each of its 1,500 rooms: a
 			// gigabyte and a half of one drawing.
-		})
+		}
+	}
+
+	/** A room built: its plan, its exhibits and its chart, and the space
+	 *  they make. Built afresh each time it is asked for. */
+	const roomAt = (spaceId: string): ReportBuiltRoom | null => {
+		const wing = wingSpaces.get(spaceId)
+		if (!wing) return null
+		const { plan: roomPlan, anchorOfItem } = planOfWing(wing)
+		const built = roomOfWing(wing, roomPlan, anchorOfItem)
+		const chart = chartOf(wing)
+		const room = chart ? { ...built, chart } : built
+		return { room, space: spaceOfRoom(wing, room) }
+	}
+	/** A room's plan alone, for the map. */
+	const planOf = (spaceId: string): RoomPlan | null => {
+		const wing = wingSpaces.get(spaceId)
+		return wing ? planOfWing(wing).plan : null
 	}
 
 	/* ── the island: the site as a class on the one base ── */
@@ -3186,17 +3341,14 @@ export function buildReportWorld(
 		key: island.slug,
 		name: island.name,
 		record,
-		rooms: spaces,
+		rooms: wings.map(declaredRoom),
 		frontOf: frontSpaceOfBuilding,
 	})
 	const world = site_.world(plan)
 
 	/** A room as its text writes it up: each exhibit's card (still named for
 	 *  where it leads), its rail's panels, and its things' words. */
-	const withText = (spaceId: string, text: WorldText) => {
-		const room = roomBuilds.find((r) => r.spaceId === spaceId)
-		const space = spaces.find((s) => s.id === spaceId)
-		if (!room || !space) return null
+	const withText = ({ room, space }: ReportBuiltRoom, text: WorldText): ReportBuiltRoom => {
 		const written = new Map<string, { item: ReportItem; card: ReportCard }>()
 		const exhibits = room.exhibits.map((exhibit) => {
 			const item = items.get(exhibit.itemId)
@@ -3252,8 +3404,10 @@ export function buildReportWorld(
 		world,
 		plan,
 		sky: { stars },
-		rooms: roomBuilds,
-		buildings: buildingRooms,
+		rooms,
+		roomAt,
+		planOf,
+		waysOf,
 		items,
 		findables,
 		record,

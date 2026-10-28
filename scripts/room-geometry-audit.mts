@@ -3,7 +3,9 @@
 // anchors that lie outside the room's outline or outside their own alley.
 //   npx tsx scripts/room-geometry-audit.mts /tmp/secondchair-world.json [roomId]
 import { readFileSync } from 'node:fs'
-import { buildReportWorld } from '../src/island/world.ts'
+// Every report's island registered as its program, as the tests have them.
+import '../src/island/test-scope.ts'
+import { buildReportWorld, everyRoom } from '../src/island/world.ts'
 import { worldRecordSchema } from '../src/world/index.ts'
 
 type V = readonly [number, number]
@@ -40,9 +42,14 @@ const overlap = (a: Box, b: Box, tol = 0.05): number => {
 	return w > tol && d > tol ? w * d : 0
 }
 
+/** A line of the report, on stdout. */
+const say = (line: string): void => {
+	process.stdout.write(`${line}\n`)
+}
+
 let faulty = 0
 const summary = { rooms: 0, selfCrossing: 0, bayOverlaps: 0, anchorsOutside: 0, anchorsOffBay: 0 }
-for (const room of build.rooms) {
+for (const { room } of everyRoom(build)) {
 	if (only && room.spaceId !== only) continue
 	const plan = room.plan
 	summary.rooms++
@@ -114,13 +121,13 @@ for (const room of build.rooms) {
 	if (faults.length) {
 		faulty++
 		if (faulty <= 12 || only) {
-			console.log(
+			say(
 				`\n== ${room.spaceId} (${room.label}) ${plan.width.toFixed(0)}×${plan.depth.toFixed(0)} m, ${bays.length} alleys, ${plan.anchors.length} anchors`,
 			)
-			for (const f of faults) console.log('   ', f)
-			if (overlapsHere > 6) console.log(`    … ${overlapsHere} overlaps in all`)
-			if (outsideHere > 4) console.log(`    … ${outsideHere} anchors outside in all`)
+			for (const f of faults) say(`    ${f}`)
+			if (overlapsHere > 6) say(`    … ${overlapsHere} overlaps in all`)
+			if (outsideHere > 4) say(`    … ${outsideHere} anchors outside in all`)
 		}
 	}
 }
-console.log('\nsummary', summary, 'faulty rooms', faulty)
+say(`\nsummary ${JSON.stringify(summary)} faulty rooms ${faulty}`)

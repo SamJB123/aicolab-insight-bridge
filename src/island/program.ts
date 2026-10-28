@@ -44,9 +44,12 @@ import { keptRead } from './world-cache.ts'
 /** What a report island is built from: the report's world record, the
  *  report's own sections as its door lists them, and what it says of its
  *  island (none where the door did not say: the island stands a standard
- *  report's, as the default lays it). */
+ *  report's, as the default lays it). Its OUTLINE has no record: the
+ *  island laid as its sections and specification say, its buildings
+ *  closed and its table bare — the ground the archipelago holds of it
+ *  wherever the visitor is (atlas WorldSetup.outline). */
 export interface ReportContent {
-	record: WorldRecord
+	record: WorldRecord | null
 	sections: readonly ReportSectionEntry[] | null
 	spec: HexIslandSpec | null
 }
@@ -124,6 +127,29 @@ async function reportContent(island: ReportIsland, host: AtlasHost): Promise<Rep
 		}
 	} catch (err) {
 		console.error(`[chessboard] the ${island.corpus.name} record is unavailable:`, err)
+		return null
+	}
+}
+
+/** The report's outline through its door: its sections and its island's
+ *  specification — the navigation its page reads — and no record. Null
+ *  where the door will not answer: the island then stands a standard
+ *  report's alone. */
+export async function reportOutline(
+	island: ReportIsland,
+	host: AtlasHost,
+): Promise<ReportContent | null> {
+	try {
+		const nav = await reportSession(host.socket, island.slug).run((cap) => cap.navPage())
+		return nav
+			? {
+					record: null,
+					sections: sectionsOf(nav),
+					spec: nav.island ? hexIslandSpecSchema.parse(nav.island) : null,
+				}
+			: null
+	} catch (err) {
+		console.warn(`[chessboard] the ${island.corpus.name} outline is unavailable:`, err)
 		return null
 	}
 }
