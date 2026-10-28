@@ -2,7 +2,7 @@
 //
 // The island is the report's SITE: one building per section (the Hall of
 // Topics, the Archive, one per custom analysis, the beacon, the method
-// board), the sky table in its square, the harbour, a docent. Inside, every topic
+// board), the sky table in its square, the harbour, the Guide. Inside, every topic
 // and every source is a room, and the record's relations are ITEMS you read
 // and jump into (the engine's dive): a source's written perspective on a
 // topic IS the way to that topic from the source's room, and the way to the
@@ -1019,7 +1019,7 @@ const nounsOf = (record: WorldRecord | null) =>
 
 /** A report's SITE on the one base (atlas island/declared-world.ts): what
  *  the report adds to the island its record declares — its title and its
- *  line, the docent and what she says of the record, the sky table's
+ *  line, the Guide and what they say of the record, the sky table's
  *  words and its finding, each section's front room behind its door, the
  *  way from each landmark to its place, and every room. */
 class ReportSite extends DeclaredIsland {
@@ -1041,7 +1041,7 @@ class ReportSite extends DeclaredIsland {
 		const { record, rooms, frontOf } = this.report
 		const site = record?.site
 		const nouns = nounsOf(record)
-		// The docent walks from where a visitor arrives to the Hall's door.
+		// The Guide walks from where a visitor arrives to the Hall's door.
 		const arrival = plan.entry.position
 		const hallBuilding = plan.buildings.find((b) => sectionOfBuilding(b.id)?.kind === 'topics')
 		const hallStep = hallBuilding ? plan.doorstep(hallBuilding) : arrival
@@ -1112,7 +1112,7 @@ class ReportSite extends DeclaredIsland {
 			view: { distance: 34, pitch: (52 * Math.PI) / 180 },
 			guide: {
 				id: 'guide:docent',
-				label: 'The docent',
+				label: 'Guide',
 				route: [
 					[arrival[0], surfaceHeightAt(plan.terrain, arrival[0], arrival[1]), arrival[1]],
 					[hallStep[0], surfaceHeightAt(plan.terrain, hallStep[0], hallStep[1]), hallStep[1]],
