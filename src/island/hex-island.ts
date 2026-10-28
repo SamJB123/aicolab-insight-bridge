@@ -67,7 +67,7 @@ export function reportPlaces(
 			return [
 				{
 					id: entry.id,
-					label: SKY_TABLE_WORDS.label,
+					label: entry.label,
 					description: SKY_TABLE_WORDS.description,
 					stands: {
 						drawn: SKY_TABLE_ID,

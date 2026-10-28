@@ -36,7 +36,7 @@ export const SKY_TABLE_ID = 'sky-table'
 /** The table's radius: the disc it claims at the square's heart. */
 export const SKY_TABLE_RADIUS = 3.2
 export const SKY_TABLE_WORDS = {
-	label: 'The sky table',
+	label: 'Galaxy',
 	description: 'The record as a sky: every topic a star. Ask it the way to any of them.',
 } as const
 

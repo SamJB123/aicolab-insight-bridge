@@ -16,7 +16,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       },
       "id": "topics",
       "kind": "inn-tower",
-      "label": "The Hall of Topics",
+      "label": "Topics",
       "position": [
         0.5918948349466532,
         -49.027659536684936,
@@ -36,7 +36,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       },
       "id": "sources",
       "kind": "shop",
-      "label": "The Archive",
+      "label": "Submitters",
       "position": [
         -36.72222139593609,
         -26.344107162945953,
@@ -136,7 +136,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       },
       "id": "search",
       "kind": "counter",
-      "label": "The information desk",
+      "label": "Search",
       "position": [
         11.167047554917454,
         20.724522362022686,
@@ -156,7 +156,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       },
       "id": "method",
       "kind": "signboard",
-      "label": "How this was made",
+      "label": "Method",
       "position": [
         -16.805500930383666,
         16.294105925727315,
@@ -176,7 +176,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       },
       "id": "connect",
       "kind": "tower",
-      "label": "The Beacon",
+      "label": "MCP",
       "position": [
         46.95108756328602,
         -21.757989207480538,
@@ -1815,7 +1815,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       {
         "description": "3 topics, each in its own room, grouped the way the record groups them.",
         "id": "topics",
-        "label": "The Hall of Topics",
+        "label": "Topics",
         "position": [
           0.5918948349466532,
           3,
@@ -1830,7 +1830,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       {
         "description": "Every submitter the record read — 4 of them — each in a room of their own.",
         "id": "sources",
-        "label": "The Archive",
+        "label": "Submitters",
         "position": [
           -36.72222139593609,
           3,
@@ -1905,7 +1905,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       {
         "description": "Find a topic, a name, a question: the desk knows the way.",
         "id": "search",
-        "label": "The information desk",
+        "label": "Search",
         "position": [
           11.167047554917454,
           3,
@@ -1920,7 +1920,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       {
         "description": "The method: how the record was read, clustered and written.",
         "id": "method",
-        "label": "How this was made",
+        "label": "Method",
         "position": [
           -16.805500930383666,
           3,
@@ -1935,7 +1935,7 @@ exports[`the report island plan > is what it was, for a record with four tasks (
       {
         "description": "How scripts and assistants read this record: the connector.",
         "id": "connect",
-        "label": "The Beacon",
+        "label": "MCP",
         "position": [
           46.95108756328602,
           3,
@@ -2657,7 +2657,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       },
       "id": "topics",
       "kind": "inn-tower",
-      "label": "The Hall of Topics",
+      "label": "Topics",
       "position": [
         -2.6434096830785387,
         -49.027659536684936,
@@ -2677,7 +2677,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       },
       "id": "sources",
       "kind": "shop",
-      "label": "The Archive",
+      "label": "Submitters",
       "position": [
         -39.95752591396128,
         -26.344107162945953,
@@ -2717,7 +2717,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       },
       "id": "search",
       "kind": "counter",
-      "label": "The information desk",
+      "label": "Search",
       "position": [
         7.931743036892263,
         20.724522362022686,
@@ -2737,7 +2737,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       },
       "id": "method",
       "kind": "signboard",
-      "label": "How this was made",
+      "label": "Method",
       "position": [
         -20.040805448408857,
         16.294105925727315,
@@ -2757,7 +2757,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       },
       "id": "connect",
       "kind": "tower",
-      "label": "The Beacon",
+      "label": "MCP",
       "position": [
         43.715783045260835,
         -21.757989207480538,
@@ -3984,7 +3984,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       {
         "description": "3 topics, each in its own room, grouped the way the record groups them.",
         "id": "topics",
-        "label": "The Hall of Topics",
+        "label": "Topics",
         "position": [
           -2.6434096830785387,
           3,
@@ -3999,7 +3999,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       {
         "description": "Every submitter the record read — 4 of them — each in a room of their own.",
         "id": "sources",
-        "label": "The Archive",
+        "label": "Submitters",
         "position": [
           -39.95752591396128,
           3,
@@ -4029,7 +4029,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       {
         "description": "Find a topic, a name, a question: the desk knows the way.",
         "id": "search",
-        "label": "The information desk",
+        "label": "Search",
         "position": [
           7.931743036892263,
           3,
@@ -4044,7 +4044,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       {
         "description": "The method: how the record was read, clustered and written.",
         "id": "method",
-        "label": "How this was made",
+        "label": "Method",
         "position": [
           -20.040805448408857,
           3,
@@ -4059,7 +4059,7 @@ exports[`the report island plan > is what it was, for a record with one task 1`]
       {
         "description": "How scripts and assistants read this record: the connector.",
         "id": "connect",
-        "label": "The Beacon",
+        "label": "MCP",
         "position": [
           43.715783045260835,
           3,
@@ -4676,7 +4676,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       },
       "id": "topics",
       "kind": "inn-tower",
-      "label": "The Hall of Topics",
+      "label": "Topics",
       "position": [
         -2.6434096830785387,
         -49.027659536684936,
@@ -4696,7 +4696,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       },
       "id": "sources",
       "kind": "shop",
-      "label": "The Archive",
+      "label": "Sources",
       "position": [
         -39.95752591396128,
         -26.344107162945953,
@@ -4716,7 +4716,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       },
       "id": "search",
       "kind": "counter",
-      "label": "The information desk",
+      "label": "Search",
       "position": [
         7.931743036892263,
         20.724522362022686,
@@ -4736,7 +4736,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       },
       "id": "method",
       "kind": "signboard",
-      "label": "How this was made",
+      "label": "Method",
       "position": [
         -20.040805448408857,
         16.294105925727315,
@@ -4756,7 +4756,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       },
       "id": "connect",
       "kind": "tower",
-      "label": "The Beacon",
+      "label": "MCP",
       "position": [
         43.715783045260835,
         -21.757989207480538,
@@ -5852,7 +5852,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       {
         "description": "The topics, each in its own room.",
         "id": "topics",
-        "label": "The Hall of Topics",
+        "label": "Topics",
         "position": [
           -2.6434096830785387,
           3,
@@ -5867,7 +5867,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       {
         "description": "Every source the record read.",
         "id": "sources",
-        "label": "The Archive",
+        "label": "Sources",
         "position": [
           -39.95752591396128,
           3,
@@ -5882,7 +5882,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       {
         "description": "Find a topic, a name, a question: the desk knows the way.",
         "id": "search",
-        "label": "The information desk",
+        "label": "Search",
         "position": [
           7.931743036892263,
           3,
@@ -5897,7 +5897,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       {
         "description": "The method: how the record was read, clustered and written.",
         "id": "method",
-        "label": "How this was made",
+        "label": "Method",
         "position": [
           -20.040805448408857,
           3,
@@ -5912,7 +5912,7 @@ exports[`the report island plan > stands the island alone without a record 1`] =
       {
         "description": "How scripts and assistants read this record: the connector.",
         "id": "connect",
-        "label": "The Beacon",
+        "label": "MCP",
         "position": [
           43.715783045260835,
           3,

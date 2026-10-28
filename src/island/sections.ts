@@ -3,12 +3,13 @@
 // reader of map data, its site round the square, and whether it holds
 // things of its own — rooms behind its door — and so is a building a
 // visitor enters, or a landmark stood in the open (settled 2026-10-27).
-// The buildings are the report's sections and nothing more: the Hall
-// (topics), the Archive (sources), one chamber per custom analysis the
-// profile declared, the beacon (connect) on a point by the shore, the
-// method board by the way in, and the information desk (search) across
-// the avenue from it. A section's building is its id, which is also its
-// place (settled 2026-10-27: topics is 'topics', no other word for it).
+// The buildings are the report's sections and nothing more: topics,
+// sources, one chamber per custom analysis the profile declared, connect,
+// method and search. A section's building is its id, which is also its
+// place (settled 2026-10-27: topics is 'topics', no other word for it),
+// and it is named as the report's header, map and tree name the section
+// (report/nav-items.ts): Topics, the run's own word for its sources,
+// Search, Method, MCP — never a name of the island's own.
 //
 // Worker-safe: content only.
 
@@ -20,6 +21,7 @@ import type {
 } from '@aicolab/atlas/chessboard/content/island/square-declaration.ts'
 import type { BuildingWords } from '@aicolab/atlas/chessboard/content/island/vocabulary.ts'
 import { landmarkOfFeature } from '@aicolab/kolo/island'
+import { sectionName } from '../report/nav-items.ts'
 import type { WorldRecord } from '../world/index.ts'
 import { skyTableHeart } from './sky-table.ts'
 
@@ -36,9 +38,9 @@ export const HOLDS_ROOMS: ReadonlySet<ReportSectionKind> = new Set<ReportSection
 export const holdsRooms = (kind: ReportSectionKind): boolean => HOLDS_ROOMS.has(kind)
 
 /** The kit's form each section takes: the stone inn with the tower for
- *  the Hall, the long shop for the Archive, the plain inn for a chamber,
- *  the lantern tower for the beacon, a signboard for the method, the
- *  market counter for the desk. */
+ *  topics, the long shop for sources, the plain inn for an analysis, the
+ *  lantern tower for connect, a signboard for the method, the market
+ *  counter for search. */
 export const FORM_OF: Readonly<Record<ReportSectionKind, KitForm>> = {
 	topics: 'inn-tower',
 	sources: 'shop',
@@ -104,21 +106,26 @@ export interface ReportSectionEntry {
 }
 
 /** The sections every report has when its own site is not asked: what a
- *  standard report lists, in its order (its galaxy first). */
-export const DEFAULT_SECTIONS = (record: WorldRecord | null): ReportSectionEntry[] => [
-	{ id: 'galaxy', label: 'Galaxy', section: 'galaxy' },
-	{ id: 'topics', label: 'Topics', section: 'topics' },
-	{ id: 'sources', label: 'Sources', section: 'sources' },
-	...(record?.tasks ?? []).map((task) => ({
-		id: `analysis:${task.id}`,
-		label: task.title,
-		section: 'analysis',
-		taskId: task.id,
-	})),
-	{ id: 'search', label: 'Search', section: 'search' },
-	{ id: 'method', label: 'Method', section: 'method' },
-	{ id: 'connect', label: 'Connect', section: 'connect' },
-]
+ *  standard report lists, in its order (its galaxy first), each by the
+ *  name its header gives it. */
+export const DEFAULT_SECTIONS = (record: WorldRecord | null): ReportSectionEntry[] => {
+	const name = (section: 'galaxy' | 'topics' | 'sources' | 'search' | 'method' | 'connect') =>
+		sectionName(section, record?.site.nouns.entities ?? 'sources')
+	return [
+		{ id: 'galaxy', label: name('galaxy'), section: 'galaxy' },
+		{ id: 'topics', label: name('topics'), section: 'topics' },
+		{ id: 'sources', label: name('sources'), section: 'sources' },
+		...(record?.tasks ?? []).map((task) => ({
+			id: `analysis:${task.id}`,
+			label: task.title,
+			section: 'analysis',
+			taskId: task.id,
+		})),
+		{ id: 'search', label: name('search'), section: 'search' },
+		{ id: 'method', label: name('method'), section: 'method' },
+		{ id: 'connect', label: name('connect'), section: 'connect' },
+	]
+}
 
 /** The sections a record calls for, each by its own name, which is its
  *  building's id and its place: topics, sources, an analysis per task
@@ -149,7 +156,7 @@ export function sectionsOf(
 					{
 						id: entry.id,
 						kind: 'topics',
-						label: 'The Hall of Topics',
+						label: entry.label,
 						description: topics
 							? `${topics} topics, each in its own room, grouped the way the record groups them.`
 							: 'The topics, each in its own room.',
@@ -161,7 +168,7 @@ export function sectionsOf(
 					{
 						id: entry.id,
 						kind: 'sources',
-						label: 'The Archive',
+						label: entry.label,
 						description: sources
 							? `Every ${nouns.entity} the record read — ${sources} of them — each in a room of their own.`
 							: `Every ${nouns.entity} the record read.`,
@@ -177,7 +184,7 @@ export function sectionsOf(
 					{
 						id: entry.id,
 						kind: 'analysis',
-						label: task?.title ?? entry.label,
+						label: entry.label,
 						description:
 							task?.description || `What the record says against ${entry.label.toLowerCase()}.`,
 						site: slot,
@@ -190,7 +197,7 @@ export function sectionsOf(
 					{
 						id: entry.id,
 						kind: 'search',
-						label: 'The information desk',
+						label: entry.label,
 						description: 'Find a topic, a name, a question: the desk knows the way.',
 						site: SITES.search,
 					},
@@ -200,7 +207,7 @@ export function sectionsOf(
 					{
 						id: entry.id,
 						kind: 'connect',
-						label: 'The Beacon',
+						label: entry.label,
 						description: 'How scripts and assistants read this record: the connector.',
 						site: SITES.connect,
 					},
@@ -210,7 +217,7 @@ export function sectionsOf(
 					{
 						id: entry.id,
 						kind: 'method',
-						label: 'How this was made',
+						label: entry.label,
 						description: 'The method: how the record was read, clustered and written.',
 						site: SITES.method,
 					},

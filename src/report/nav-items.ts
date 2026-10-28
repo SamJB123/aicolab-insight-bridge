@@ -35,11 +35,13 @@ const LABEL: Record<Exclude<ReportSection, 'sources'>, string> = {
 	connect: 'MCP',
 }
 
-/** A section's name in the header: the record is named by the run's own noun for a source ("Submissions"), as its landing card and page are. */
+/** A section's name, wherever the report is shown (its header, the host's tree and map, its island): the record is named by the run's own noun for its sources ("Submissions"), as its landing card and page are. */
+export const sectionName = (section: ReportSection, entities: string): string =>
+	section === 'sources' ? entities.charAt(0).toUpperCase() + entities.slice(1) : LABEL[section]
+
+/** A section's name in the header. */
 export const sectionLabel = (section: ReportSection, words: RunWords) =>
-	section === 'sources'
-		? words.nouns.entities.charAt(0).toUpperCase() + words.nouns.entities.slice(1)
-		: LABEL[section]
+	sectionName(section, words.nouns.entities)
 
 /** The run's custom analysis tasks, in its profile's order, each with its kind and reader-facing title. */
 export const tasksOf = (words: RunWords) =>

@@ -76,6 +76,7 @@ import {
 	type PlanTurn,
 	turnOffset,
 } from '@aicolab/kolo/chessboard/content'
+import { sectionName } from '../report/nav-items.ts'
 import {
 	isPromptTask,
 	type WorldAnswer,
@@ -993,10 +994,19 @@ class ReportSite extends DeclaredIsland {
 		// The sky table: the thing the report draws as its table, wherever
 		// the island stands it.
 		const table = plan.owned.find((o) => o.owner === REPORT_OWNER && o.model === SKY_TABLE_ID)
+		// Each place by the name the report's map and tree give it.
+		const galaxy = table?.label ?? 'the galaxy'
+		const labelOf = (kind: 'topics' | 'sources'): string | null =>
+			plan.buildings.find((b) => sectionOfBuilding(b.id)?.kind === kind)?.label ?? null
+		const topicsLabel = labelOf('topics')
+		const sourcesLabel = labelOf('sources')
 		/** A landmark's words: what it is, and the way to its place — the
 		 *  section it is, on the page beside the world (settled 2026-10-27);
 		 *  the desk finds things here as well. */
 		const landmark = (b: IslandBuilding): IslandWords => {
+			// The place the landmark is: its section's own address, which a
+			// hex island's building carries as kolo's landmark feature id.
+			const place = sectionIdOfBuilding(b.id)
 			switch (sectionOfBuilding(b.id)?.kind) {
 				case 'connect':
 					return {
@@ -1004,7 +1014,7 @@ class ReportSite extends DeclaredIsland {
 							lines: [
 								{
 									text: `${b.label}. ${b.description}`,
-									choices: [placeChoice('Open the connector', b.id), { label: 'Noted.' }],
+									choices: [placeChoice('Open the connector', place), { label: 'Noted.' }],
 								},
 							],
 						},
@@ -1015,7 +1025,7 @@ class ReportSite extends DeclaredIsland {
 							lines: [
 								{
 									text: `${b.label}. ${b.description}`,
-									choices: [placeChoice('Read the method', b.id), { label: 'Noted.' }],
+									choices: [placeChoice('Read the method', place), { label: 'Noted.' }],
 								},
 							],
 						},
@@ -1029,7 +1039,7 @@ class ReportSite extends DeclaredIsland {
 									text: `${b.description} Ask here and it will walk you there, or search the whole report on the page.`,
 									choices: [
 										{ label: 'Find something here', action: { type: FIND_ACTION } },
-										placeChoice('Search the report', b.id),
+										placeChoice('Search the report', place),
 										{ label: 'Just looking, thanks.' },
 									],
 								},
@@ -1059,12 +1069,16 @@ class ReportSite extends DeclaredIsland {
 					lines: [
 						{
 							text: site
-								? `Welcome to ${site.title}. ${site.standfirst ?? ''} The square is just up the avenue, and the sky table shows the whole record as a sky. The Hall of Topics holds every topic; the Archive holds every ${nouns.entity}.`
+								? [
+										`Welcome to ${site.title}. ${site.standfirst ?? ''} The square is just up the avenue, and ${galaxy} shows the whole record as a sky.`,
+										...(topicsLabel ? [`${topicsLabel} holds every topic.`] : []),
+										...(sourcesLabel ? [`${sourcesLabel} holds every ${nouns.entity}.`] : []),
+									].join(' ')
 								: 'Welcome. The record has not arrived yet; the buildings stand ready.',
 							choices: [{ label: 'Where do I start?', next: 1 }, { label: 'Thank you.' }],
 						},
 						{
-							text: `If you know what you are looking for, the sky table will find it and walk you there. If you want the shape of it first, stand at the table and look up.`,
+							text: `If you know what you are looking for, ${galaxy} will find it and walk you there. If you want the shape of it first, stand at it and look up.`,
 							choices: [{ label: 'On my way.' }],
 						},
 					],
@@ -1079,7 +1093,7 @@ class ReportSite extends DeclaredIsland {
 								dialogue: {
 									lines: [
 										{
-											speaker: 'The sky table',
+											speaker: galaxy,
 											text: `${record ? plural(record.topics.length, 'topic', 'topics') : 'The topics'} as stars, placed by who engaged what, and ${nouns.entities} as the dust between them. Choose any star or any ${nouns.entity} and the table will walk you there.`,
 											choices: [
 												{ label: 'Find something', action: { type: FIND_ACTION } },
@@ -1132,6 +1146,11 @@ export function buildReportWorld(
 
 	const nouns = nounsOf(record)
 	const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+	/** A section's building's front room is named as the section is, on the
+	 *  report's map and tree: its building's label. */
+	const sectionNamed = (kind: 'topics' | 'sources'): string =>
+		plan.buildings.find((b) => sectionOfBuilding(b.id)?.kind === kind)?.label ??
+		sectionName(kind, nouns.entities)
 
 	/** A cohort lobby's alley for each lensed topic, and the range for each
 	 *  of its sources. */
@@ -1472,7 +1491,7 @@ export function buildReportWorld(
 		addNode({
 			id: 'hall',
 			kind: 'hall',
-			label: 'The Hall of Topics',
+			label: sectionNamed('topics'),
 			subtitle: `${plural(record.topics.length, 'topic', 'topics')}${record.groups.length ? ` in ${plural(record.groups.length, record.generations[0]?.label ?? 'group', record.generations[0]?.labelPlural ?? 'groups')}` : ''} · the chart table knows the way to each`,
 			accent: ACCENT.hall,
 			building: 'topics',
@@ -1690,7 +1709,7 @@ export function buildReportWorld(
 		addNode({
 			id: 'office',
 			kind: 'office',
-			label: 'The Record Office',
+			label: sectionNamed('sources'),
 			subtitle: `${plural(record.sources.length, nouns.entity, nouns.entities)} · a room each · the counter finds any of them`,
 			accent: ACCENT.office,
 			building: 'sources',
