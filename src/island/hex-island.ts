@@ -16,15 +16,12 @@ import {
 	type DestinationIslandOptions,
 	declareDestinationIsland,
 } from '@aicolab/atlas/chessboard/content/island/destination-islands.ts'
-import {
-	type HexIsland,
-	type HexIslandPlace,
-	hexIsland,
-} from '@aicolab/atlas/chessboard/content/island/hex-island.ts'
+import { hexIsland } from '@aicolab/atlas/chessboard/content/island/hex-island.ts'
 import {
 	DEFAULT_HEX_ISLAND_SPEC,
 	type HexIslandSpec,
 } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
+import type { HexSpace, HexSpacePlace } from '@aicolab/atlas/chessboard/content/island/hex-space.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/island/programs.ts'
 import {
 	type RealisedIsland,
@@ -47,7 +44,7 @@ import {
  *  what the kit does not (its sky table), in the toolkit's own look, its
  *  shore and its biome what its specification says. */
 export const reportIslandOptions = (
-	laid: Pick<HexIsland, 'shore' | 'biome' | 'heart'>,
+	laid: Pick<HexSpace, 'shore' | 'biome' | 'heart'>,
 ): DestinationIslandOptions => ({
 	owner: REPORT_OWNER,
 	ownsLook: false,
@@ -65,10 +62,10 @@ export const reportIslandOptions = (
 export function reportPlaces(
 	record: WorldRecord | null,
 	sections: readonly ReportSectionEntry[] = DEFAULT_SECTIONS(record),
-): HexIslandPlace[] {
+): HexSpacePlace[] {
 	const built = new Map(sectionsOf(record, sections).map((s) => [s.id, s]))
 	const stars = starsOf(record).map((star) => ({ ...star }))
-	return sections.flatMap((entry): HexIslandPlace[] => {
+	return sections.flatMap((entry): HexSpacePlace[] => {
 		if (entry.section === 'galaxy') {
 			return [
 				{
@@ -104,7 +101,7 @@ export function reportHexIsland(
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
 	spec?: HexIslandSpec | null,
-): HexIsland {
+): HexSpace {
 	return hexIsland({
 		key: island.slug,
 		label: record?.site.title ?? island.corpus.name,
