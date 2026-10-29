@@ -74,11 +74,9 @@ export function reportPlaces(
 					id: entry.id,
 					label: entry.label,
 					description: SKY_TABLE_WORDS.description,
-					stands: {
-						drawn: SKY_TABLE_ID,
-						told: { radius: SKY_TABLE_RADIUS, stars },
-						radius: SKY_TABLE_RADIUS,
-					},
+					model: SKY_TABLE_ID,
+					told: { radius: SKY_TABLE_RADIUS, stars },
+					radius: SKY_TABLE_RADIUS,
 					nameShown: 'always',
 				},
 			]
@@ -90,7 +88,7 @@ export function reportPlaces(
 						id: section.id,
 						label: section.label,
 						description: section.description,
-						stands: { kit: FORM_OF[section.kind] },
+						model: FORM_OF[section.kind],
 						nameShown: 'always',
 					},
 				]
