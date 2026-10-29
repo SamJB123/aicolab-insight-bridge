@@ -47,12 +47,13 @@ import {
  *  what the kit does not (its sky table), in the toolkit's own look, its
  *  shore and its biome what its specification says. */
 export const reportIslandOptions = (
-	laid: Pick<HexIsland, 'shore' | 'biome'>,
+	laid: Pick<HexIsland, 'shore' | 'biome' | 'heart'>,
 ): DestinationIslandOptions => ({
 	owner: REPORT_OWNER,
 	ownsLook: false,
 	shore: laid.shore,
 	biome: laid.biome,
+	heart: laid.heart,
 })
 
 /** The report's places, in its door's order: the galaxy the sky table its
