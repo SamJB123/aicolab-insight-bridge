@@ -98,7 +98,14 @@ import {
 } from '../world/index.ts'
 import { realiseReportHex } from './hex-island.ts'
 import { type ReportIsland, TRAINING_DATA } from './registry.ts'
-import { holdsRooms, sectionIdOfBuilding, sectionOfBuilding } from './sections.ts'
+import {
+	frontDoorPinOf,
+	frontRoomOf,
+	holdsRooms,
+	qhallSpace,
+	sectionIdOfBuilding,
+	sectionOfBuilding,
+} from './sections.ts'
 import { REPORT_OWNER, SKY_TABLE_ID, starsOf, TOPIC_ACCENT } from './sky-table.ts'
 
 export { worldRecordSchema }
@@ -270,7 +277,6 @@ const cohortSpace = (facet: string, value: string) => `c:${facet}:${slug(value)}
 const facetSpace = (facet: string) => `f:${facet}`
 const hasFacetHalls = (record: WorldRecord): boolean => record.facets.length > 1
 const questionSpace = (taskId: string, key: string) => `q:${taskId}:${slug(key)}`
-const qhallSpace = (taskId: string) => `q:${taskId}`
 
 /** The rooms a scope selects, from the record's relations, with every
  *  wing and han that hangs off a selected room (by the building's own
@@ -657,7 +663,7 @@ export function mapOf(build: ReportWorldBuild, spaceId: string): ChessboardMap |
 	return gridPlan({
 		rooms: gridRooms,
 		doors,
-		...(frontRoom ? { entrance: { spaceId: frontRoom, doorId: `door:entrance:${building}` } } : {}),
+		...(frontRoom ? { entrance: { spaceId: frontRoom, doorId: frontDoorPinOf(building) } } : {}),
 	})
 }
 
@@ -1038,11 +1044,11 @@ class ReportSite extends DeclaredIsland {
 	}
 
 	protected override additions(plan: IslandPlan): IslandAdditions {
-		const { record, rooms, frontOf } = this.report
+		const { record, rooms } = this.report
 		const site = record?.site
 		const nouns = nounsOf(record)
 		// The Guide walks from where a visitor arrives to the Hall's door.
-		const arrival = plan.entry.position
+		const arrival: readonly [number, number] = plan.entries[0]?.position ?? [0, 0]
 		const hallBuilding = plan.buildings.find((b) => sectionOfBuilding(b.id)?.kind === 'topics')
 		const hallStep = hallBuilding ? plan.doorstep(hallBuilding) : arrival
 		// The sky table: the thing the report draws as its table, wherever
@@ -1168,14 +1174,6 @@ class ReportSite extends DeclaredIsland {
 					}),
 				),
 			},
-			interiors: Object.fromEntries(
-				plan.buildings.flatMap((b) => {
-					const front = frontOf(b.id)
-					return front
-						? [[b.id, { space: front, entry: `door:entrance:${sectionIdOfBuilding(b.id)}` }]]
-						: []
-				}),
-			),
 			spaces: rooms,
 		}
 	}
@@ -2821,7 +2819,7 @@ export function buildReportWorld(
 		const upDoorId = wing.up
 			? wing.up.doorId
 			: isFront(node) && wing.index === 0
-				? `door:entrance:${node.building}`
+				? frontDoorPinOf(node.building)
 				: null
 		const upStyle = wing.up?.style ?? style(ACCENT.way)
 		const onwardDoorId = wing.onward?.doorId ?? null
@@ -3029,12 +3027,8 @@ export function buildReportWorld(
 		const b = buildingByFront.get(buildingId)
 		if (!b) return null
 		const section = sectionOfBuilding(b.id)
-		if (!section) return null
-		if (section.kind === 'topics') return nodes.has('hall') ? 'hall' : null
-		if (section.kind === 'sources') return nodes.has('office') ? 'office' : null
-		if (section.kind === 'analysis' && section.taskId)
-			return nodes.has(qhallSpace(section.taskId)) ? qhallSpace(section.taskId) : null
-		return null
+		const front = section ? frontRoomOf(section) : null
+		return front && nodes.has(front) ? front : null
 	}
 	/** Each section's building as the island declares it, by the section's
 	 *  own address (the rooms name their building so). */
@@ -3083,7 +3077,7 @@ export function buildReportWorld(
 			})
 		} else if (isFront(node)) {
 			doors.push({
-				doorId: `door:entrance:${node.building}`,
+				doorId: frontDoorPinOf(node.building),
 				label: 'Back outside',
 				description: 'Through the doors to the island.',
 				to: { space: 'island', entry: islandEntryOf(node.building) },
@@ -3115,7 +3109,7 @@ export function buildReportWorld(
 	/** Where a room is entered when nothing says where: its way up, or a
 	 *  front hall's doors from the island. */
 	const defaultEntryOf = (wing: Wing): string =>
-		wing.up ? wing.up.doorId : isFront(wing.node) ? `door:entrance:${wing.node.building}` : ''
+		wing.up ? wing.up.doorId : isFront(wing.node) ? frontDoorPinOf(wing.node.building) : ''
 	/** Where an item on a room's wall goes through to, when it is one end
 	 *  of a link: the room at the other end — landing before that end's own
 	 *  item, or at its door when the other end is the way back. */
@@ -3128,7 +3122,7 @@ export function buildReportWorld(
 			const roomNode = nodes.get(room)
 			return {
 				space: room,
-				entry: upOf ? `door:${upOf.id}` : `door:entrance:${roomNode?.building ?? room}`,
+				entry: upOf ? `door:${upOf.id}` : frontDoorPinOf(roomNode?.building ?? room),
 			}
 		}
 		if (!end) return undefined

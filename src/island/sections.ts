@@ -212,3 +212,32 @@ export const entersBuilding = (b: Pick<IslandBuilding, 'id'>): boolean => {
 	const section = sectionOfBuilding(b.id)
 	return section !== null && holdsRooms(section.kind)
 }
+
+/** A task's question hall, by the task. */
+export const qhallSpace = (taskId: string): string => `q:${taskId}`
+
+/** The FRONT ROOM a section's building leads into (world.ts builds the
+ *  rooms so named): the hall for topics, the office for sources, a task's
+ *  question hall for an analysis; null for a section stood in the open. */
+export function frontRoomOf(section: Pick<ReportSection, 'kind' | 'taskId'>): string | null {
+	switch (section.kind) {
+		case 'topics':
+			return 'hall'
+		case 'sources':
+			return 'office'
+		case 'analysis':
+			return section.taskId === undefined ? null : qhallSpace(section.taskId)
+		case 'connect':
+		case 'method':
+		case 'search':
+			return null
+		default: {
+			const unknown: never = section.kind
+			throw new Error(`[sections] no front room for ${String(unknown)}`)
+		}
+	}
+}
+
+/** The pin inside a front room at its door to the island (world.ts names
+ *  it so), where the island's door lands a visitor. */
+export const frontDoorPinOf = (sectionId: string): string => `door:entrance:${sectionId}`

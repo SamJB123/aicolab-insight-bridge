@@ -31,7 +31,14 @@ import type { IslandDocument } from '@aicolab/kolo/island'
 import type { HexPoint } from '@aicolab/kolo/spatial/hex'
 import type { WorldRecord } from '../world/index.ts'
 import type { ReportIsland } from './registry.ts'
-import { DEFAULT_SECTIONS, FORM_OF, type ReportSectionEntry, sectionsOf } from './sections.ts'
+import {
+	DEFAULT_SECTIONS,
+	FORM_OF,
+	frontDoorPinOf,
+	frontRoomOf,
+	type ReportSectionEntry,
+	sectionsOf,
+} from './sections.ts'
 import {
 	REPORT_OWNER,
 	SKY_TABLE_ID,
@@ -80,17 +87,20 @@ export function reportPlaces(
 			]
 		}
 		const section = built.get(entry.id)
-		return section
-			? [
-					{
-						id: section.id,
-						label: section.label,
-						description: section.description,
-						model: FORM_OF[section.kind],
-						nameShown: 'always',
-					},
-				]
-			: []
+		if (!section) return []
+		// A section with rooms behind its door: the door leads into its front
+		// room — once the record is read; the island alone has no rooms.
+		const front = record ? frontRoomOf(section) : null
+		return [
+			{
+				id: section.id,
+				label: section.label,
+				description: section.description,
+				model: FORM_OF[section.kind],
+				nameShown: 'always',
+				...(front ? { exit: { space: front, entry: frontDoorPinOf(section.id) } } : {}),
+			},
+		]
 	})
 }
 
