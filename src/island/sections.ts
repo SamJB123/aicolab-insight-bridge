@@ -1,29 +1,24 @@
 // A report's SECTIONS as the buildings of its island: which of the kit's
-// forms each takes (@aicolab/atlas island/kit-forms.ts), what it is to a
-// reader of map data, its site round the square, and whether it holds
-// things of its own — rooms behind its door — and so is a building a
-// visitor enters, or a landmark stood in the open (settled 2026-10-27).
-// The buildings are the report's sections and nothing more: topics,
-// sources, one chamber per custom analysis the profile declared, connect,
-// method and search. A section's building is its id, which is also its
-// place (settled 2026-10-27: topics is 'topics', no other word for it),
-// and it is named as the report's header, map and tree name the section
-// (report/nav-items.ts): Topics, the run's own word for its sources,
-// Search, Method, MCP — never a name of the island's own.
+// forms each takes (@aicolab/atlas island/kit-forms.ts), what it says of
+// itself, and whether it holds things of its own — rooms behind its door —
+// and so is a building a visitor enters, or a landmark stood in the open
+// (settled 2026-10-27). The buildings are the report's sections and
+// nothing more: topics, sources, one chamber per custom analysis the
+// profile declared, connect, method and search. A section's building is
+// its id, which is also its place (settled 2026-10-27: topics is 'topics',
+// no other word for it), and it is named as the report's header, map and
+// tree name the section (report/nav-items.ts): Topics, the run's own word
+// for its sources, Search, Method, MCP — never a name of the island's own.
+// Where each stands is the hex island's to lay (hex-island.ts): a place on
+// a cell of the report's map.
 //
 // Worker-safe: content only.
 
 import type { KitForm } from '@aicolab/atlas/chessboard/content/island/kit-forms.ts'
 import type { IslandBuilding } from '@aicolab/atlas/chessboard/content/island/plan.ts'
-import type {
-	SquareBuildingSpec,
-	SquareIslandSpec,
-} from '@aicolab/atlas/chessboard/content/island/square-declaration.ts'
-import type { BuildingWords } from '@aicolab/atlas/chessboard/content/island/vocabulary.ts'
 import { landmarkOfFeature } from '@aicolab/kolo/island'
 import { sectionName } from '../report/nav-items.ts'
 import type { WorldRecord } from '../world/index.ts'
-import { skyTableHeart } from './sky-table.ts'
 
 export type ReportSectionKind = 'topics' | 'sources' | 'analysis' | 'connect' | 'method' | 'search'
 
@@ -50,47 +45,13 @@ export const FORM_OF: Readonly<Record<ReportSectionKind, KitForm>> = {
 	search: 'counter',
 }
 
-/** Each section's building in Overture's words. */
-export const WORDS_OF: Readonly<Record<ReportSectionKind, BuildingWords>> = {
-	topics: { type: 'building', subtype: 'civic', class: 'civic' },
-	sources: { type: 'building', subtype: 'civic', class: 'library' },
-	analysis: { type: 'building', subtype: 'civic', class: 'public' },
-	connect: { type: 'infrastructure', subtype: 'tower', class: 'watchtower' },
-	method: { type: 'infrastructure', subtype: 'pedestrian', class: 'information' },
-	search: { type: 'infrastructure', subtype: 'pedestrian', class: 'information' },
-}
-
-/** Where each kind of section stands round the square: bearing (degrees,
- *  0 = east, clockwise on the plan) and distance from the square's
- *  centre. Chambers take the slots in turn. */
-const SITES = {
-	topics: { bearing: -90, distance: 46 },
-	sources: { bearing: -148, distance: 44 },
-	connect: { bearing: -22, distance: 50 },
-	method: { bearing: 132, distance: 26 },
-	// The information desk: by the way in, across the avenue from the
-	// method board, clear of the chambers' paths (the fourth's runs at 42°).
-	search: { bearing: 66, distance: 26 },
-	analyses: [
-		{ bearing: -52, distance: 45 },
-		{ bearing: 18, distance: 46 },
-		{ bearing: -178, distance: 46 },
-		{ bearing: 42, distance: 48 },
-		{ bearing: 158, distance: 46 },
-		{ bearing: -120, distance: 60 },
-		{ bearing: -60, distance: 62 },
-		{ bearing: 0, distance: 64 },
-	],
-} as const
-
-/** A section of the report as a building to be sited: what it is, what
- *  it says of itself, and the site it takes round the square. */
+/** A section of the report as a building: what it is, and what it says of
+ *  itself. */
 export interface ReportSection {
 	id: string
 	kind: ReportSectionKind
 	label: string
 	description: string
-	site: { bearing: number; distance: number }
 	taskId?: string
 }
 
@@ -133,8 +94,7 @@ export const DEFAULT_SECTIONS = (record: WorldRecord | null): ReportSectionEntry
  *  report's own site lists (`sections`, from its door), else a standard
  *  report's. The overview is the island itself and the galaxy its sky
  *  table, so neither stands as a thing of its own; a section the island
- *  has no form for stands nowhere. Each kind keeps its site round the
- *  square; the analyses take the chambers' slots in turn. */
+ *  has no form for stands nowhere. */
 export function sectionsOf(
 	record: WorldRecord | null,
 	sections: readonly ReportSectionEntry[] = DEFAULT_SECTIONS(record),
@@ -148,7 +108,6 @@ export function sectionsOf(
 	const topics = record?.topics.length ?? 0
 	const sources = record?.sources.length ?? 0
 	const tasks = record?.tasks ?? []
-	let chambers = 0
 	return sections.flatMap((entry): ReportSection[] => {
 		switch (entry.section) {
 			case 'topics':
@@ -160,7 +119,6 @@ export function sectionsOf(
 						description: topics
 							? `${topics} topics, each in its own room, grouped the way the record groups them.`
 							: 'The topics, each in its own room.',
-						site: SITES.topics,
 					},
 				]
 			case 'sources':
@@ -172,14 +130,12 @@ export function sectionsOf(
 						description: sources
 							? `Every ${nouns.entity} the record read — ${sources} of them — each in a room of their own.`
 							: `Every ${nouns.entity} the record read.`,
-						site: SITES.sources,
 					},
 				]
 			case 'analysis': {
 				const taskId = entry.taskId
 				if (taskId === undefined) return []
 				const task = tasks.find((t) => t.id === taskId)
-				const slot = SITES.analyses[chambers++ % SITES.analyses.length] ?? SITES.analyses[0]
 				return [
 					{
 						id: entry.id,
@@ -187,7 +143,6 @@ export function sectionsOf(
 						label: entry.label,
 						description:
 							task?.description || `What the record says against ${entry.label.toLowerCase()}.`,
-						site: slot,
 						taskId,
 					},
 				]
@@ -199,7 +154,6 @@ export function sectionsOf(
 						kind: 'search',
 						label: entry.label,
 						description: 'Find a topic, a name, a question: the desk knows the way.',
-						site: SITES.search,
 					},
 				]
 			case 'connect':
@@ -209,7 +163,6 @@ export function sectionsOf(
 						kind: 'connect',
 						label: entry.label,
 						description: 'How scripts and assistants read this record: the connector.',
-						site: SITES.connect,
 					},
 				]
 			case 'method':
@@ -219,7 +172,6 @@ export function sectionsOf(
 						kind: 'method',
 						label: entry.label,
 						description: 'The method: how the record was read, clustered and written.',
-						site: SITES.method,
 					},
 				]
 			default:
@@ -229,16 +181,14 @@ export function sectionsOf(
 }
 
 /** The section's own address a building of the island stands for: its id
- *  as the square island declares it, or as a hex island's destination
- *  declares it (kolo's landmark feature id). */
+ *  as the island's destination declares it (kolo's landmark feature id). */
 export const sectionIdOfBuilding = (buildingId: string): string =>
 	landmarkOfFeature(buildingId) ?? buildingId
 
 /** The section a building of the island is, from its id — the id is the
  *  section's own address ('topics', 'sources', 'analysis:<task>',
- *  'search', 'method', 'connect'), as the square island declares it, or
- *  that address as a hex island's destination declares it (kolo's
- *  landmark feature id); null for a building that is none. */
+ *  'search', 'method', 'connect') as the island's destination declares it
+ *  (kolo's landmark feature id); null for a building that is none. */
 export function sectionOfBuilding(
 	buildingId: string,
 ): { kind: ReportSectionKind; taskId?: string } | null {
@@ -261,33 +211,4 @@ export function sectionOfBuilding(
 export const entersBuilding = (b: Pick<IslandBuilding, 'id'>): boolean => {
 	const section = sectionOfBuilding(b.id)
 	return section !== null && holdsRooms(section.kind)
-}
-
-/** A section as the square island declares it: its form, its words, its
- *  site, and itself as its place. */
-const buildingOf = (section: ReportSection): SquareBuildingSpec => ({
-	id: section.id,
-	kind: FORM_OF[section.kind],
-	label: section.label,
-	description: section.description,
-	site: section.site,
-	words: WORDS_OF[section.kind],
-	place: section.id,
-})
-
-/** The report's island as a square island (@aicolab/atlas
- *  square-declaration.ts): its sections round the square, the sky table
- *  at its heart with the record's stars, the island the report's place. */
-export function reportIslandSpec(
-	record: WorldRecord | null,
-	slug: string,
-	sections?: readonly ReportSectionEntry[],
-): SquareIslandSpec {
-	return {
-		slug,
-		title: record?.site.title ?? null,
-		place: slug,
-		buildings: sectionsOf(record, sections).map(buildingOf),
-		heart: skyTableHeart(record),
-	}
 }

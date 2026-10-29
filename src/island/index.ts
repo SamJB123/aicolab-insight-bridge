@@ -1,14 +1,12 @@
 // An Insight Bridge report as an ISLAND of a host's archipelago
 // (@aicolab/atlas): the content half — the registry of report islands,
 // the sections their buildings are, the report's hex island laid on its
-// map's cells with the sky table in the galaxy's cell, the square island
-// it was first built as (its oracle) in every form the atlas composes it,
-// the declarations, the scene document, the world of rooms built from the
-// record, and the island program a host registers with the chart. Worker-safe: a host's
-// scope (evaluated by its server) reads it. The scenes and the setup —
-// the browser's — are `./setup` (solid/setup.tsx).
+// map's cells with the sky table in the galaxy's cell, the world of rooms
+// built from the record, and the island program a host registers with the
+// chart. Worker-safe: a host's scope (evaluated by its server) reads it.
+// The scenes and the setup — the browser's — are `./setup`
+// (solid/setup.tsx).
 
-export { declareReportIsland, reportDeclaration } from './declaration.ts'
 export {
 	realiseReportHex,
 	reportHexDeclaration,
@@ -16,15 +14,6 @@ export {
 	reportIslandOptions,
 	reportPlaces,
 } from './hex-island.ts'
-export {
-	hexReportIslandPlan,
-	type IslandPlanOf,
-	islandPlanOfReport,
-	type ReportIslandPlan,
-	realiseReportIsland,
-	reportIslandInput,
-	reportIslandPlan,
-} from './plan.ts'
 export {
 	type ReportContent,
 	reportIslandProgram,
@@ -40,14 +29,12 @@ export {
 	reportIslandOfRoom,
 	TRAINING_DATA,
 } from './registry.ts'
-export { type IslandSceneOf, reportIslandDocument } from './scene-document.ts'
 export {
 	entersBuilding,
 	holdsRooms,
 	type ReportSection,
 	type ReportSectionEntry,
 	type ReportSectionKind,
-	reportIslandSpec,
 	sectionIdOfBuilding,
 	sectionOfBuilding,
 	sectionsOf,

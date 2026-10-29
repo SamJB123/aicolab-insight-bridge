@@ -1,10 +1,8 @@
 // A report world's SCENES: its outdoors as its setup builds it — the hex
 // island as any declared island is built (@aicolab/atlas declared-spaces.ts),
-// the sky table the report draws in the galaxy's cell; or the square
-// island as it was first built, its oracle, from the three-resources kit
-// (scenes/island-scene.ts) with the sky table at the square's heart — and
-// one pair room per room of the world — each built as it is entered, from
-// the same build the content is, through the museum's own room builder. A room's walls
+// the sky table the report draws in the galaxy's cell — and one pair room
+// per room of the world — each built as it is entered, from the same build
+// the content is, through the museum's own room builder. A room's walls
 // carry its text (core's `worldText`: its cards' words, its rail's
 // panels), read through the report's door as the room is built; the
 // scene waits for it, and the room joins the world as its text writes it
@@ -12,18 +10,13 @@
 
 import type { BuiltSpace } from '@aicolab/atlas/chessboard/scenes/built-space.ts'
 import { buildGalleryRoomSpace } from '@aicolab/atlas/chessboard/scenes/gallery-space.ts'
-import { ownersFor, registerIslandOwners } from '@aicolab/atlas/chessboard/scenes/island-owners.ts'
-import { buildIslandSpace } from '@aicolab/atlas/chessboard/scenes/island-scene.ts'
+import { registerIslandOwners } from '@aicolab/atlas/chessboard/scenes/island-owners.ts'
 import {
 	createSceneAdapter,
 	type SceneAdapter,
 	type SpaceBuilder,
 } from '@aicolab/atlas/chessboard/scenes/scene-adapter.ts'
-import type { ModelMetadata } from '@aicolab/atlas/models/load-model.ts'
-import { SURFACE_LEVEL } from '@aicolab/atlas/three/levels.ts'
-import { islandPlanOfReport, type ReportIslandPlan } from '../plan.ts'
-import type { IslandSceneOf } from '../scene-document.ts'
-import { REPORT_OWNER, type SkyStar } from '../sky-table.ts'
+import { REPORT_OWNER } from '../sky-table.ts'
 import type { ReportTexts } from '../texts.ts'
 import type { ReportRoomBuild, ReportWorldBuild } from '../world.ts'
 import { createReportOwner } from './owner.ts'
@@ -33,36 +26,6 @@ import { createReportOwner } from './owner.ts'
 // scenes are built: by its setup, by the archipelago, or with no renderer
 // at all.
 registerIslandOwners({ [REPORT_OWNER]: { create: createReportOwner } })
-
-export interface ReportIslandSceneOptions {
-	/** Build the kit's part of the island — buildings, lamps, rocks, planting
-	 *  — from a scene document written from the plan, instead of from the
-	 *  plan's placements directly. The two are held equal in the live scene. */
-	document?: IslandSceneOf
-	/** Built bare, its owners with it (atlas IslandSceneOptions). */
-	bare?: boolean
-}
-
-/** A report island: the square island with its ground flat at the
- *  surface level, its sky table drawn by the report with the record's
- *  stars; the kit placed from the plan directly (the oracle) or from a
- *  document written from it. */
-export async function buildReportIslandSpace(
-	plan: ReportIslandPlan,
-	stars: readonly SkyStar[],
-	models: ModelMetadata[] | null,
-	options: ReportIslandSceneOptions = {},
-): Promise<BuiltSpace> {
-	const document = options.document
-	const bare = options.bare === true
-	const island = islandPlanOfReport(plan, SURFACE_LEVEL, stars)
-	return buildIslandSpace(island, models, {
-		...(document ? { document: (partOf, field) => document(plan, partOf, field, stars) } : {}),
-		direct: plan,
-		owners: ownersFor(island, models, bare).owners(),
-		bare,
-	})
-}
 
 /** A report's room as a chessboard space: a pair room, through the
  *  museum's own room builder. */
@@ -82,12 +45,11 @@ export function buildReportRoomSpace(build: ReportRoomBuild, bare = false): Prom
 }
 
 /** The adapter for a report world: its outdoors as the caller builds it
- *  (a declared island's own builders, atlas declared-spaces.ts; the oracle's
- *  square), and every room — each built BARE when asked (atlas
- *  world-setups.ts BuildOptions): the same triangles, nothing fetched or
- *  painted to be seen, for the walker with no renderer. `texts` reads a
- *  room's text; with none, or bare, a room stands as the record alone
- *  gives it. */
+ *  (a declared island's own builders, atlas declared-spaces.ts), and every
+ *  room — each built BARE when asked (atlas world-setups.ts BuildOptions):
+ *  the same triangles, nothing fetched or painted to be seen, for the
+ *  walker with no renderer. `texts` reads a room's text; with none, or
+ *  bare, a room stands as the record alone gives it. */
 export function createReportAdapter(
 	build: ReportWorldBuild,
 	outdoors: Readonly<Record<string, SpaceBuilder>>,

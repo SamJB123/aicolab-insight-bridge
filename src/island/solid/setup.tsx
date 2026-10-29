@@ -7,10 +7,7 @@
 // report's door on the host — and the
 // report's LENS on its rooms (atlas content/lens.ts: a building's rooms as
 // the scope finding is held to, the plan drawn round a room, which things
-// read) and its READING SHEET (ReportSheet.tsx). The report's ORACLE is
-// its island planned by the oracle plan (or a composition a host hands
-// in), its kit placed from the plan: the yardstick its declared form is
-// held to.
+// read) and its READING SHEET (ReportSheet.tsx).
 
 import { worldCell } from '@aicolab/atlas/chart/chart-data.ts'
 import type { HexIslandSpec } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
@@ -31,9 +28,7 @@ import {
 	type WorldBuild,
 	type WorldSetup,
 } from '@aicolab/atlas/solid/chessboard/world-setups.ts'
-import { SURFACE_LEVEL } from '@aicolab/atlas/three/levels.ts'
 import { createMemo } from 'solid-js'
-import { type IslandPlanOf, islandPlanOfReport, reportIslandPlan } from '../plan.ts'
 import {
 	type ReportContent,
 	reportDeclaration,
@@ -42,9 +37,7 @@ import {
 	reportTextsOf,
 } from '../program.ts'
 import { type ReportIsland, type ReportSlug, reportIsland } from '../registry.ts'
-import type { IslandSceneOf } from '../scene-document.ts'
-import { buildReportIslandSpace, createReportAdapter } from '../scenes/spaces.ts'
-import { starsOf } from '../sky-table.ts'
+import { createReportAdapter } from '../scenes/spaces.ts'
 import type { ReportTexts } from '../texts.ts'
 import {
 	buildingLabel,
@@ -124,18 +117,12 @@ const reportBuild = (
 	}
 }
 
-/** A report island's setups: as declared, and as it was first built — the
- *  oracle, planned by the oracle plan or by the composition a host hands
- *  in (`plan`), its kit placed from the plan or from a scene document
- *  written from it (`scene`). With a DRAFT (a host's editor of the
- *  island's specification), the island is declared from the draft as it
- *  stands when the world is built, in place of the specification its door
- *  gives, and explored alone: a draft is no island anyone else stands on. */
-export function reportIslandSetup(
-	slug: ReportSlug,
-	oracle: { plan?: IslandPlanOf; scene?: IslandSceneOf } = {},
-	draft?: () => HexIslandSpec,
-): IslandSetup {
+/** A report island's setup: its hex island as declared from what its door
+ *  gave. With a DRAFT (a host's editor of the island's specification), the
+ *  island is declared from the draft as it stands when the world is built,
+ *  in place of the specification its door gives, and explored alone: a
+ *  draft is no island anyone else stands on. */
+export function reportIslandSetup(slug: ReportSlug, draft?: () => HexIslandSpec): IslandSetup {
 	const island = reportIsland(slug)
 	const program = reportIslandProgram(slug)
 	// The report's world key: its program's, which the host registered
@@ -179,39 +166,5 @@ export function reportIslandSetup(
 			}
 		},
 	}
-	// The island as it was FIRST BUILT, its oracle: the square island, laid
-	// by the oracle plan or the composition a host hands in, its kit placed
-	// from the plan or from a scene document written from it.
-	const asBuilt: WorldSetup<ReportContent> = {
-		...shared,
-		callbackPath: `/place/${slug}/island`,
-		build: (models, content, options) => {
-			const bare = options.bare === true
-			const record = content?.record ?? null
-			const square = (oracle.plan ?? reportIslandPlan)(record, island.slug)
-			const stars = starsOf(record)
-			const report = buildReportWorld(
-				record,
-				island,
-				islandPlanOfReport(square, SURFACE_LEVEL, stars),
-			)
-			const built = reportBuild(report, island, options.host)
-			return {
-				...built,
-				adapter: createReportAdapter(
-					report,
-					{
-						island: () =>
-							buildReportIslandSpace(square, stars, models, {
-								...(oracle.scene ? { document: oracle.scene } : {}),
-								bare,
-							}),
-					},
-					bare,
-					built.texts,
-				),
-			}
-		},
-	}
-	return { key, setup: () => declared, oracle: () => asBuilt }
+	return { key, setup: () => declared }
 }
