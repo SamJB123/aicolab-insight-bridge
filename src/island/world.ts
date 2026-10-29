@@ -64,12 +64,17 @@ import {
 import {
 	type ChartInlay,
 	type DoorStyle,
-	GALLERY_FLOOR_TOP,
 	onWallPlan,
 	type RoomPlan,
 } from '@aicolab/atlas/chessboard/content/room-plan.ts'
 import {
-	type ChessboardInteractable,
+	type RoomDoor,
+	type RoomMark,
+	roomSpaceOf,
+	roomWaysOf,
+	unbuiltRoomOf,
+} from '@aicolab/atlas/chessboard/content/room-space.ts'
+import {
 	type ChessboardMap,
 	type ChessboardSpace,
 	type ChessboardWorld,
@@ -2813,6 +2818,17 @@ export function buildReportWorld(
 		if (link.upFor && !upLinkOf.has(link.upFor)) upLinkOf.set(link.upFor, link)
 	}
 
+	/** The table at a room's centre, when its plan has one: a nave room's
+	 *  (a cohort lobby's info desk held to its cohort, or a front hall's
+	 *  chart table), or the chart table of a front hall's first list room —
+	 *  what the planner is asked for and what the room says of it, from one
+	 *  place. */
+	const deskOf = (wing: Wing): NaveWing['desk'] =>
+		wing.nave
+			? wing.nave.desk
+			: isFront(wing.node) && wing.index === 0 && wing.node.kind !== 'qhall'
+				? 'chart'
+				: null
 	/** A room's plan, and where each of its items hangs on it. */
 	const planOfWing = (wing: Wing): { plan: RoomPlan; anchorOfItem: Map<string, string> } => {
 		const node = wing.node
@@ -2855,7 +2871,7 @@ export function buildReportWorld(
 				byDoor: nave.byDoor.length,
 				naveEnd: nave.naveEnd.length,
 				rail: nave.rail?.load ?? null,
-				desk: nave.desk !== null,
+				desk: deskOf(wing) !== null,
 			})
 			const hangAll = (ids: readonly string[], slots: readonly string[]) => {
 				ids.forEach((id, i) => {
@@ -2881,7 +2897,7 @@ export function buildReportWorld(
 				upStyle,
 				onwardDoorId,
 				itemIds: wing.itemIds,
-				chart: isFront(node) && wing.index === 0 && node.kind !== 'qhall',
+				chart: deskOf(wing) === 'chart',
 			})
 			for (const id of wing.itemIds) hangOn(id, planned.anchorOfItem.get(id))
 			plan = planned
@@ -2895,6 +2911,17 @@ export function buildReportWorld(
 		wing.count > 1
 			? `${wing.node.subtitle} · wing ${numeral(wing.index)} of ${wing.count}`
 			: wing.node.subtitle
+	/** The card a room shows for an item. A thing that leads somewhere is
+	 *  NAMED for where it leads, from the room you stand in: in a topic's
+	 *  room a perspective wears the source's name, in the source's room the
+	 *  topic's; a lens the cohort's here and the topic's there; an answer the
+	 *  source's in the question's room and the clause in the source's. The
+	 *  perspective's own title is the reading sheet's. */
+	const cardOf = (wing: Wing, item: ReportItem): ReportCard => {
+		const end = wing.linkOfItem.get(item.id)
+		const beyond = end ? nodes.get(end.side === 'a' ? end.link.b : end.link.a) : undefined
+		return beyond ? { ...item.card, title: beyond.label } : item.card
+	}
 	/** A room as built on its plan: its exhibits, its text, its rail. */
 	const roomOfWing = (
 		wing: Wing,
@@ -2909,20 +2936,11 @@ export function buildReportWorld(
 			accent: node.accent,
 			building: node.building,
 			plan,
-			// A thing that leads somewhere is NAMED for where it leads, from the
-			// room you stand in: in a topic's room a perspective wears the
-			// source's name, in the source's room the topic's; a lens the cohort's
-			// here and the topic's there; an answer the source's in the question's
-			// room and the clause in the source's. The perspective's own title is
-			// the reading sheet's.
 			exhibits: wing.itemIds.flatMap((itemId) => {
 				const item = items.get(itemId)
 				const anchorId = anchorOfItem.get(itemId)
 				if (!item || !anchorId) return []
-				const end = wing.linkOfItem.get(itemId)
-				const beyond = end ? nodes.get(end.side === 'a' ? end.link.b : end.link.a) : undefined
-				const card = beyond ? { ...item.card, title: beyond.label } : item.card
-				return [{ anchorId, card, itemId }]
+				return [{ anchorId, card: cardOf(wing, item), itemId }]
 			}),
 			text: node.text,
 			rail: wing.index === 0 ? node.rail : null,
@@ -3038,19 +3056,12 @@ export function buildReportWorld(
 	 *  room's way back lands. */
 	const islandEntryOf = (section: string) => `door:${declaredBuildingOf.get(section) ?? section}`
 
-	/** A door out of a room: what it is called, and where it leads. */
-	interface WingDoor {
-		doorId: string
-		label: string
-		description: string
-		to: { space: string; entry: string }
-	}
-	/** A room's doors, in the order it lists them: its way up (or, for a
-	 *  front hall, back outside), its wing's onward door, and the doors at
-	 *  its alleys' ends on to their hans. */
-	const doorsOfWing = (wing: Wing): WingDoor[] => {
+	/** A room's doors (atlas room-space.ts RoomDoor), in the order it lists
+	 *  them: its way up (or, for a front hall, back outside), its wing's
+	 *  onward door, and the doors at its alleys' ends on to their hans. */
+	const doorsOfWing = (wing: Wing): RoomDoor[] => {
 		const node = wing.node
-		const doors: WingDoor[] = []
+		const doors: RoomDoor[] = []
 		if (wing.up) {
 			const link = linkByDoor.get(wing.up.doorId)
 			// The way back lands before the card for this room on the other side
@@ -3070,7 +3081,7 @@ export function buildReportWorld(
 				doorId: wing.up.doorId,
 				label: wing.up.label,
 				description: wing.up.description,
-				to: {
+				exit: {
 					space: to,
 					entry: wing.up.to ? wing.up.doorId : otherItem ? `item:${otherItem}` : wing.up.doorId,
 				},
@@ -3080,7 +3091,7 @@ export function buildReportWorld(
 				doorId: frontDoorPinOf(node.building),
 				label: 'Back outside',
 				description: 'Through the doors to the island.',
-				to: { space: 'island', entry: islandEntryOf(node.building) },
+				exit: { space: 'island', entry: islandEntryOf(node.building) },
 			})
 		}
 		if (wing.onward) {
@@ -3088,7 +3099,7 @@ export function buildReportWorld(
 				doorId: wing.onward.doorId,
 				label: wing.onward.label,
 				description: 'On through the wing.',
-				to: { space: wing.onward.to, entry: wing.onward.doorId },
+				exit: { space: wing.onward.to, entry: wing.onward.doorId },
 			})
 		}
 		// The doors at the alleys' ends: each on to its han, landing at
@@ -3101,15 +3112,11 @@ export function buildReportWorld(
 				doorId: `door:${h.door.link.id}`,
 				label: h.door.link.labelA,
 				description: h.door.link.descriptionA,
-				to: { space: to, entry: `door:${h.door.link.id}` },
+				exit: { space: to, entry: `door:${h.door.link.id}` },
 			})
 		}
 		return doors
 	}
-	/** Where a room is entered when nothing says where: its way up, or a
-	 *  front hall's doors from the island. */
-	const defaultEntryOf = (wing: Wing): string =>
-		wing.up ? wing.up.doorId : isFront(wing.node) ? frontDoorPinOf(wing.node.building) : ''
 	/** Where an item on a room's wall goes through to, when it is one end
 	 *  of a link: the room at the other end — landing before that end's own
 	 *  item, or at its door when the other end is the way back. */
@@ -3133,184 +3140,142 @@ export function buildReportWorld(
 		if (!to) throw new Error(`[report-world] link '${link.id}' has no end in '${otherNode}'`)
 		return { space: to, entry: otherItem ? `item:${otherItem}` : `door:${link.id}` }
 	}
+	/** An item's mark as this room shows it (atlas room-space.ts RoomMark):
+	 *  read where it hangs, and jumped through to the room at the other end
+	 *  when it is one end of a link. */
+	const markOf = (wing: Wing, item: ReportItem, card: ReportCard): RoomMark => {
+		const exit = exitOfItem(wing, item.id)
+		const jump = exit
+			? [
+					{
+						label: item.kind === 'card' ? 'Go through' : 'Jump in',
+						action: { type: DIVE_ACTION },
+					},
+				]
+			: []
+		const read =
+			item.kind === 'card'
+				? []
+				: [
+						{
+							// A document's reading is its key points, wherever it hangs.
+							label:
+								item.kind === 'points' || item.kind === 'document'
+									? 'Read the key points'
+									: 'Read it',
+							action: { type: READ_ACTION, payload: { thing: item.id } },
+						},
+					]
+		return {
+			id: `item:${item.id}`,
+			label: card.title,
+			description: exhibitDescription(card, item, exit !== undefined),
+			preview: { text: card.excerpt, tags: card.tags },
+			...(exit ? { exit } : {}),
+			dialogue: {
+				lines: [
+					{
+						speaker: card.title,
+						text: exhibitLine(card, item),
+						choices: [...read, ...jump, { label: 'Move on' }],
+					},
+				],
+			},
+		}
+	}
+	/** What a room's table is for, when its plan has one (deskOf): finding —
+	 *  a front hall's CHART TABLE, or a cohort lobby's INFO DESK, the same
+	 *  table with its finding held to this cohort's sources and the topics
+	 *  it has a lens on. */
+	const tableOf = (wing: Wing): RoomMark | null => {
+		const table = deskOf(wing)
+		if (!table) return null
+		const desk = table === 'chart' ? null : table
+		return {
+			id: desk ? 'examine:info-desk' : 'examine:chart-table',
+			label: desk ? 'The info desk' : 'The chart table',
+			description: desk
+				? `Everyone read as ${desk.label}, and every topic seen their way: find one and it will walk you there.`
+				: 'The building in miniature: find any room and it will walk you there.',
+			dialogue: {
+				lines: [
+					{
+						speaker: desk ? 'The info desk' : 'The chart table',
+						text: desk
+							? `The ${desk.label} desk: every ${nouns.entity} read as ${desk.label}, down the ranges on the right, and every topic ${desk.label} has a view on, down the alleys on the left. Name one and the desk will walk you to it.`
+							: `Every room of this building on the plan. Search for a topic, a ${nouns.entity} or a question and the table will walk you to it.`,
+						choices: [
+							{
+								label: 'Find something',
+								action: {
+									type: FIND_ACTION,
+									// The desk's scope, as the app holds finding to one
+									// (atlas lens.ts WorldScope): the cohort's room.
+									...(desk
+										? { payload: { kind: 'cohort', id: desk.scope, label: desk.label } }
+										: {}),
+								},
+							},
+							{ label: 'Just looking, thanks.' },
+						],
+					},
+				],
+			},
+		}
+	}
 	/** A space's ways out: a room's, unbuilt — its doors and the items that
 	 *  go through, by the ids its built things have, in the order it lists
-	 *  them; any other space's (the island) its own. */
+	 *  them (atlas room-space.ts roomWaysOf); any other space's (the island)
+	 *  its own. */
 	const waysOf = (space: ChessboardSpace): readonly SpaceWay[] => {
 		const wing = wingSpaces.get(space.id)
 		if (!wing) return space.interactables
-		const ways: SpaceWay[] = doorsOfWing(wing).map((door) => ({
-			id: `exit:${door.doorId}`,
-			kind: 'exit',
-			exit: door.to,
-		}))
-		for (const itemId of wing.itemIds) {
-			if (!items.has(itemId)) continue
-			const exit = exitOfItem(wing, itemId)
-			if (exit) ways.push({ id: `item:${itemId}`, kind: 'examine', exit })
-		}
-		return ways
+		return roomWaysOf({
+			doors: doorsOfWing(wing),
+			things: wing.itemIds.flatMap((itemId) => {
+				const item = items.get(itemId)
+				return item ? [{ mark: markOf(wing, item, cardOf(wing, item)) }] : []
+			}),
+		})
 	}
 	/** A room as the world declares it before it is built: its name, and
-	 *  the way in, where its plan will put it. */
-	const declaredRoom = (wing: Wing): ChessboardSpace => {
-		const defaultEntry = defaultEntryOf(wing)
-		return {
+	 *  the way in, where its plan will put it (atlas room-space.ts). */
+	const declaredRoom = (wing: Wing): ChessboardSpace =>
+		unbuiltRoomOf({
 			id: wing.spaceId,
 			label: labelOfWing(wing),
 			subtitle: subtitleOfWing(wing),
-			defaultEntry,
-			entries: [{ id: defaultEntry, position: [0, GALLERY_FLOOR_TOP, 0] }],
-			interactables: [],
-		}
-	}
+			doors: doorsOfWing(wing),
+		})
 
-	/** A room as a space: its doors, its exhibits, its chart table. */
-	const spaceOfRoom = (wing: Wing, build: ReportRoomBuild): ChessboardSpace => {
-		const roomPlan = build.plan
-		const doorPlanOf = (doorId: string) => {
-			const found = roomPlan.doors.find((d) => d.doorId === doorId)
-			if (!found) throw new Error(`[report-world] room '${build.spaceId}' has no door '${doorId}'`)
-			return found
-		}
-		const entries: ChessboardSpace['entries'][number][] = []
-		const interactables: ChessboardInteractable[] = []
-		for (const door of doorsOfWing(wing)) {
-			const d = doorPlanOf(door.doorId)
-			entries.push({ id: door.doorId, position: d.entry, facing: d.facing })
-			interactables.push({
-				id: `exit:${door.doorId}`,
-				label: door.label,
-				description: door.description,
-				kind: 'exit',
-				position: d.glyph,
-				approach: d.approach,
-				exit: door.to,
-			})
-		}
-		const defaultEntry = defaultEntryOf(wing)
-		// Items on the walls: each one read where it hangs, and the ones that
-		// are one end of a link jumped through to the room at the other end.
-		for (const exhibit of build.exhibits) {
-			const anchor = roomPlan.anchors.find((a) => a.id === exhibit.anchorId)
-			const item = items.get(exhibit.itemId)
-			if (!anchor || !item) continue
-			const exit = exitOfItem(wing, item.id)
-			const jump = exit
-				? [
-						{
-							label: item.kind === 'card' ? 'Go through' : 'Jump in',
-							action: { type: DIVE_ACTION },
-						},
-					]
-				: []
-			const read =
-				item.kind === 'card'
-					? []
-					: [
-							{
-								// A document's reading is its key points, wherever it hangs.
-								label:
-									item.kind === 'points' || item.kind === 'document'
-										? 'Read the key points'
-										: 'Read it',
-								action: { type: READ_ACTION, payload: { thing: item.id } },
-							},
-						]
-			// The card as this room shows it: named for where it leads.
-			const card = exhibit.card
-			interactables.push({
-				id: `item:${item.id}`,
-				label: card.title,
-				description: exhibitDescription(card, item, exit !== undefined),
-				preview: { text: card.excerpt, tags: card.tags },
-				kind: 'examine',
-				position: anchor.position,
-				approach: anchor.approach,
-				...(exit ? { exit } : {}),
-				dialogue: {
-					lines: [
-						{
-							speaker: card.title,
-							text: exhibitLine(card, item),
-							choices: [...read, ...jump, { label: 'Move on' }],
-						},
-					],
-				},
-			})
-			entries.push({
-				id: `item:${item.id}`,
-				position: anchor.approach,
-				facing: [anchor.position[0] - anchor.approach[0], anchor.position[2] - anchor.approach[2]],
-			})
-		}
-		// The table: finding, in a front hall or a cohort's lobby.
-		const chart = roomPlan.fixtures.find((f) => f.kind === 'chart')
-		if (chart && chart.kind === 'chart') {
-			// A cohort lobby's INFO DESK: the same table, its finding held to
-			// this cohort's sources and the topics it has a lens on.
-			const table = wing.nave?.desk ?? null
-			const desk = table && table !== 'chart' ? table : null
-			interactables.push({
-				id: desk ? 'examine:info-desk' : 'examine:chart-table',
-				label: desk ? 'The info desk' : 'The chart table',
-				description: desk
-					? `Everyone read as ${desk.label}, and every topic seen their way: find one and it will walk you there.`
-					: 'The building in miniature: find any room and it will walk you there.',
-				kind: 'examine',
-				position: [chart.centre[0], GALLERY_FLOOR_TOP + 1.1, chart.centre[1] + chart.radius * 0.6],
-				approach: [chart.centre[0], GALLERY_FLOOR_TOP, chart.centre[1] + chart.radius + 1.0],
-				dialogue: {
-					lines: [
-						{
-							speaker: desk ? 'The info desk' : 'The chart table',
-							text: desk
-								? `The ${desk.label} desk: every ${nouns.entity} read as ${desk.label}, down the ranges on the right, and every topic ${desk.label} has a view on, down the alleys on the left. Name one and the desk will walk you to it.`
-								: `Every room of this building on the plan. Search for a topic, a ${nouns.entity} or a question and the table will walk you to it.`,
-							choices: [
-								{
-									label: 'Find something',
-									action: {
-										type: FIND_ACTION,
-										// The desk's scope, as the app holds finding to one
-										// (atlas lens.ts WorldScope): the cohort's room.
-										...(desk
-											? { payload: { kind: 'cohort', id: desk.scope, label: desk.label } }
-											: {}),
-									},
-								},
-								{ label: 'Just looking, thanks.' },
-							],
-						},
-					],
-				},
-			})
-		}
-		const longest = Math.max(roomPlan.width, roomPlan.depth)
-		return {
-			id: build.spaceId,
-			label: build.label,
-			subtitle: build.subtitle,
-			// The hallways are the room's regions: the sign names the one you
-			// stand in, the room list groups what hangs there. (A list room's
-			// partition bays are unnamed and stay off the sign.)
-			...(roomPlan.bays.some((bay) => bay.label)
-				? {
-						regions: roomPlan.bays
-							.filter((bay) => bay.label)
-							.map((bay) => ({ id: bay.id, label: bay.label, bounds: bay.bounds })),
-					}
-				: {}),
-			view: { distance: Math.min(44, Math.max(26, longest * 1.05)), pitch: (56 * Math.PI) / 180 },
-			defaultEntry,
-			entries,
-			interactables,
-			// No map of its own: a room is drawn on its building's plan, which
-			// the app asks for by the room (mapOf) — the plan is made once per
-			// building. Carried on every room, the world's parse copied the
-			// Archive's plan of 1,700 rooms into each of its 1,500 rooms: a
-			// gigabyte and a half of one drawing.
-		}
+	/** A room as a space — its doors, its exhibits, its chart table — by the
+	 *  one room translation (atlas room-space.ts) on what the record says of
+	 *  it. `written`: an item as its text writes it, where the text is read.
+	 *  No map of its own: a room is drawn on its building's plan, which the
+	 *  app asks for by the room (mapOf) — the plan is made once per building.
+	 *  Carried on every room, the world's parse copied the Archive's plan of
+	 *  1,700 rooms into each of its 1,500 rooms: a gigabyte and a half of one
+	 *  drawing. */
+	const spaceOfRoom = (
+		wing: Wing,
+		build: ReportRoomBuild,
+		written: ReadonlyMap<string, ReportItem> = new Map(),
+	): ChessboardSpace => {
+		const table = tableOf(wing)
+		return roomSpaceOf(
+			{
+				id: build.spaceId,
+				label: build.label,
+				subtitle: build.subtitle,
+				doors: doorsOfWing(wing),
+				things: build.exhibits.flatMap((exhibit) => {
+					const item = written.get(exhibit.itemId) ?? items.get(exhibit.itemId)
+					return item ? [{ anchor: exhibit.anchorId, mark: markOf(wing, item, exhibit.card) }] : []
+				}),
+				...(table ? { table } : {}),
+			},
+			build.plan,
+		)
 	}
 
 	/** A room built: its plan, its exhibits and its chart, and the space
@@ -3341,16 +3306,18 @@ export function buildReportWorld(
 	const world = site_.world(plan)
 
 	/** A room as its text writes it up: each exhibit's card (still named for
-	 *  where it leads), its rail's panels, and its things' words. */
-	const withText = ({ room, space }: ReportBuiltRoom, text: WorldText): ReportBuiltRoom => {
-		const written = new Map<string, { item: ReportItem; card: ReportCard }>()
+	 *  where it leads), its rail's panels, and its things' words — the room
+	 *  translated again with its items as the text writes them. */
+	const withText = ({ room }: ReportBuiltRoom, text: WorldText): ReportBuiltRoom => {
+		const wing = wingSpaces.get(room.spaceId)
+		if (!wing) throw new Error(`[report-world] no room '${room.spaceId}'`)
+		const written = new Map<string, ReportItem>()
 		const exhibits = room.exhibits.map((exhibit) => {
 			const item = items.get(exhibit.itemId)
 			if (!item) return exhibit
 			const read = itemWithText(item, text)
-			const card = { ...read.card, title: exhibit.card.title }
-			written.set(exhibit.itemId, { item: read, card })
-			return { ...exhibit, card }
+			written.set(exhibit.itemId, read)
+			return { ...exhibit, card: { ...read.card, title: exhibit.card.title } }
 		})
 		const panels = room.rail ? railPanelsOf(room.rail, text) : null
 		const roomPlan = panels
@@ -3369,29 +3336,8 @@ export function buildReportWorld(
 					),
 				}
 			: room.plan
-		const interactables = space.interactables.map((thing) => {
-			const found = thing.id.startsWith('item:')
-				? written.get(thing.id.slice('item:'.length))
-				: null
-			if (!found) return thing
-			const { item, card } = found
-			return {
-				...thing,
-				description: exhibitDescription(card, item, thing.exit !== undefined),
-				preview: { text: card.excerpt, tags: card.tags },
-				...(thing.dialogue
-					? {
-							dialogue: {
-								...thing.dialogue,
-								lines: thing.dialogue.lines.map((line, i) =>
-									i === 0 ? { ...line, text: exhibitLine(card, item) } : line,
-								),
-							},
-						}
-					: {}),
-			}
-		})
-		return { room: { ...room, exhibits, plan: roomPlan }, space: { ...space, interactables } }
+		const built = { ...room, exhibits, plan: roomPlan }
+		return { room: built, space: spaceOfRoom(wing, built, written) }
 	}
 
 	const build: ReportWorldBuild = {
