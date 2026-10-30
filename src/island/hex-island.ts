@@ -7,11 +7,12 @@
 // says of its island beyond that is its specification (the atlas's one
 // definition, hex-space-spec.ts), declared by the report's own app on its
 // report host and served through its door; a report that says nothing
-// stands the default.
+// stands the default. The island is written WHERE ITS HOLDER SAYS (the
+// family that berths it: atlas programs.ts Where), turned as deep as that
+// is, its way in facing its holder.
 //
 // Worker-safe: content only.
 
-import { spaceCentre, spaceDepth } from '@aicolab/atlas/chart/chart-data.ts'
 import {
 	type DestinationSpaceOptions,
 	declareDestinationSpace,
@@ -22,13 +23,12 @@ import {
 	DEFAULT_HEX_SPACE_SPEC,
 	type HexSpaceSpec,
 } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
-import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
+import { TOP_WHERE, type Where } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import {
 	type RealisedSpace,
 	realiseSpace,
 } from '@aicolab/atlas/chessboard/content/space/realise.ts'
 import type { SpaceDocument } from '@aicolab/kolo/space'
-import type { HexPoint } from '@aicolab/kolo/spatial/hex'
 import type { WorldRecord } from '../world/index.ts'
 import type { ReportIsland } from './registry.ts'
 import {
@@ -79,9 +79,12 @@ export function reportPlaces(
 					id: entry.id,
 					label: entry.label,
 					description: SKY_TABLE_WORDS.description,
-					model: SKY_TABLE_ID,
-					told: { radius: SKY_TABLE_RADIUS, stars },
-					radius: SKY_TABLE_RADIUS,
+					stands: {
+						kind: 'model',
+						model: SKY_TABLE_ID,
+						told: { radius: SKY_TABLE_RADIUS, stars },
+						radius: SKY_TABLE_RADIUS,
+					},
 					nameShown: 'always',
 				},
 			]
@@ -96,7 +99,7 @@ export function reportPlaces(
 				id: section.id,
 				label: section.label,
 				description: section.description,
-				model: FORM_OF[section.kind],
+				stands: { kind: 'model', model: FORM_OF[section.kind] },
 				nameShown: 'always',
 				...(front ? { exit: { space: front, entry: frontDoorPinOf(section.id) } } : {}),
 			},
@@ -105,33 +108,36 @@ export function reportPlaces(
 }
 
 /** The report's island laid: its places on the map's cells, as deep as its
- *  place stands in the host's tree, as its specification says. */
+ *  holder says it stands, as its specification says. */
 export function reportHexIsland(
 	record: WorldRecord | null,
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
 	spec?: HexSpaceSpec | null,
+	where: Where = TOP_WHERE,
 ): HexSpace {
 	return hexIsland({
 		key: island.slug,
 		label: record?.site.title ?? island.corpus.name,
 		description: island.corpus.blurb,
 		places: reportPlaces(record, sections ?? undefined),
-		depth: spaceDepth(programKey(island.slug)),
+		depth: where.depth,
 		spec: spec ?? DEFAULT_HEX_SPACE_SPEC,
+		...(where.heldOpen ? { heldOpen: where.heldOpen } : {}),
 	})
 }
 
-/** The report's island declared, at its own cell unless told where. */
+/** The report's island declared, written where its holder says (alone, a
+ *  top: at the origin). */
 export function reportHexDeclaration(
 	record: WorldRecord | null,
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
 	spec?: HexSpaceSpec | null,
-	writtenAt: HexPoint = spaceCentre(programKey(island.slug)),
+	where: Where = TOP_WHERE,
 ): SpaceDocument {
-	const hex = reportHexIsland(record, island, sections, spec)
-	return declareDestinationSpace(island.slug, hex.destination, reportIslandOptions(hex), writtenAt)
+	const hex = reportHexIsland(record, island, sections, spec, where)
+	return declareDestinationSpace(island.slug, hex.destination, reportIslandOptions(hex), where.at)
 }
 
 /** The report's island realised: the plan its world and its scenes are
@@ -141,4 +147,5 @@ export const realiseReportHex = (
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
 	spec?: HexSpaceSpec | null,
-): RealisedSpace => realiseSpace(reportHexDeclaration(record, island, sections, spec))
+	where: Where = TOP_WHERE,
+): RealisedSpace => realiseSpace(reportHexDeclaration(record, island, sections, spec, where))

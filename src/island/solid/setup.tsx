@@ -9,7 +9,6 @@
 // the scope finding is held to, the plan drawn round a room, which things
 // read) and its READING SHEET (ReportSheet.tsx).
 
-import { spaceCell } from '@aicolab/atlas/chart/chart-data.ts'
 import type {
 	ReadingSheetProps,
 	SpaceLens,
@@ -18,6 +17,7 @@ import type {
 import type { HexSpaceSpec } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import { realiseSpace } from '@aicolab/atlas/chessboard/content/space/realise.ts'
+import { programPlacing } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
 import { spacePlacesOf } from '@aicolab/atlas/chessboard/content/space/space-places.ts'
 import { worldOfKey } from '@aicolab/atlas/chessboard/content/space-keys.ts'
 import { declaredBuilders, groundOf } from '@aicolab/atlas/chessboard/scenes/declared-spaces.ts'
@@ -131,9 +131,9 @@ export function reportIslandSetup(slug: ReportSlug, draft?: () => HexSpaceSpec):
 	const alone: Pick<SpaceSetup, 'relay'> = draft ? { relay: false } : {}
 	const shared = {
 		...alone,
-		// Its room is its cell's (room-service lattice rooms): the archipelago's
-		// visitors on this island and its own route's meet there.
-		name: spaceCell(key).cell,
+		// Its own room, for a route that mounts the report alone; in a host's
+		// view the view's transport homes the visitor by cell.
+		name: island.name,
 		label: `${island.corpus.name}, seen from above as an island. ${WALK}`,
 		mapTitle: 'The building',
 		finding: { label: 'Find anything', placeholder: 'Find a topic, a name, a question…' },
@@ -148,8 +148,13 @@ export function reportIslandSetup(slug: ReportSlug, draft?: () => HexSpaceSpec):
 		callbackPath: `/overture/${slug}/island`,
 		build: (models, content, options) => {
 			const bare = options.bare === true
+			// Written where its holder says (the family that berths it), as the
+			// view it is seen in has it.
+			const { where } = programPlacing(key)
 			const realised = realiseSpace(
-				draft ? reportDeclaration(slug, content, draft()) : program.declaration(content),
+				draft
+					? reportDeclaration(slug, content, where, draft())
+					: program.declaration(content, where),
 			)
 			const report = buildReportWorld(content?.record ?? null, island, realised.plan)
 			const built = reportBuild(report, island, options.host)

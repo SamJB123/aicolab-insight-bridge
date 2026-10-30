@@ -52,11 +52,11 @@ export function buildReportRoomSpace(build: ReportRoomBuild, bare = false): Prom
  *  bare, a room stands as the record alone gives it. */
 export function createReportAdapter(
 	build: ReportWorldBuild,
-	outdoors: Readonly<Record<string, SpaceBuilder>>,
+	outdoors: (spaceId: string) => SpaceBuilder | undefined,
 	bare = false,
 	texts: ReportTexts | null = null,
 ): SceneAdapter {
-	const builders: Record<string, SpaceBuilder> = { ...outdoors }
+	const builders: Record<string, SpaceBuilder> = {}
 	for (const { spaceId } of build.rooms) {
 		// Built as it is entered: the scene, and the space as it is once in
 		// (the world declares it by name and way in), let go with it.
@@ -70,5 +70,5 @@ export function createReportAdapter(
 			return { ...scene, space: written.space }
 		}
 	}
-	return createSceneAdapter(builders)
+	return createSceneAdapter((spaceId) => builders[spaceId] ?? outdoors(spaceId))
 }

@@ -14,12 +14,11 @@
 //
 // Worker-safe: content only.
 
-import { spaceCentre } from '@aicolab/atlas/chart/chart-data.ts'
 import {
 	type HexSpaceSpec,
 	hexSpaceSpecSchema,
 } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
-import { programKey, type SpaceProgram } from '@aicolab/atlas/chessboard/content/space/programs.ts'
+import type { SpaceProgram, Where } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
 import type { SpaceDocument } from '@aicolab/kolo/space'
 import { sectionsOf } from '../applet/reads.ts'
@@ -169,16 +168,13 @@ async function fetchReportContent(island: ReportIsland): Promise<ReportContent |
 	}
 }
 
-/** The point a report's island is written at: its own cell's centre. */
-const reportCellOf = (slug: ReportSlug) => spaceCentre(programKey(slug))
-
 /** A report's island as declared from its content, by the specification
  *  given — the one its door gave, unless another is handed in (a host's
- *  draft of it) — at its own cell, which the chart has placed: the program
- *  is asked by key. */
+ *  draft of it) — written where its holder says. */
 export function reportDeclaration(
 	slug: ReportSlug,
 	content: ReportContent | null,
+	where: Where,
 	spec: HexSpaceSpec | null = content?.spec ?? null,
 ): SpaceDocument {
 	return reportHexDeclaration(
@@ -186,7 +182,7 @@ export function reportDeclaration(
 		reportIsland(slug),
 		content?.sections ?? null,
 		spec,
-		reportCellOf(slug),
+		where,
 	)
 }
 
@@ -197,7 +193,9 @@ export function reportIslandProgram(slug: ReportSlug): SpaceProgram<ReportConten
 		content: (host) => reportContent(island, host),
 		fetchContent: () => fetchReportContent(island),
 		outline: (host) => reportOutline(island, host),
-		declaration: (content) => reportDeclaration(slug, content),
+		declaration: (content, where) => reportDeclaration(slug, content, where),
+		// A report berths nothing: its rooms are behind its doors.
+		berths: () => [],
 		skeleton: () => buildReportWorld(null, island).world,
 	}
 }
