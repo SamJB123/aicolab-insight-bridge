@@ -11,7 +11,7 @@
 //
 // Worker-safe: content only.
 
-import { islandDepth, worldCentre } from '@aicolab/atlas/chart/chart-data.ts'
+import { spaceDepth, worldCentre } from '@aicolab/atlas/chart/chart-data.ts'
 import {
 	type DestinationIslandOptions,
 	declareDestinationIsland,
@@ -117,7 +117,7 @@ export function reportHexIsland(
 		label: record?.site.title ?? island.corpus.name,
 		description: island.corpus.blurb,
 		places: reportPlaces(record, sections ?? undefined),
-		depth: islandDepth(programKey(island.slug)),
+		depth: spaceDepth(programKey(island.slug)),
 		spec: spec ?? DEFAULT_HEX_ISLAND_SPEC,
 	})
 }

@@ -162,7 +162,7 @@ export function reportIslandSetup(slug: ReportSlug, draft?: () => HexIslandSpec)
 					built.texts,
 				),
 				island: groundOf(realised, models, bare),
-				places: islandPlacesOf(realised.document, report.world, report.world.start, report.waysOf),
+				places: islandPlacesOf(realised, report.world, report.world.start, report.waysOf),
 			}
 		},
 	}
