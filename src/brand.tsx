@@ -34,9 +34,9 @@
  * themes itself per app rather than importing a fixed brand palette.
  */
 
+import type { JSX } from '@solidjs/web'
 import type { RegisteredRouter, ValidateLinkOptions } from '@tanstack/solid-router'
 import { Link } from '@tanstack/solid-router'
-import type { JSX } from '@solidjs/web'
 import aiColabIcon from './ai-colab-icon.svg?url'
 
 /**
