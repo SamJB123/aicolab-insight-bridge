@@ -11,7 +11,7 @@
 //
 // Worker-safe: content only.
 
-import { spaceDepth, worldCentre } from '@aicolab/atlas/chart/chart-data.ts'
+import { spaceDepth, spaceCentre } from '@aicolab/atlas/chart/chart-data.ts'
 import {
 	type DestinationIslandOptions,
 	declareDestinationIsland,
@@ -128,7 +128,7 @@ export function reportHexDeclaration(
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
 	spec?: HexIslandSpec | null,
-	writtenAt: HexPoint = worldCentre(programKey(island.slug)),
+	writtenAt: HexPoint = spaceCentre(programKey(island.slug)),
 ): IslandDocument {
 	const hex = reportHexIsland(record, island, sections, spec)
 	return declareDestinationIsland(island.slug, hex.destination, reportIslandOptions(hex), writtenAt)

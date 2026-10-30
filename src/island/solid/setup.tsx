@@ -1,5 +1,5 @@
 /** @jsxImportSource @solidjs/web */
-// An Insight Bridge report's island SETUP (@aicolab/atlas world-setups.ts
+// An Insight Bridge report's island SETUP (@aicolab/atlas space-setups.ts
 // IslandSetup), the browser half of its program (../program.ts): the
 // report's hex island, declared from its record, its sections and its
 // specification (the island alone when the record cannot be read),
@@ -9,7 +9,7 @@
 // the scope finding is held to, the plan drawn round a room, which things
 // read) and its READING SHEET (ReportSheet.tsx).
 
-import { worldCell } from '@aicolab/atlas/chart/chart-data.ts'
+import { spaceCell } from '@aicolab/atlas/chart/chart-data.ts'
 import type { HexIslandSpec } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
 import { islandPlacesOf } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/island/programs.ts'
@@ -19,15 +19,15 @@ import type {
 	SpaceLens,
 	WorldScope,
 } from '@aicolab/atlas/chessboard/content/lens.ts'
-import { worldOfKey } from '@aicolab/atlas/chessboard/content/world-keys.ts'
+import { worldOfKey } from '@aicolab/atlas/chessboard/content/space-keys.ts'
 import { declaredBuilders, groundOf } from '@aicolab/atlas/chessboard/scenes/declared-spaces.ts'
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
 import {
 	type IslandSetup,
 	WALK,
-	type WorldBuild,
-	type WorldSetup,
-} from '@aicolab/atlas/solid/chessboard/world-setups.ts'
+	type SpaceBuild,
+	type SpaceSetup,
+} from '@aicolab/atlas/solid/chessboard/space-setups.ts'
 import { createMemo } from 'solid-js'
 import {
 	type ReportContent,
@@ -96,7 +96,7 @@ const reportBuild = (
 	report: ReportWorldBuild,
 	island: ReportIsland,
 	host: AtlasHost,
-): Pick<WorldBuild, 'world' | 'roomAt' | 'waysOf' | 'findables' | 'lensAt' | 'sheet'> & {
+): Pick<SpaceBuild, 'world' | 'roomAt' | 'waysOf' | 'findables' | 'lensAt' | 'sheet'> & {
 	texts: ReportTexts
 } => {
 	const texts = reportTextsOf(host, island.slug)
@@ -128,12 +128,12 @@ export function reportIslandSetup(slug: ReportSlug, draft?: () => HexIslandSpec)
 	// The report's world key: its program's, which the host registered
 	// beside this.
 	const key = programKey(slug)
-	const alone: Pick<WorldSetup, 'relay'> = draft ? { relay: false } : {}
+	const alone: Pick<SpaceSetup, 'relay'> = draft ? { relay: false } : {}
 	const shared = {
 		...alone,
 		// Its room is its cell's (room-service lattice rooms): the archipelago's
 		// visitors on this island and its own route's meet there.
-		name: worldCell(key).cell,
+		name: spaceCell(key).cell,
 		label: `${island.corpus.name}, seen from above as an island. ${WALK}`,
 		mapTitle: 'The building',
 		finding: { label: 'Find anything', placeholder: 'Find a topic, a name, a question…' },
@@ -143,7 +143,7 @@ export function reportIslandSetup(slug: ReportSlug, draft?: () => HexIslandSpec)
 	// The report's HEX ISLAND, as its program declares it from what the door
 	// gave (../hex-island.ts), realised and built as any declared island is,
 	// with the report's rooms behind its doors.
-	const declared: WorldSetup<ReportContent> = {
+	const declared: SpaceSetup<ReportContent> = {
 		...shared,
 		callbackPath: `/overture/${slug}/island`,
 		build: (models, content, options) => {

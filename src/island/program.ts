@@ -14,7 +14,7 @@
 //
 // Worker-safe: content only.
 
-import { worldCentre } from '@aicolab/atlas/chart/chart-data.ts'
+import { spaceCentre } from '@aicolab/atlas/chart/chart-data.ts'
 import {
 	type HexIslandSpec,
 	hexIslandSpecSchema,
@@ -173,7 +173,7 @@ async function fetchReportContent(island: ReportIsland): Promise<ReportContent |
 }
 
 /** The point a report's island is written at: its own cell's centre. */
-const reportCellOf = (slug: ReportSlug) => worldCentre(programKey(slug))
+const reportCellOf = (slug: ReportSlug) => spaceCentre(programKey(slug))
 
 /** A report's island as declared from its content, by the specification
  *  given — the one its door gave, unless another is handed in (a host's

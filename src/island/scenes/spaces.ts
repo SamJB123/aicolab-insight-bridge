@@ -46,7 +46,7 @@ export function buildReportRoomSpace(build: ReportRoomBuild, bare = false): Prom
 
 /** The adapter for a report world: its outdoors as the caller builds it
  *  (a declared island's own builders, atlas declared-spaces.ts), and every
- *  room — each built BARE when asked (atlas world-setups.ts BuildOptions):
+ *  room — each built BARE when asked (atlas space-setups.ts BuildOptions):
  *  the same triangles, nothing fetched or painted to be seen, for the
  *  walker with no renderer. `texts` reads a room's text; with none, or
  *  bare, a room stands as the record alone gives it. */
