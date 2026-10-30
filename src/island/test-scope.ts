@@ -7,7 +7,7 @@
 
 import { appletRegistry } from '@aicolab/app-kit/applet'
 import { configureChart } from '@aicolab/atlas/chart/chart-data.ts'
-import { configureIslands } from '@aicolab/atlas/chessboard/content/island/programs.ts'
+import { configureSpaces } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import { INSIGHT_BRIDGE_APPLET, REPORT_APPLETS } from '../applets.ts'
 import { reportIslandProgram } from './program.ts'
 
@@ -17,4 +17,4 @@ configureChart({
 	viewerIslands: [],
 })
 
-configureIslands(REPORT_APPLETS.map((applet) => reportIslandProgram(applet.id)))
+configureSpaces(REPORT_APPLETS.map((applet) => reportIslandProgram(applet.id)))

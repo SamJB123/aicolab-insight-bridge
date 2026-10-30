@@ -39,17 +39,6 @@
 
 import { type BuildingRoom, buildingPlan } from '@aicolab/atlas/chessboard/content/building-plan.ts'
 import { gridPlan } from '@aicolab/atlas/chessboard/content/grid-plan.ts'
-import {
-	DeclaredIsland,
-	type IslandAdditions,
-	type IslandWords,
-} from '@aicolab/atlas/chessboard/content/island/declared-world.ts'
-import { placeChoice } from '@aicolab/atlas/chessboard/content/island/island-places.ts'
-import {
-	type IslandBuilding,
-	type IslandPlan,
-	surfaceHeightAt,
-} from '@aicolab/atlas/chessboard/content/island/plan.ts'
 import { maxItemsFor, planItemRoom } from '@aicolab/atlas/chessboard/content/item-room-plan.ts'
 import { READ_ACTION } from '@aicolab/atlas/chessboard/content/lens.ts'
 import {
@@ -74,6 +63,17 @@ import {
 	roomWaysOf,
 	unbuiltRoomOf,
 } from '@aicolab/atlas/chessboard/content/room-space.ts'
+import {
+	DeclaredSpace,
+	type SpaceAdditions,
+	type SpaceWords,
+} from '@aicolab/atlas/chessboard/content/space/declared-world.ts'
+import {
+	type PlanBuilding,
+	type SpacePlan,
+	surfaceHeightAt,
+} from '@aicolab/atlas/chessboard/content/space/plan.ts'
+import { placeChoice } from '@aicolab/atlas/chessboard/content/space/space-places.ts'
 import {
 	type ChessboardMap,
 	type ChessboardSpace,
@@ -227,7 +227,7 @@ export interface ReportWorldBuild {
 	 *  them). */
 	world: ChessboardWorld
 	/** The island the world stands on, as it was realised. */
-	plan: IslandPlan
+	plan: SpacePlan
 	sky: ReportSky
 	/** Every room, unbuilt, in the order the world lists them. */
 	rooms: readonly ReportRoomInBuilding[]
@@ -1033,7 +1033,7 @@ const nounsOf = (record: WorldRecord | null) =>
  *  line, the Guide and what they say of the record, the sky table's
  *  words and its finding, each section's front room behind its door, the
  *  way from each landmark to its place, and every room. */
-class ReportSite extends DeclaredIsland {
+class ReportSite extends DeclaredSpace {
 	constructor(
 		private readonly report: {
 			key: string
@@ -1048,7 +1048,7 @@ class ReportSite extends DeclaredIsland {
 		super(report.key)
 	}
 
-	protected override additions(plan: IslandPlan): IslandAdditions {
+	protected override additions(plan: SpacePlan): SpaceAdditions {
 		const { record, rooms } = this.report
 		const site = record?.site
 		const nouns = nounsOf(record)
@@ -1068,7 +1068,7 @@ class ReportSite extends DeclaredIsland {
 		/** A landmark's words: what it is, and the way to its place — the
 		 *  section it is, on the page beside the world (settled 2026-10-27);
 		 *  the desk finds things here as well. */
-		const landmark = (b: IslandBuilding): IslandWords => {
+		const landmark = (b: PlanBuilding): SpaceWords => {
 			// The place the landmark is: its section's own address, which a
 			// hex island's building carries as kolo's landmark feature id.
 			const place = sectionIdOfBuilding(b.id)
@@ -1194,7 +1194,7 @@ export function buildReportWorld(
 	island: ReportIsland = TRAINING_DATA,
 	/** The island the world stands on: the report's hex island, as its
 	 *  record's standard sections lay it, unless the caller realised it. */
-	plan: IslandPlan = realiseReportHex(record, island).plan,
+	plan: SpacePlan = realiseReportHex(record, island).plan,
 ): ReportWorldBuild {
 	const items = new Map<string, ReportItem>()
 	const nodes = new Map<string, Node>()
@@ -3039,7 +3039,7 @@ export function buildReportWorld(
 	}
 
 	/* ── spaces ── */
-	const buildingByFront = new Map<string, IslandBuilding>()
+	const buildingByFront = new Map<string, PlanBuilding>()
 	for (const b of plan.buildings) buildingByFront.set(b.id, b)
 	const frontSpaceOfBuilding = (buildingId: string): string | null => {
 		const b = buildingByFront.get(buildingId)

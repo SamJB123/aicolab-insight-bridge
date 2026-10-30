@@ -5,29 +5,29 @@
 // the sky table the report draws, standing in the galaxy's own cell; every
 // other section is the kit's building for it (sections.ts). What the report
 // says of its island beyond that is its specification (the atlas's one
-// definition, hex-island-spec.ts), declared by the report's own app on its
+// definition, hex-space-spec.ts), declared by the report's own app on its
 // report host and served through its door; a report that says nothing
 // stands the default.
 //
 // Worker-safe: content only.
 
-import { spaceDepth, spaceCentre } from '@aicolab/atlas/chart/chart-data.ts'
+import { spaceCentre, spaceDepth } from '@aicolab/atlas/chart/chart-data.ts'
 import {
-	type DestinationIslandOptions,
-	declareDestinationIsland,
-} from '@aicolab/atlas/chessboard/content/island/destination-islands.ts'
-import { hexIsland } from '@aicolab/atlas/chessboard/content/island/hex-island.ts'
+	type DestinationSpaceOptions,
+	declareDestinationSpace,
+} from '@aicolab/atlas/chessboard/content/space/destination-spaces.ts'
+import { hexIsland } from '@aicolab/atlas/chessboard/content/space/hex-island.ts'
+import type { HexSpace, HexSpacePlace } from '@aicolab/atlas/chessboard/content/space/hex-space.ts'
 import {
-	DEFAULT_HEX_ISLAND_SPEC,
-	type HexIslandSpec,
-} from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
-import type { HexSpace, HexSpacePlace } from '@aicolab/atlas/chessboard/content/island/hex-space.ts'
-import { programKey } from '@aicolab/atlas/chessboard/content/island/programs.ts'
+	DEFAULT_HEX_SPACE_SPEC,
+	type HexSpaceSpec,
+} from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
+import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import {
-	type RealisedIsland,
-	realiseIsland,
-} from '@aicolab/atlas/chessboard/content/island/realise.ts'
-import type { IslandDocument } from '@aicolab/kolo/island'
+	type RealisedSpace,
+	realiseSpace,
+} from '@aicolab/atlas/chessboard/content/space/realise.ts'
+import type { SpaceDocument } from '@aicolab/kolo/space'
 import type { HexPoint } from '@aicolab/kolo/spatial/hex'
 import type { WorldRecord } from '../world/index.ts'
 import type { ReportIsland } from './registry.ts'
@@ -52,7 +52,7 @@ import {
  *  shore and its biome what its specification says. */
 export const reportIslandOptions = (
 	laid: Pick<HexSpace, 'shore' | 'biome' | 'heart'>,
-): DestinationIslandOptions => ({
+): DestinationSpaceOptions => ({
 	owner: REPORT_OWNER,
 	ownsLook: false,
 	shore: laid.shore,
@@ -110,7 +110,7 @@ export function reportHexIsland(
 	record: WorldRecord | null,
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
-	spec?: HexIslandSpec | null,
+	spec?: HexSpaceSpec | null,
 ): HexSpace {
 	return hexIsland({
 		key: island.slug,
@@ -118,7 +118,7 @@ export function reportHexIsland(
 		description: island.corpus.blurb,
 		places: reportPlaces(record, sections ?? undefined),
 		depth: spaceDepth(programKey(island.slug)),
-		spec: spec ?? DEFAULT_HEX_ISLAND_SPEC,
+		spec: spec ?? DEFAULT_HEX_SPACE_SPEC,
 	})
 }
 
@@ -127,11 +127,11 @@ export function reportHexDeclaration(
 	record: WorldRecord | null,
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
-	spec?: HexIslandSpec | null,
+	spec?: HexSpaceSpec | null,
 	writtenAt: HexPoint = spaceCentre(programKey(island.slug)),
-): IslandDocument {
+): SpaceDocument {
 	const hex = reportHexIsland(record, island, sections, spec)
-	return declareDestinationIsland(island.slug, hex.destination, reportIslandOptions(hex), writtenAt)
+	return declareDestinationSpace(island.slug, hex.destination, reportIslandOptions(hex), writtenAt)
 }
 
 /** The report's island realised: the plan its world and its scenes are
@@ -140,5 +140,5 @@ export const realiseReportHex = (
 	record: WorldRecord | null,
 	island: ReportIsland,
 	sections?: readonly ReportSectionEntry[] | null,
-	spec?: HexIslandSpec | null,
-): RealisedIsland => realiseIsland(reportHexDeclaration(record, island, sections, spec))
+	spec?: HexSpaceSpec | null,
+): RealisedSpace => realiseSpace(reportHexDeclaration(record, island, sections, spec))

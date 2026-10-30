@@ -10,22 +10,22 @@
 
 import type { BuiltSpace } from '@aicolab/atlas/chessboard/scenes/built-space.ts'
 import { buildGalleryRoomSpace } from '@aicolab/atlas/chessboard/scenes/gallery-space.ts'
-import { registerIslandOwners } from '@aicolab/atlas/chessboard/scenes/island-owners.ts'
 import {
 	createSceneAdapter,
 	type SceneAdapter,
 	type SpaceBuilder,
 } from '@aicolab/atlas/chessboard/scenes/scene-adapter.ts'
+import { registerSpaceOwners } from '@aicolab/atlas/chessboard/scenes/space-owners.ts'
 import { REPORT_OWNER } from '../sky-table.ts'
 import type { ReportTexts } from '../texts.ts'
 import type { ReportRoomBuild, ReportWorldBuild } from '../world.ts'
 import { createReportOwner } from './owner.ts'
 
 // The report's owner — the sky table on the square — draws for any island
-// whose plan names it (atlas island-owners.ts), wherever a report's
+// whose plan names it (atlas space-owners.ts), wherever a report's
 // scenes are built: by its setup, by the archipelago, or with no renderer
 // at all.
-registerIslandOwners({ [REPORT_OWNER]: { create: createReportOwner } })
+registerSpaceOwners({ [REPORT_OWNER]: { create: createReportOwner } })
 
 /** A report's room as a chessboard space: a pair room, through the
  *  museum's own room builder. */

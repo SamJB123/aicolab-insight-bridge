@@ -1,4 +1,4 @@
-// An Insight Bridge report as an ISLAND PROGRAM (@aicolab/atlas island/
+// An Insight Bridge report as a SPACE PROGRAM (@aicolab/atlas island/
 // programs.ts): its content is its world record, its own sections and
 // what it says of its island, read through its door on the host's root —
 // the applet seam's row the report's slug names, which answers with core's
@@ -16,15 +16,12 @@
 
 import { spaceCentre } from '@aicolab/atlas/chart/chart-data.ts'
 import {
-	type HexIslandSpec,
-	hexIslandSpecSchema,
-} from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
-import {
-	type IslandProgram,
-	programKey,
-} from '@aicolab/atlas/chessboard/content/island/programs.ts'
+	type HexSpaceSpec,
+	hexSpaceSpecSchema,
+} from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
+import { programKey, type SpaceProgram } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
-import type { IslandDocument } from '@aicolab/kolo/island'
+import type { SpaceDocument } from '@aicolab/kolo/space'
 import { sectionsOf } from '../applet/reads.ts'
 import { reportSession } from '../applet/session.ts'
 import {
@@ -48,11 +45,11 @@ import { keptRead } from './world-cache.ts'
  *  island laid as its sections and specification say, its buildings
  *  closed and its table bare — the ground the archipelago holds of it
  *  wherever the visitor is, and its berth and piers (atlas
- *  IslandProgram.outline). */
+ *  SpaceProgram.outline). */
 export interface ReportContent {
 	record: WorldRecord | null
 	sections: readonly ReportSectionEntry[] | null
-	spec: HexIslandSpec | null
+	spec: HexSpaceSpec | null
 }
 
 /** One item's reading, through the report's door: the host's one session
@@ -124,7 +121,7 @@ async function reportContent(island: ReportIsland, host: AtlasHost): Promise<Rep
 		return {
 			record: worldRecordSchema.parse(record),
 			sections: nav ? sectionsOf(nav) : null,
-			spec: nav?.island ? hexIslandSpecSchema.parse(nav.island) : null,
+			spec: nav?.island ? hexSpaceSpecSchema.parse(nav.island) : null,
 		}
 	} catch (err) {
 		console.error(`[chessboard] the ${island.corpus.name} record is unavailable:`, err)
@@ -146,7 +143,7 @@ export async function reportOutline(
 			? {
 					record: null,
 					sections: sectionsOf(nav),
-					spec: nav.island ? hexIslandSpecSchema.parse(nav.island) : null,
+					spec: nav.island ? hexSpaceSpecSchema.parse(nav.island) : null,
 				}
 			: null
 	} catch (err) {
@@ -182,8 +179,8 @@ const reportCellOf = (slug: ReportSlug) => spaceCentre(programKey(slug))
 export function reportDeclaration(
 	slug: ReportSlug,
 	content: ReportContent | null,
-	spec: HexIslandSpec | null = content?.spec ?? null,
-): IslandDocument {
+	spec: HexSpaceSpec | null = content?.spec ?? null,
+): SpaceDocument {
 	return reportHexDeclaration(
 		content?.record ?? null,
 		reportIsland(slug),
@@ -193,7 +190,7 @@ export function reportDeclaration(
 	)
 }
 
-export function reportIslandProgram(slug: ReportSlug): IslandProgram<ReportContent> {
+export function reportIslandProgram(slug: ReportSlug): SpaceProgram<ReportContent> {
 	const island = reportIsland(slug)
 	return {
 		key: slug,

@@ -1,14 +1,14 @@
-// A report island's places (@aicolab/atlas island-places.ts), read from
+// A report island's places (@aicolab/atlas space-places.ts), read from
 // its declaration and laid on its built world: its sections are its
 // buildings, every room behind a door its section's, the sky table in the
 // galaxy's own cell the galaxy's home. Each thing is named as its hex
 // island's destination declares it (kolo's landmark feature id).
 
 import {
-	islandPlacesOf,
 	placeOfSpace,
+	spacePlacesOf,
 	standOf,
-} from '@aicolab/atlas/chessboard/content/island/island-places.ts'
+} from '@aicolab/atlas/chessboard/content/space/space-places.ts'
 import { describe, expect, it } from 'vitest'
 import { realiseReportHex } from './hex-island.ts'
 import { reportIsland } from './registry.ts'
@@ -21,7 +21,7 @@ describe("a report island's places", () => {
 		const record = syntheticRecord()
 		const realised = realiseReportHex(record, island)
 		const { world, waysOf } = buildReportWorld(record, island, realised.plan)
-		const places = islandPlacesOf(realised, world, world.start, waysOf)
+		const places = spacePlacesOf(realised, world, world.start, waysOf)
 		expect(places.island).toBe('training-data')
 		expect(places.spaces.get(world.start)).toBe('')
 		// A building's home is the room behind its door; a landmark's the

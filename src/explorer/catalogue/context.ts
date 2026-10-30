@@ -6,7 +6,7 @@
  * one, and the site's origin for whole links. Nothing here reads a request.
  */
 
-import type { HexIslandSpecInput } from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
+import type { HexSpaceSpecInput } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
 import type {
 	DocumentDetail,
 	EntityDetail,
@@ -130,7 +130,7 @@ export interface ReportHost {
 	/** What the report says of its island beyond the default, in cells and relations (the
 	 *  atlas's one definition of a hex island's specification; settled 2026-10-28): served on
 	 *  the navigation read beside its own pages, applied where its island is laid. */
-	island?: HexIslandSpecInput
+	island?: HexSpaceSpecInput
 }
 
 export interface ReportCtx {

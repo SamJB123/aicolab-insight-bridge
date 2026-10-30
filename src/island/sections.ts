@@ -14,9 +14,9 @@
 //
 // Worker-safe: content only.
 
-import type { KitForm } from '@aicolab/atlas/chessboard/content/island/kit-forms.ts'
-import type { IslandBuilding } from '@aicolab/atlas/chessboard/content/island/plan.ts'
-import { landmarkOfFeature } from '@aicolab/kolo/island'
+import type { KitForm } from '@aicolab/atlas/chessboard/content/space/kit-forms.ts'
+import type { PlanBuilding } from '@aicolab/atlas/chessboard/content/space/plan.ts'
+import { landmarkOfFeature } from '@aicolab/kolo/space'
 import { sectionName } from '../report/nav-items.ts'
 import type { WorldRecord } from '../world/index.ts'
 
@@ -208,7 +208,7 @@ export function sectionOfBuilding(
 
 /** Whether a building of the island is one a visitor enters: its
  *  section's rooms stand behind its door. */
-export const entersBuilding = (b: Pick<IslandBuilding, 'id'>): boolean => {
+export const entersBuilding = (b: Pick<PlanBuilding, 'id'>): boolean => {
 	const section = sectionOfBuilding(b.id)
 	return section !== null && holdsRooms(section.kind)
 }

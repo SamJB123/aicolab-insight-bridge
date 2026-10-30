@@ -7,7 +7,7 @@
 // The one thing the report draws; every other thing on its island is the
 // kit's.
 
-import type { IslandOwner, OwnedModel } from '@aicolab/atlas/chessboard/scenes/owners.ts'
+import type { OwnedModel, SpaceOwner } from '@aicolab/atlas/chessboard/scenes/owners.ts'
 import { nodeMaterial, shaded } from '@aicolab/atlas/chessboard/scenes/scene-materials.ts'
 import * as THREE from 'three/webgpu'
 import { z } from 'zod'
@@ -243,9 +243,9 @@ function starsOver(
 }
 
 /** The report, drawing what is its own: the sky table — bare, when the
- *  space is built bare (atlas island-owners.ts OwnerEntry) — its stars
+ *  space is built bare (atlas space-owners.ts OwnerEntry) — its stars
  *  told again as the record comes in after the island's ground, or goes. */
-export function createReportOwner(bare = false): IslandOwner {
+export function createReportOwner(bare = false): SpaceOwner {
 	const tables = new Set<SkyTable>()
 	return {
 		model(name, props) {

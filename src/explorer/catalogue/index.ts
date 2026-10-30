@@ -27,8 +27,8 @@ import { tasksFor } from './tasks.ts'
 export type {
 	CellRef,
 	Facing,
-	HexIslandSpecInput,
-} from '@aicolab/atlas/chessboard/content/island/hex-island-spec.ts'
+	HexSpaceSpecInput,
+} from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
 export type { PageHooks, ReadingAdditionsFor, ReportCtx, ReportHost } from './context.ts'
 export { readContext, siteOf } from './context.ts'
 export {
