@@ -24,9 +24,9 @@ import { declaredBuilders, groundOf } from '@aicolab/atlas/chessboard/scenes/dec
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
 import {
 	type IslandSetup,
-	WALK,
 	type SpaceBuild,
 	type SpaceSetup,
+	WALK,
 } from '@aicolab/atlas/solid/chessboard/space-setups.ts'
 import { createMemo } from 'solid-js'
 import {
