@@ -16,6 +16,7 @@
 import {
 	type DestinationSpaceOptions,
 	declareDestinationSpace,
+	laidSpaceOptions,
 } from '@aicolab/atlas/chessboard/content/space/destination-spaces.ts'
 import { hexIsland } from '@aicolab/atlas/chessboard/content/space/hex-island.ts'
 import type { HexSpace, HexSpacePlace } from '@aicolab/atlas/chessboard/content/space/hex-space.ts'
@@ -50,14 +51,10 @@ import {
 /** How a report island is declared beyond what it lays: the report draws
  *  what the kit does not (its sky table), in the toolkit's own look, its
  *  shore and its biome what its specification says. */
-export const reportIslandOptions = (
-	laid: Pick<HexSpace, 'shore' | 'biome' | 'heart'>,
-): DestinationSpaceOptions => ({
+export const reportIslandOptions = (laid: HexSpace): DestinationSpaceOptions => ({
 	owner: REPORT_OWNER,
 	ownsLook: false,
-	shore: laid.shore,
-	biome: laid.biome,
-	heart: laid.heart,
+	...laidSpaceOptions(laid),
 })
 
 /** The report's places, in its door's order: the galaxy the sky table its

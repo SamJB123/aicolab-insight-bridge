@@ -108,20 +108,17 @@ async function reportContent(island: ReportIsland, host: AtlasHost): Promise<Rep
 	try {
 		const session = reportSession(host.socket, island.slug)
 		const version = await askVersion(host, island.slug)
-		const [record, nav] = await Promise.all([
+		const [record, outline] = await Promise.all([
 			keptRead(island.slug, version, 'world', '', () => session.run((cap) => cap.world())),
-			session
-				.run((cap) => cap.navPage())
-				.catch((err: unknown) => {
-					console.warn(`[chessboard] the ${island.corpus.name} sections are unavailable:`, err)
-					return null
-				}),
+			reportOutline(island, host),
 		])
 		if (!record) throw new Error('the host has no door to it')
+		// Its shape the outline's — the one read its view laid it from, its
+		// holder placed it by and its ferry runs to — the record only told.
 		return {
 			record: worldRecordSchema.parse(record),
-			sections: nav ? sectionsOf(nav) : null,
-			spec: nav?.island ? hexSpaceSpecSchema.parse(nav.island) : null,
+			sections: outline?.sections ?? null,
+			spec: outline?.spec ?? null,
 		}
 	} catch (err) {
 		console.error(`[chessboard] the ${island.corpus.name} record is unavailable:`, err)
@@ -129,14 +126,25 @@ async function reportContent(island: ReportIsland, host: AtlasHost): Promise<Rep
 	}
 }
 
+/** Each report's outline as it was read, once: every declaration of the
+ *  island in this page — its holder's, its outline's, its whole content's —
+ *  laid from the same read. */
+const outlinesRead = new Map<ReportSlug, Promise<ReportContent | null>>()
+
 /** The report's outline through its door: its sections and its island's
- *  specification — the navigation its page reads — and no record. Null
- *  where the door will not answer: the island then stands a standard
- *  report's alone. */
-export async function reportOutline(
-	island: ReportIsland,
-	host: AtlasHost,
-): Promise<ReportContent | null> {
+ *  specification — the navigation its page reads — and no record, read once
+ *  (`outlinesRead`). Null where the door will not answer: the island then
+ *  stands a standard report's alone, wherever it is laid. */
+export function reportOutline(island: ReportIsland, host: AtlasHost): Promise<ReportContent | null> {
+	let read = outlinesRead.get(island.slug)
+	if (!read) {
+		read = readOutline(island, host)
+		outlinesRead.set(island.slug, read)
+	}
+	return read
+}
+
+async function readOutline(island: ReportIsland, host: AtlasHost): Promise<ReportContent | null> {
 	try {
 		const nav = await reportSession(host.socket, island.slug).run((cap) => cap.navPage())
 		return nav
