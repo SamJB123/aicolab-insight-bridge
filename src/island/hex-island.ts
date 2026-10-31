@@ -8,8 +8,8 @@
 // definition, hex-space-spec.ts), declared by the report's own app on its
 // report host and served through its door; a report that says nothing
 // stands the default. The island is written WHERE ITS HOLDER SAYS (the
-// family that berths it: atlas programs.ts Where), turned as deep as that
-// is, its way in facing its holder.
+// family that holds it open: atlas programs.ts Where), on the one honeycomb
+// at the holder's own turn, its way in facing its holder.
 //
 // Worker-safe: content only.
 

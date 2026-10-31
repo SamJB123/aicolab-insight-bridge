@@ -2,15 +2,13 @@
 // the content half — the registry of report islands, the sections their
 // buildings are, the report's hex island laid on its map's cells with the
 // sky table in the galaxy's cell, the world of rooms built from the record,
-// the island program a host registers, and the FAMILY that berths every
-// report (family.ts). Worker-safe: a host's scope (evaluated by its server)
+// the island program a host registers, and the FAMILY that holds every
+// report open (family.ts). Worker-safe: a host's scope (evaluated by its server)
 // reads it. The scenes and the setup — the browser's — are `./setup`
 // (solid/setup.tsx).
 
 export {
 	cornerOfReport,
-	FAMILY_REACH,
-	FAMILY_SPACING,
 	familyHexIsland,
 	familyPlaces,
 	familySpec,

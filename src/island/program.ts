@@ -194,8 +194,8 @@ export function reportIslandProgram(slug: ReportSlug): SpaceProgram<ReportConten
 		fetchContent: () => fetchReportContent(island),
 		outline: (host) => reportOutline(island, host),
 		declaration: (content, where) => reportDeclaration(slug, content, where),
-		// A report berths nothing: its rooms are behind its doors.
-		berths: () => [],
+		// A report holds nothing open: its rooms are behind its doors.
+		holdsOpen: () => [],
 		skeleton: () => buildReportWorld(null, island).world,
 	}
 }
