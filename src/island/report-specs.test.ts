@@ -10,6 +10,7 @@ import { hexSpaceSpecSchema } from '@aicolab/atlas/chessboard/content/space/hex-
 import { piersOf } from '@aicolab/atlas/chessboard/content/space/pier-declaration.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import { programPlacing } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
+import { spaceCentre } from '@aicolab/kolo/space'
 import { describe, expect, it } from 'vitest'
 import type { WorldRecord } from '../world/index.ts'
 import { reportHexDeclaration, reportHexIsland } from './hex-island.ts'
@@ -82,16 +83,25 @@ describe('every report, on its real record and its served sections and specifica
 			// open water.
 			const placed = piersOf(placing.document)[0]
 			if (!placed) throw new Error(`${slug} is placed with no pier`)
+			const placedCentre = spaceCentre(placing.document)
 			for (const [lay, content] of [
 				['the outline', null],
 				['the island', record],
 			] as const) {
-				const streamed = piersOf(reportHexDeclaration(content, island, sections, spec, where))[0]
+				const document = reportHexDeclaration(content, island, sections, spec, where)
+				const streamed = piersOf(document)[0]
 				if (!streamed) throw new Error(`${slug}: ${lay} has no pier`)
 				expect(
 					Math.hypot(streamed.end[0] - placed.end[0], streamed.end[1] - placed.end[1]),
 					`${slug}: ${lay}'s pier against the one the family docks at`,
 				).toBeLessThan(1e-3)
+				// Its plan metres about the same point: the ground streamed in is
+				// drawn where the family posed the report (kolo frame.ts origin).
+				const centre = spaceCentre(document)
+				expect(
+					Math.hypot(centre[0] - placedCentre[0], centre[1] - placedCentre[1]),
+					`${slug}: ${lay}'s origin against the one the family poses it by`,
+				).toBeLessThan(1e-6)
 			}
 		})
 	}
