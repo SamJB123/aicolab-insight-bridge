@@ -65,7 +65,8 @@
 		"./applet": "./src/applet/index.ts",
 		"./applet/reads": "./src/applet/reads.ts",
 		"./island": "./src/island/index.ts",
-		"./island/setup": "./src/island/solid/setup.tsx"
+		"./island/setup": "./src/island/solid/setup.tsx",
+		"./island/served-reports": "./src/island/served-reports.ts"
 	},
 	"scripts": {
 		"check-types": "tsc --noEmit",
