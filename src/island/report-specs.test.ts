@@ -7,12 +7,13 @@
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { hexSpaceSpecSchema } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
+import { piersOf } from '@aicolab/atlas/chessboard/content/space/pier-declaration.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import { programPlacing } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
 import { describe, expect, it } from 'vitest'
 import type { WorldRecord } from '../world/index.ts'
-import { reportHexIsland } from './hex-island.ts'
-import { isReportSlug, type ReportSlug, reportIsland } from './registry.ts'
+import { reportHexDeclaration, reportHexIsland } from './hex-island.ts'
+import { isReportSlug, REPORT_ISLANDS, type ReportSlug, reportIsland } from './registry.ts'
 import { DEFAULT_SECTIONS, type ReportSectionEntry } from './sections.ts'
 import { worldRecordSchema } from './world.ts'
 
@@ -35,16 +36,19 @@ function appsWithIslands(): { slug: ReportSlug; island: URL }[] {
 	})
 }
 
-describe('every report’s own island specification, on its real record, where the family places it', () => {
+describe('every report, on its real record and its served sections and specification, where the family places it', () => {
 	const apps = appsWithIslands()
-	it('finds the reports that declare one', () => {
+	it('finds the reports that declare a specification', () => {
 		expect(apps.length).toBeGreaterThan(0)
 	})
-	for (const app of apps) {
-		it(`${app.slug} lays as it says`, { timeout: 60_000 }, async () => {
-			const island = reportIsland(app.slug)
-			const declared: { ISLAND?: unknown } = await import(app.island.href)
-			const spec = hexSpaceSpecSchema.parse(declared.ISLAND)
+	for (const { slug } of REPORT_ISLANDS) {
+		it(`${slug} lays as it says, its pier where the family's ferry docks`, { timeout: 60_000 }, async () => {
+			const island = reportIsland(slug)
+			// Its specification as its door serves it: its app's own, where it
+			// declares one; else none (the island stands the default).
+			const own = apps.find((app) => app.slug === slug)
+			const declared: { ISLAND?: unknown } = own ? await import(own.island.href) : {}
+			const spec = own ? hexSpaceSpecSchema.parse(declared.ISLAND) : null
 			let record = null
 			try {
 				const response = await fetch(`${island.corpus.url}/api/world`)
@@ -56,7 +60,8 @@ describe('every report’s own island specification, on its real record, where t
 				console.warn(`[report-specs] ${island.corpus.name}'s record could not be read; not judged`)
 				return
 			}
-			const where = programPlacing(programKey(app.slug)).where
+			const placing = programPlacing(programKey(slug))
+			const where = placing.where
 			// The sections AS THE DOOR SERVES THEM: the run's own list, in its own
 			// order (nav-items.ts placedOf: `words.sections`, each analysis task
 			// where `analysis` stands) — read off the site's header, which is
@@ -70,6 +75,24 @@ describe('every report’s own island specification, on its real record, where t
 			// refused with every issue named, or laid.
 			expect(() => reportHexIsland(null, island, sections, spec, where), 'the outline').not.toThrow()
 			expect(() => reportHexIsland(record, island, sections, spec, where), 'the island').not.toThrow()
+			// The family places the report, and runs its ferry to the report's pier,
+			// from the report's declaration with no content; the view streams the
+			// report in from its served sections and specification. Both must put
+			// the pier in the same place (the one frame), or the ferry docks at
+			// open water.
+			const placed = piersOf(placing.document)[0]
+			if (!placed) throw new Error(`${slug} is placed with no pier`)
+			for (const [lay, content] of [
+				['the outline', null],
+				['the island', record],
+			] as const) {
+				const streamed = piersOf(reportHexDeclaration(content, island, sections, spec, where))[0]
+				if (!streamed) throw new Error(`${slug}: ${lay} has no pier`)
+				expect(
+					Math.hypot(streamed.end[0] - placed.end[0], streamed.end[1] - placed.end[1]),
+					`${slug}: ${lay}'s pier against the one the family docks at`,
+				).toBeLessThan(1e-3)
+			}
 		})
 	}
 })
