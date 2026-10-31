@@ -1,5 +1,6 @@
 // The family as a space: an island on the one honeycomb, its reports held
-// open at the corners of its first ring in the registry's order — each
+// open in the registry’s order — round its square standing alone, in its
+// group beyond its far shore held open — each
 // report's island placed out along that bearing on its own patch of the
 // same honeycomb, beyond the family's coast, no two patches sharing a cell
 // — each reached by a ferry line over the water between, from a wharf at
@@ -15,24 +16,25 @@ import {
 	programPlacings,
 	realisedProgram,
 } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
-import { hexLatticeDistance } from '@aicolab/kolo/shaders/lattice'
+import { hexLatticeDistance, hexLatticeLay } from '@aicolab/kolo/shaders/lattice'
 import { ferryLineOf, ferryStopId, spaceCentre } from '@aicolab/kolo/space'
 import { describe, expect, it } from 'vitest'
 import { INSIGHT_BRIDGE_APPLET, REPORT_APPLETS } from '../applets.ts'
-import { familyHexIsland, REPORT_RING } from './family.ts'
+import { familyHexIsland } from './family.ts'
 
 const FAMILY = programKey(INSIGHT_BRIDGE_APPLET.id)
 
 describe('the Insight Bridge family', () => {
-	it('holds every report open at a corner of its first ring, in the registry’s order', () => {
+	it('standing alone, holds every report open round its square in the lay’s order, the registry’s', () => {
 		const placings = programPlacings(FAMILY)
 		const laid = familyHexIsland()
 		// An island: its way in takes a cell of its own.
 		expect(laid.wayIn.cell).not.toBeNull()
-		const bearings = REPORT_APPLETS.map((applet) => {
+		const lay = hexLatticeLay(REPORT_APPLETS.length)
+		const bearings = REPORT_APPLETS.map((applet, index) => {
 			const cell = laid.cells.get(applet.id)
 			if (!cell) throw new Error(`${applet.id} has no cell`)
-			expect(hexLatticeDistance(cell), applet.id).toBe(REPORT_RING)
+			expect(cell, applet.id).toEqual(lay[index])
 			const at = laid.held.get(applet.id)?.at ?? [0, 0]
 			return Math.atan2(at[0], -at[1])
 		})
@@ -50,6 +52,36 @@ describe('the Insight Bridge family', () => {
 			// On the family's own honeycomb: the same turn.
 			expect(placing?.where.depth).toBe(0)
 		}
+	})
+
+	it('held open, stands at the edge of its group: the first report straight out beyond its far shore, the rest round it nearest first', () => {
+		// Held by a space to its south: its group lies north, beyond it.
+		const toward: [number, number] = [0, 1]
+		const laid = familyHexIsland({ at: [0, 0], depth: 0, heldOpen: { toward } })
+		const placed = REPORT_APPLETS.map((applet) => {
+			const cell = laid.cells.get(applet.id)
+			const placing = laid.held.get(applet.id)
+			if (!cell || !placing) throw new Error(`${applet.id} is not placed`)
+			// On the far side, the holder's way in facing back toward it.
+			expect(placing.at[1], applet.id).toBeLessThan(0)
+			return { id: applet.id, cell, at: placing.at }
+		})
+		const [middle, ...round] = placed
+		if (!middle) throw new Error('no report')
+		// The middle: the first ring's cell straight out, away from the holder.
+		expect(middle.cell).toEqual({ q: 0, r: -1 })
+		expect(middle.at[0]).toBeCloseTo(0, 6)
+		// The rest each a cell from the middle, nearer the family first: the
+		// rings they stand on never fall in the registry's order.
+		const rings = round.map(({ id, cell }) => {
+			const fromMiddle = { q: cell.q - middle.cell.q, r: cell.r - middle.cell.r }
+			expect(hexLatticeDistance(fromMiddle), id).toBe(1)
+			return hexLatticeDistance(cell)
+		})
+		expect(rings).toEqual([...rings].sort((a, b) => a - b))
+		// Its way in faces its holder, to the south: the near side, its group's
+		// edge.
+		expect(laid.wayIn.bearing[1]).toBeGreaterThan(0.5)
 	})
 
 	it('lays every report on the one cell size, on its own patch beyond the family’s coast, no two patches sharing a cell', () => {
@@ -97,15 +129,24 @@ describe('the Insight Bridge family', () => {
 		for (const applet of REPORT_APPLETS) {
 			const placing = placings.get(programKey(applet.id))
 			if (!placing) throw new Error(`${applet.id} is not placed`)
-			// A wharf serving the report, on the family's shore; the report's pier.
+			// A berth for the report at a pier on the family's shore (a wharf of
+			// its own, or a side of a finger pier it shares); the report's pier.
 			const wharf = pierServing(wharves, applet.id)
-			if (!wharf) throw new Error(`no wharf for ${applet.id}`)
+			if (!wharf) throw new Error(`no berth for ${applet.id}`)
 			const pier = piersOf(placing.document)[0]
 			if (!pier) throw new Error(`${applet.id} reaches no pier out`)
-			// The family's way runs on its own land, to the wharf.
-			const way = family.plan.paths.find((path) => path.id === `route:path:${applet.id}`)
+			// The family's way runs on its own land, to where the flight of the
+			// pier its berth is at lands.
+			const plate = family.plan.piers.find((each) =>
+				each.berths.some((berth) => berth.serves === applet.id),
+			)?.flight?.plate
+			if (!plate) throw new Error(`no flight onto ${applet.id}'s pier`)
+			const way = family.plan.paths.find((path) => {
+				const last = path.points[path.points.length - 1]
+				return last !== undefined && Math.hypot(last[0] - plate[0], last[1] - plate[1]) < 0.5
+			})
 			const end = way?.points[way.points.length - 1]
-			if (!end) throw new Error(`no way to ${applet.id}`)
+			if (!end) throw new Error(`no way to ${applet.id}'s pier`)
 			expect(way?.crossing, applet.id).toBeUndefined()
 			expect(way?.bridges ?? [], applet.id).toEqual([])
 			expect(insideBoundary(family.plan.boundary, end[0], end[1]), applet.id).toBe(true)

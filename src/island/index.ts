@@ -7,14 +7,7 @@
 // reads it. The scenes and the setup — the browser's — are `./setup`
 // (solid/setup.tsx).
 
-export {
-	cornerOfReport,
-	familyHexIsland,
-	familyPlaces,
-	familySpec,
-	insightBridgeProgram,
-	REPORT_RING,
-} from './family.ts'
+export { familyHexIsland, familyPlaces, familySpec, insightBridgeProgram } from './family.ts'
 export {
 	realiseReportHex,
 	reportHexDeclaration,

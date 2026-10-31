@@ -7,12 +7,9 @@
 // test, since nothing is judged without the inputs the hub serves.
 
 import { piersOf } from '@aicolab/atlas/chessboard/content/space/pier-declaration.ts'
-import {
-	configureOutlines,
-	programKey,
-} from '@aicolab/atlas/chessboard/content/space/programs.ts'
-import { programPlacing } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
+import { configureOutlines, programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import { realiseSpace } from '@aicolab/atlas/chessboard/content/space/realise.ts'
+import { programPlacing } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
 import { spaceCentre } from '@aicolab/kolo/space'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { reportDeclaration } from './program.ts'
@@ -27,15 +24,15 @@ describe('every report, on its real record and its served sections and specifica
 	// view draws it from.
 	beforeAll(async () => {
 		served = await servedReports()
-		configureOutlines(
-			new Map([...served].map(([slug, each]) => [programKey(slug), each.outline])),
-		)
+		configureOutlines(new Map([...served].map(([slug, each]) => [programKey(slug), each.outline])))
 	}, 120_000)
 	it('finds the reports that declare a specification', () => {
 		expect(apps.length).toBeGreaterThan(0)
 	})
 	for (const { slug } of REPORT_ISLANDS) {
-		it(`${slug} lays as it says, its pier where the family's ferry docks`, { timeout: 60_000 }, () => {
+		it(`${slug} lays as it says, its pier where the family's ferry docks`, {
+			timeout: 60_000,
+		}, () => {
 			const servedNow = served.get(slug)
 			if (!servedNow) throw new Error(`${slug} was not read`)
 			const { record, outline } = servedNow
@@ -73,7 +70,7 @@ describe('every report, on its real record and its served sections and specifica
 				// out, in plan metres about the centre), the face the family's ferry
 				// berths off: the same edge of the same footprint, looking the same
 				// way — never turned to a side.
-				const drawn = realiseSpace(document).plan.piers[0]
+				const drawn = realiseSpace(document).plan.piers[0]?.berths[0]
 				if (!drawn) throw new Error(`${slug}: ${lay} draws no pier`)
 				expect(
 					Math.hypot(
