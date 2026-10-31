@@ -16,6 +16,7 @@
 
 import {
 	type HexSpaceSpec,
+	HexSpaceSpecError,
 	hexSpaceSpecSchema,
 } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
 import type { SpaceProgram, Where } from '@aicolab/atlas/chessboard/content/space/programs.ts'
@@ -170,20 +171,29 @@ async function fetchReportContent(island: ReportIsland): Promise<ReportContent |
 
 /** A report's island as declared from its content, by the specification
  *  given — the one its door gave, unless another is handed in (a host's
- *  draft of it) — written where its holder says. */
+ *  draft of it) — written where its holder says. A specification the lay
+ *  REFUSES where the report stands is said so, loudly, and the island stands
+ *  a standard report's: a report's own words never close the world it is
+ *  in (the view opens every report as the visitor nears it). */
 export function reportDeclaration(
 	slug: ReportSlug,
 	content: ReportContent | null,
 	where: Where,
 	spec: HexSpaceSpec | null = content?.spec ?? null,
 ): SpaceDocument {
-	return reportHexDeclaration(
-		content?.record ?? null,
-		reportIsland(slug),
-		content?.sections ?? null,
-		spec,
-		where,
-	)
+	const island = reportIsland(slug)
+	const lay = (said: HexSpaceSpec | null): SpaceDocument =>
+		reportHexDeclaration(content?.record ?? null, island, content?.sections ?? null, said, where)
+	if (!spec) return lay(null)
+	try {
+		return lay(spec)
+	} catch (err) {
+		if (!(err instanceof HexSpaceSpecError)) throw err
+		console.error(
+			`[chessboard] the ${island.corpus.name} island stands a standard report's: ${err.message}`,
+		)
+		return lay(null)
+	}
 }
 
 export function reportIslandProgram(slug: ReportSlug): SpaceProgram<ReportContent> {
