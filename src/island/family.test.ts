@@ -2,19 +2,21 @@
 // open at the corners of its first ring in the registry's order — each
 // report's island placed out along that bearing on its own patch of the
 // same honeycomb, beyond the family's coast, no two patches sharing a cell
-// — each reached by ferry over the water between, the family's way running
-// to the end of the report's pier.
+// — each reached by a ferry line over the water between, from a wharf at
+// the family's shore to the report's pier, over the sea lanes.
 
 import { insideRing } from '@aicolab/atlas/chessboard/content/ground.ts'
+import { FERRY } from '@aicolab/atlas/chessboard/content/space/ferry-lines.ts'
 import { HEX_SPACE } from '@aicolab/atlas/chessboard/content/space/hex-space-measures.ts'
-import { piersOf } from '@aicolab/atlas/chessboard/content/space/pier-declaration.ts'
+import { pierServing, piersOf } from '@aicolab/atlas/chessboard/content/space/pier-declaration.ts'
+import { insideBoundary } from '@aicolab/atlas/chessboard/content/space/plan.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import {
 	programPlacings,
 	realisedProgram,
 } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
 import { hexLatticeDistance } from '@aicolab/kolo/shaders/lattice'
-import { spaceCentre } from '@aicolab/kolo/space'
+import { ferryLineOf, ferryStopId, spaceCentre } from '@aicolab/kolo/space'
 import { describe, expect, it } from 'vitest'
 import { INSIGHT_BRIDGE_APPLET, REPORT_APPLETS } from '../applets.ts'
 import { familyHexIsland, REPORT_RING } from './family.ts'
@@ -82,31 +84,52 @@ describe('the Insight Bridge family', () => {
 		}
 	})
 
-	it('reaches each report by ferry from its square, the way ending at the report’s pier', () => {
+	it('reaches each report by a ferry line from a wharf at its shore to the report’s pier, the way ending at the wharf', () => {
 		const family = realisedProgram(FAMILY)
 		const familyCentre = spaceCentre(family.document)
 		const ferries = family.plan.vessels.filter(
 			(vessel) => vessel.visual.kind === 'drawn' && vessel.visual.model === 'ferry',
 		)
-		expect(ferries).toHaveLength(REPORT_APPLETS.length)
+		// A line per report, so many ferries each.
+		expect(ferries).toHaveLength(REPORT_APPLETS.length * FERRY.vesselsPerLine)
 		const placings = programPlacings(FAMILY)
+		const wharves = piersOf(family.document)
 		for (const applet of REPORT_APPLETS) {
 			const placing = placings.get(programKey(applet.id))
 			if (!placing) throw new Error(`${applet.id} is not placed`)
-			// A pier's ends are read in the one frame (piersOf).
+			// A wharf serving the report, on the family's shore; the report's pier.
+			const wharf = pierServing(wharves, applet.id)
+			if (!wharf) throw new Error(`no wharf for ${applet.id}`)
 			const pier = piersOf(placing.document)[0]
 			if (!pier) throw new Error(`${applet.id} reaches no pier out`)
+			// The family's way runs on its own land, to the wharf.
 			const way = family.plan.paths.find((path) => path.id === `route:path:${applet.id}`)
 			const end = way?.points[way.points.length - 1]
 			if (!end) throw new Error(`no way to ${applet.id}`)
-			// Both in the one frame: the family's way ends where the pier ends.
-			expect(end[0] + familyCentre[0], applet.id).toBeCloseTo(pier.end[0], 3)
-			expect(end[1] + familyCentre[1], applet.id).toBeCloseTo(pier.end[1], 3)
-			expect(way?.crossing).toBe('ferry')
-			// Over the water from the family's coast out to its very end.
-			const [from = 1, to = 0] = way?.bridges?.[0] ?? []
-			expect(from, applet.id).toBeLessThan(1)
-			expect(to, applet.id).toBe(1)
+			expect(way?.crossing, applet.id).toBeUndefined()
+			expect(way?.bridges ?? [], applet.id).toEqual([])
+			expect(insideBoundary(family.plan.boundary, end[0], end[1]), applet.id).toBe(true)
+			// The line calls at the family and at the report; each ferry's docks
+			// are those two stops, and a visitor steps ashore at the wharf's
+			// landing and the pier's.
+			const line = `path:${applet.id}`
+			const ships = ferries.filter((vessel) => ferryLineOf(vessel.id) === line)
+			expect(ships, applet.id).toHaveLength(FERRY.vesselsPerLine)
+			for (const ship of ships) {
+				expect(ship.timetable.docks.map((dock) => dock.id).sort()).toEqual(
+					[ferryStopId(line, INSIGHT_BRIDGE_APPLET.id), ferryStopId(line, applet.id)].sort(),
+				)
+				// The ship's berths lie off the wharf's face and off the pier's face,
+				// never on land: each dock's point a standoff off its pier's end.
+				for (const dock of ship.timetable.docks) {
+					const at = ship.timetable.path[dock.pointIndex]
+					if (!at) throw new Error('a dock off the path')
+					const berthed: [number, number] = [at[0] + familyCentre[0], at[1] + familyCentre[1]]
+					const face = dock.id === ferryStopId(line, applet.id) ? pier.end : wharf.end
+					expect(Math.hypot(berthed[0] - face[0], berthed[1] - face[1]), dock.id).toBeLessThan(6)
+					expect(insideBoundary(family.plan.boundary, at[0], at[1]), dock.id).toBe(false)
+				}
+			}
 		}
 		// The family's own way in keeps off every report's bearing.
 		const laid = familyHexIsland()
