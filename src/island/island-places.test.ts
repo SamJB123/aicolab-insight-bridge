@@ -4,6 +4,7 @@
 // galaxy's own cell the galaxy's home. Each thing is named as its hex
 // island's destination declares it (kolo's landmark feature id).
 
+import { COMMONS_PIN } from '@aicolab/atlas/chessboard/content/space/declared-world.ts'
 import {
 	placeOfSpace,
 	spacePlacesOf,
@@ -24,9 +25,10 @@ describe("a report island's places", () => {
 		const places = spacePlacesOf(realised, world, world.start, waysOf)
 		expect(places.island).toBe('training-data')
 		expect(places.spaces.get(world.start)).toBe('')
-		// A building's home is the room behind its door; a landmark's the
-		// outdoors, standing at it, where the base pins a link to land.
-		expect(places.stands.get('')).toEqual({ space: world.start })
+		// The island's own place stands at its square; a building's home is
+		// the room behind its door; a landmark's the outdoors, standing at it,
+		// where the base pins a link to land.
+		expect(places.stands.get('')).toEqual({ space: world.start, entry: COMMONS_PIN })
 		expect(places.stands.get('topics')).toEqual({ space: 'hall' })
 		expect(places.stands.get('sources')).toEqual({ space: 'office' })
 		expect(places.stands.get('analysis:terms')).toEqual({ space: 'q:terms' })
