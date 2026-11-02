@@ -20,11 +20,16 @@ import { hexLatticeDistance, hexLatticeLay } from '@aicolab/kolo/shaders/lattice
 import { ferryLineOf, ferryStopId, spaceCentre } from '@aicolab/kolo/space'
 import { describe, expect, it } from 'vitest'
 import { INSIGHT_BRIDGE_APPLET, REPORT_APPLETS } from '../applets.ts'
-import { familyHexIsland } from './family.ts'
+import { familyHexIsland, familySpec } from './family.ts'
 
 const FAMILY = programKey(INSIGHT_BRIDGE_APPLET.id)
 
 describe('the Insight Bridge family', () => {
+	it('uses rainforest for the central island', () => {
+		expect(familySpec().biome).toBe('rainforest')
+		expect(realisedProgram(FAMILY).plan.biome).toBe('rainforest')
+	})
+
 	it('standing alone, holds every report open round its square in the lay’s order, the registry’s', () => {
 		const placings = programPlacings(FAMILY)
 		const laid = familyHexIsland()

@@ -47,6 +47,8 @@ export const familyPlaces = (): HexSpacePlace[] =>
 /** How each report's place is reached: its way crossing the water by
  *  ferry. Where it stands is the lay's (the registry's order). */
 export const familySpec = (): HexSpaceSpecInput => ({
+	biome: 'rainforest',
+	planting: 'wooded',
 	places: Object.fromEntries(
 		REPORT_APPLETS.map((applet) => [applet.id, { path: { crossing: 'ferry' } }]),
 	),
