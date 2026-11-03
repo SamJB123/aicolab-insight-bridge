@@ -66,6 +66,7 @@
 		"./applet/reads": "./src/applet/reads.ts",
 		"./island": "./src/island/index.ts",
 		"./island/setup": "./src/island/solid/setup.tsx",
+		"./island/scenes": "./src/island/scenes/spaces.ts",
 		"./island/served-reports": "./src/island/served-reports.ts"
 	},
 	"scripts": {
