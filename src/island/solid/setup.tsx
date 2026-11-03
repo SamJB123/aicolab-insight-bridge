@@ -17,7 +17,10 @@ import type {
 import type { HexSpaceSpec } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
 import { programKey } from '@aicolab/atlas/chessboard/content/space/programs.ts'
 import { realiseSpace } from '@aicolab/atlas/chessboard/content/space/realise.ts'
-import { programPlacing } from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
+import {
+	programPlacing,
+	realisationOf,
+} from '@aicolab/atlas/chessboard/content/space/realised-spaces.ts'
 import { spacePlacesOf } from '@aicolab/atlas/chessboard/content/space/space-places.ts'
 import { worldOfKey } from '@aicolab/atlas/chessboard/content/space-keys.ts'
 import { declaredBuilders, groundOf } from '@aicolab/atlas/chessboard/scenes/declared-spaces.ts'
@@ -149,13 +152,12 @@ export function reportIslandSetup(slug: ReportSlug, draft?: () => HexSpaceSpec):
 		build: (models, content, options) => {
 			const bare = options.bare === true
 			// Written where its holder says (the family that berths it), as the
-			// view it is seen in has it.
-			const { where } = programPlacing(key)
-			const realised = realiseSpace(
-				draft
-					? reportDeclaration(slug, content, where, draft())
-					: program.declaration(content, where),
-			)
+			// view it is seen in has it: realised from its content (the program's
+			// own realisation, made ahead on the preparation worker where it was),
+			// or from the draft a host is editing.
+			const realised = draft
+				? realiseSpace(reportDeclaration(slug, content, programPlacing(key).where, draft()))
+				: realisationOf(key, content)
 			const report = buildReportWorld(content?.record ?? null, island, realised.plan)
 			const built = reportBuild(report, island, options.host)
 			return {

@@ -20,6 +20,7 @@ import {
 	hexSpaceSpecSchema,
 } from '@aicolab/atlas/chessboard/content/space/hex-space-spec.ts'
 import type { SpaceProgram, Where } from '@aicolab/atlas/chessboard/content/space/programs.ts'
+import { realiseSpace } from '@aicolab/atlas/chessboard/content/space/realise.ts'
 import type { AtlasHost } from '@aicolab/atlas/host.ts'
 import type { SpaceDocument } from '@aicolab/kolo/space'
 import { sectionsOf } from '../applet/reads.ts'
@@ -135,7 +136,10 @@ const outlinesRead = new Map<ReportSlug, Promise<ReportContent | null>>()
  *  specification — the navigation its page reads — and no record, read once
  *  (`outlinesRead`). Null where the door will not answer: the island then
  *  stands a standard report's alone, wherever it is laid. */
-export function reportOutline(island: ReportIsland, host: AtlasHost): Promise<ReportContent | null> {
+export function reportOutline(
+	island: ReportIsland,
+	host: AtlasHost,
+): Promise<ReportContent | null> {
 	let read = outlinesRead.get(island.slug)
 	if (!read) {
 		read = readOutline(island, host)
@@ -212,6 +216,10 @@ export function reportIslandProgram(slug: ReportSlug): SpaceProgram<ReportConten
 		fetchContent: () => fetchReportContent(island),
 		outline: (host) => reportOutline(island, host),
 		declaration: (content, where) => reportDeclaration(slug, content, where),
+		// A report's island takes its shape from its content (its outline,
+		// then its record): realised per content, on the page or ahead on the
+		// preparation worker alike (atlas realised-spaces.ts realisationOf).
+		realisation: (content, where) => realiseSpace(reportDeclaration(slug, content, where)),
 		// A report holds nothing open: its rooms are behind its doors.
 		holdsOpen: () => [],
 		skeleton: () => buildReportWorld(null, island).world,
